@@ -1,0 +1,743 @@
+activegraph quickstart — running the bundled Diligence pack on fixtures.
+
+This will take about 20 seconds. No API key required.
+  pack:       diligence v0.1.0  (no external network calls)
+  companies:  Northwind Robotics, Stellar Logistics, Pinecone Bio
+  provider:   RecordedDiligenceProvider (fixture-backed)
+
+[trace.flags]             prompt_normalized=true (103 llm requests)
+[pack.loaded]             diligence v0.1.0 (8 object_types, 6 relation_types, 7 behaviors, 3 tools, 2 policies, 4 prompts)
+[goal.created]            user: "Diligence: Northwind Robotics"
+[behavior.started]        diligence.company_planner
+[object.created]          company#1
+[behavior.completed]      diligence.company_planner
+[behavior.started]        diligence.question_generator  (matched object.created: company#1)
+[llm.requested]           evt_007  diligence.question_generator  model=claude-sonnet-4-5 tokens_in~603 budget_remaining=$5.000
+[llm.responded]           evt_008  diligence.question_generator  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          question#2 "What is the company's Q3 revenue trajectory?" (open)
+[object.created]          question#3 "How concentrated is the customer base?" (open)
+[object.created]          question#4 "What is the gross margin profile?" (open)
+[object.created]          question#5 "What new products are launching in the next twelve months?" (open)
+[object.created]          question#6 "What is the operating cash burn?" (open)
+[object.created]          question#7 "Who are the main competitors?" (open)
+[object.created]          question#8 "What is the addressable market for cobots in SMB manufacturing?" (open)
+[object.created]          question#9 "What regulatory exposures exist?" (open)
+[behavior.completed]      diligence.question_generator (8 objects, 0 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#2)
+[llm.requested]           evt_019  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~1391 budget_remaining=$4.999
+[llm.responded]           evt_020  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_021  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_022  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_023  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~1528 budget_remaining=$4.993
+[llm.responded]           evt_024  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_025  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_026  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_027  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~1585 budget_remaining=$4.990
+[llm.responded]           evt_028  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#10 "Q3 Update"
+[object.created]          claim#11 "Northwind Q3 revenue grew 28% YoY to $42M." (open)
+[relation.created]        claim#11 --addresses--> question#2
+[relation.created]        claim#11 --derived_from--> document#10
+[object.created]          evidence#12 "Q3 revenue: $42M, +28% YoY"
+[relation.created]        evidence#12 --supports--> claim#11
+[patch.applied]           question#2 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#3)
+[llm.requested]           evt_038  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~1705 budget_remaining=$4.989
+[llm.responded]           evt_039  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_040  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_041  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_042  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~1842 budget_remaining=$4.984
+[llm.responded]           evt_043  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_044  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_045  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_046  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~1898 budget_remaining=$4.981
+[llm.responded]           evt_047  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#13 "Customer Concentration"
+[object.created]          claim#14 "Northwind's top three customers represent 52% of annual revenue." (open)
+[relation.created]        claim#14 --addresses--> question#3
+[relation.created]        claim#14 --derived_from--> document#13
+[object.created]          evidence#15 "Top 3 customers: 52% of revenue"
+[relation.created]        evidence#15 --supports--> claim#14
+[object.created]          claim#16 "Northwind's single largest customer represents 26% of revenue." (open)
+[relation.created]        claim#16 --addresses--> question#3
+[relation.created]        claim#16 --derived_from--> document#13
+[object.created]          evidence#17 "Largest customer: 26%"
+[relation.created]        evidence#17 --supports--> claim#16
+[patch.applied]           question#3 status: open -> answered
+[behavior.completed]      diligence.document_researcher (5 objects, 6 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#4)
+[llm.requested]           evt_062  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~2130 budget_remaining=$4.980
+[llm.responded]           evt_063  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_064  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_065  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_066  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~2267 budget_remaining=$4.974
+[llm.responded]           evt_067  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_068  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_069  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_070  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~2324 budget_remaining=$4.971
+[llm.responded]           evt_071  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#18 "Northwind's Q3 gross margin was 41%, flat sequentially." (open)
+[relation.created]        claim#18 --addresses--> question#4
+[relation.created]        claim#18 --derived_from--> document#10
+[object.created]          evidence#19 "Gross margin: 41%"
+[relation.created]        evidence#19 --supports--> claim#18
+[patch.applied]           question#4 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#5)
+[llm.requested]           evt_080  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~2264 budget_remaining=$4.970
+[llm.responded]           evt_081  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_082  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_083  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_084  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~2401 budget_remaining=$4.964
+[llm.responded]           evt_085  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_086  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_087  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_088  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~2458 budget_remaining=$4.961
+[llm.responded]           evt_089  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#20 "Roadmap"
+[object.created]          claim#21 "Northwind plans to launch the NW-7 cobot in Q1, targeting food-and-beverage SMB." (open)
+[relation.created]        claim#21 --addresses--> question#5
+[relation.created]        claim#21 --derived_from--> document#20
+[object.created]          evidence#22 "NW-7 cobot launches Q1"
+[relation.created]        evidence#22 --supports--> claim#21
+[patch.applied]           question#5 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#6)
+[llm.requested]           evt_099  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~2430 budget_remaining=$4.960
+[llm.responded]           evt_100  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_101  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_102  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_103  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~2567 budget_remaining=$4.954
+[llm.responded]           evt_104  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_105  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_106  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_107  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~2623 budget_remaining=$4.952
+[llm.responded]           evt_108  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#23 "Northwind Robotics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#23 --addresses--> question#6
+[relation.created]        claim#23 --derived_from--> document#10
+[object.created]          evidence#24 "(no fixture quote)"
+[relation.created]        evidence#24 --supports--> claim#23
+[patch.applied]           question#6 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#7)
+[llm.requested]           evt_117  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~2508 budget_remaining=$4.950
+[llm.responded]           evt_118  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_119  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_120  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_121  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~2645 budget_remaining=$4.945
+[llm.responded]           evt_122  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_123  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_124  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_125  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~2701 budget_remaining=$4.942
+[llm.responded]           evt_126  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#25 "Northwind Robotics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#25 --addresses--> question#7
+[relation.created]        claim#25 --derived_from--> document#10
+[object.created]          evidence#26 "(no fixture quote)"
+[relation.created]        evidence#26 --supports--> claim#25
+[patch.applied]           question#7 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#8)
+[llm.requested]           evt_135  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~2630 budget_remaining=$4.941
+[llm.responded]           evt_136  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_137  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_138  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_139  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~2767 budget_remaining=$4.935
+[llm.responded]           evt_140  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_141  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_142  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_143  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~2823 budget_remaining=$4.932
+[llm.responded]           evt_144  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#27 "Northwind Robotics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#27 --addresses--> question#8
+[relation.created]        claim#27 --derived_from--> document#10
+[object.created]          evidence#28 "(no fixture quote)"
+[relation.created]        evidence#28 --supports--> claim#27
+[patch.applied]           question#8 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#9)
+[llm.requested]           evt_153  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~2732 budget_remaining=$4.931
+[llm.responded]           evt_154  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_155  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6559c47a
+[tool.responded]          evt_156  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_157  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~2869 budget_remaining=$4.925
+[llm.responded]           evt_158  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_159  diligence.document_researcher  tool=diligence.summarize_document args_hash=47cb9b5c
+[tool.responded]          evt_160  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_161  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~2926 budget_remaining=$4.922
+[llm.responded]           evt_162  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#29 "Northwind Robotics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#29 --addresses--> question#9
+[relation.created]        claim#29 --derived_from--> document#10
+[object.created]          evidence#30 "(no fixture quote)"
+[relation.created]        evidence#30 --supports--> claim#29
+[patch.applied]           question#9 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#11)
+[llm.requested]           evt_171  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2681 budget_remaining=$4.921
+[llm.responded]           evt_172  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          risk#31 "customer concentration"
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#12)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#14)
+[llm.requested]           evt_178  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2763 budget_remaining=$4.920
+[llm.responded]           evt_179  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#15)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#16)
+[llm.requested]           evt_184  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2730 budget_remaining=$4.919
+[llm.responded]           evt_185  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#17)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#18)
+[llm.requested]           evt_190  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2731 budget_remaining=$4.918
+[llm.responded]           evt_191  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#19)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#21)
+[llm.requested]           evt_196  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2738 budget_remaining=$4.917
+[llm.responded]           evt_197  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#22)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#23)
+[llm.requested]           evt_202  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2704 budget_remaining=$4.916
+[llm.responded]           evt_203  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#24)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#25)
+[llm.requested]           evt_208  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2707 budget_remaining=$4.915
+[llm.responded]           evt_209  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#26)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#27)
+[llm.requested]           evt_214  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2708 budget_remaining=$4.914
+[llm.responded]           evt_215  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#28)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#29)
+[llm.requested]           evt_220  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~2675 budget_remaining=$4.913
+[llm.responded]           evt_221  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#30)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.memo_synthesizer  (matched object.created: risk#31)
+[llm.requested]           evt_226  diligence.memo_synthesizer  model=claude-sonnet-4-5 tokens_in~2854 budget_remaining=$4.912
+[llm.responded]           evt_227  diligence.memo_synthesizer  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          memo#32
+[behavior.completed]      diligence.memo_synthesizer
+[runtime.idle]            queue empty, budget remaining
+[goal.created]            user: "Diligence: Stellar Logistics"
+[behavior.started]        diligence.company_planner
+[object.created]          company#33
+[behavior.completed]      diligence.company_planner
+[behavior.started]        diligence.question_generator  (matched object.created: company#33)
+[llm.requested]           evt_236  diligence.question_generator  model=claude-sonnet-4-5 tokens_in~2946 budget_remaining=$4.911
+[llm.responded]           evt_237  diligence.question_generator  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          question#34 "What is the revenue growth rate?" (open)
+[object.created]          question#35 "How many metros does the network cover?" (open)
+[object.created]          question#36 "What is the unit economics picture per metro?" (open)
+[object.created]          question#37 "Is there any divergence between filed numbers and independent data?" (open)
+[object.created]          question#38 "What is the carrier (driver) retention rate?" (open)
+[object.created]          question#39 "What is management's growth guidance?" (open)
+[object.created]          question#40 "Who are the main competitors?" (open)
+[object.created]          question#41 "What is the regulatory exposure?" (open)
+[behavior.completed]      diligence.question_generator (8 objects, 0 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#34)
+[llm.requested]           evt_248  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~3654 budget_remaining=$4.910
+[llm.responded]           evt_249  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_250  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_251  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_252  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~3796 budget_remaining=$4.905
+[llm.responded]           evt_253  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_254  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_255  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_256  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~3853 budget_remaining=$4.902
+[llm.responded]           evt_257  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#42 "Annual"
+[object.created]          claim#43 "Stellar Logistics revenue grew 18% YoY per the annual filing." (open)
+[relation.created]        claim#43 --addresses--> question#34
+[relation.created]        claim#43 --derived_from--> document#42
+[object.created]          evidence#44 "Revenue +18% YoY"
+[relation.created]        evidence#44 --supports--> claim#43
+[patch.applied]           question#34 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#35)
+[llm.requested]           evt_267  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~3855 budget_remaining=$4.901
+[llm.responded]           evt_268  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_269  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_270  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_271  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~3996 budget_remaining=$4.895
+[llm.responded]           evt_272  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_273  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_274  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_275  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4053 budget_remaining=$4.892
+[llm.responded]           evt_276  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#45 "Stellar's network covers 14 metros, with positive unit economics in 9 of them." (open)
+[relation.created]        claim#45 --addresses--> question#35
+[relation.created]        claim#45 --derived_from--> document#42
+[object.created]          evidence#46 "14 metros covered"
+[relation.created]        evidence#46 --supports--> claim#45
+[patch.applied]           question#35 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#36)
+[llm.requested]           evt_285  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~3990 budget_remaining=$4.891
+[llm.responded]           evt_286  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_287  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_288  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_289  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~4132 budget_remaining=$4.885
+[llm.responded]           evt_290  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_291  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_292  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_293  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4189 budget_remaining=$4.882
+[llm.responded]           evt_294  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#47 "Stellar Logistics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#47 --addresses--> question#36
+[relation.created]        claim#47 --derived_from--> document#42
+[object.created]          evidence#48 "(no fixture quote)"
+[relation.created]        evidence#48 --supports--> claim#47
+[patch.applied]           question#36 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#37)
+[llm.requested]           evt_303  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~4122 budget_remaining=$4.881
+[llm.responded]           evt_304  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_305  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_306  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_307  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~4263 budget_remaining=$4.875
+[llm.responded]           evt_308  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_309  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_310  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_311  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4320 budget_remaining=$4.873
+[llm.responded]           evt_312  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#49 "Carrier Survey"
+[object.created]          claim#50 "Independent carrier survey suggests Stellar revenue per route declined 7% in Q3." (open)
+[relation.created]        claim#50 --addresses--> question#37
+[relation.created]        claim#50 --derived_from--> document#49
+[object.created]          evidence#51 "Driver-reported revenue per route: -7% Q3"
+[relation.created]        evidence#51 --supports--> claim#50
+[relation.created]        claim#50 --contradicts--> claim#43
+[patch.applied]           question#37 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 4 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#38)
+[llm.requested]           evt_323  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~4323 budget_remaining=$4.872
+[llm.responded]           evt_324  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_325  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_326  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_327  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~4464 budget_remaining=$4.866
+[llm.responded]           evt_328  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_329  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_330  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_331  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4521 budget_remaining=$4.863
+[llm.responded]           evt_332  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#52 "Stellar Logistics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#52 --addresses--> question#38
+[relation.created]        claim#52 --derived_from--> document#42
+[object.created]          evidence#53 "(no fixture quote)"
+[relation.created]        evidence#53 --supports--> claim#52
+[patch.applied]           question#38 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#39)
+[llm.requested]           evt_341  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~4435 budget_remaining=$4.862
+[llm.responded]           evt_342  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_343  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_344  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_345  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~4576 budget_remaining=$4.856
+[llm.responded]           evt_346  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_347  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_348  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_349  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4633 budget_remaining=$4.853
+[llm.responded]           evt_350  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#54 "Investor Day"
+[object.created]          claim#55 "Management guides for 20% YoY revenue growth through next year." (open)
+[relation.created]        claim#55 --addresses--> question#39
+[relation.created]        claim#55 --derived_from--> document#54
+[object.created]          evidence#56 "Management 20% growth target"
+[relation.created]        evidence#56 --supports--> claim#55
+[patch.applied]           question#39 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#40)
+[llm.requested]           evt_360  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~4608 budget_remaining=$4.852
+[llm.responded]           evt_361  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_362  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_363  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_364  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~4749 budget_remaining=$4.846
+[llm.responded]           evt_365  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_366  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_367  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_368  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4806 budget_remaining=$4.843
+[llm.responded]           evt_369  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#57 "Stellar Logistics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#57 --addresses--> question#40
+[relation.created]        claim#57 --derived_from--> document#42
+[object.created]          evidence#58 "(no fixture quote)"
+[relation.created]        evidence#58 --supports--> claim#57
+[patch.applied]           question#40 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#41)
+[llm.requested]           evt_378  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~4710 budget_remaining=$4.843
+[llm.responded]           evt_379  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_380  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=457b9fa7
+[tool.responded]          evt_381  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_382  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~4851 budget_remaining=$4.837
+[llm.responded]           evt_383  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_384  diligence.document_researcher  tool=diligence.summarize_document args_hash=d1fb5d6c
+[tool.responded]          evt_385  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_386  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~4908 budget_remaining=$4.834
+[llm.responded]           evt_387  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#59 "Stellar Logistics: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#59 --addresses--> question#41
+[relation.created]        claim#59 --derived_from--> document#42
+[object.created]          evidence#60 "(no fixture quote)"
+[relation.created]        evidence#60 --supports--> claim#59
+[patch.applied]           question#41 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#43)
+[llm.requested]           evt_396  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4663 budget_remaining=$4.833
+[llm.responded]           evt_397  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          risk#61 "filing vs. independent-data divergence"
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#44)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#45)
+[llm.requested]           evt_403  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4758 budget_remaining=$4.832
+[llm.responded]           evt_404  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#46)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#47)
+[llm.requested]           evt_409  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4723 budget_remaining=$4.831
+[llm.responded]           evt_410  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#48)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#50)
+[llm.requested]           evt_415  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4728 budget_remaining=$4.830
+[llm.responded]           evt_416  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#51)
+[behavior.completed]      diligence.evidence_linker
+[pattern.matched]         evt_420  diligence.contradiction_detector  matches=1
+[behavior.started]        diligence.contradiction_detector
+[object.created]          contradiction#62 (open)
+[behavior.completed]      diligence.contradiction_detector
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#52)
+[llm.requested]           evt_425  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4761 budget_remaining=$4.829
+[llm.responded]           evt_426  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#53)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#55)
+[llm.requested]           evt_431  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4757 budget_remaining=$4.828
+[llm.responded]           evt_432  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#56)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#57)
+[llm.requested]           evt_437  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4763 budget_remaining=$4.827
+[llm.responded]           evt_438  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#58)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#59)
+[llm.requested]           evt_443  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~4731 budget_remaining=$4.826
+[llm.responded]           evt_444  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#60)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.memo_synthesizer  (matched object.created: risk#61)
+[llm.requested]           evt_449  diligence.memo_synthesizer  model=claude-sonnet-4-5 tokens_in~4925 budget_remaining=$4.825
+[llm.responded]           evt_450  diligence.memo_synthesizer  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          memo#63
+[behavior.completed]      diligence.memo_synthesizer
+[runtime.idle]            queue empty, budget remaining
+[goal.created]            user: "Diligence: Pinecone Bio"
+[behavior.started]        diligence.company_planner
+[object.created]          company#64
+[behavior.completed]      diligence.company_planner
+[behavior.started]        diligence.question_generator  (matched object.created: company#64)
+[llm.requested]           evt_459  diligence.question_generator  model=claude-sonnet-4-5 tokens_in~4992 budget_remaining=$4.824
+[llm.responded]           evt_460  diligence.question_generator  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          question#65 "What is the lead program's regulatory status?" (open)
+[object.created]          question#66 "What is the cash runway?" (open)
+[object.created]          question#67 "What did the FDA pre-IND meeting reveal?" (open)
+[object.created]          question#68 "What are the secondary programs?" (open)
+[object.created]          question#69 "What is the burn rate?" (open)
+[object.created]          question#70 "Who is on the leadership team?" (open)
+[object.created]          question#71 "What is the competitive landscape for the lead asset?" (open)
+[object.created]          question#72 "What is the manufacturing strategy?" (open)
+[behavior.completed]      diligence.question_generator (8 objects, 0 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#65)
+[llm.requested]           evt_471  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~5684 budget_remaining=$4.823
+[llm.responded]           evt_472  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_473  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_474  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_475  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~5822 budget_remaining=$4.817
+[llm.responded]           evt_476  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_477  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_478  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_479  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~5866 budget_remaining=$4.814
+[llm.responded]           evt_480  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#73 "Preclinical"
+[object.created]          claim#74 "PCB-101 is targeted for IND filing in H2 of next year." (open)
+[relation.created]        claim#74 --addresses--> question#65
+[relation.created]        claim#74 --derived_from--> document#73
+[object.created]          evidence#75 "PCB-101 IND target H2"
+[relation.created]        evidence#75 --supports--> claim#74
+[patch.applied]           question#65 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#66)
+[llm.requested]           evt_490  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~5871 budget_remaining=$4.813
+[llm.responded]           evt_491  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_492  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_493  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_494  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6009 budget_remaining=$4.807
+[llm.responded]           evt_495  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_496  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_497  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_498  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6053 budget_remaining=$4.804
+[llm.responded]           evt_499  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#76 "Runway"
+[object.created]          claim#77 "Pinecone Bio's cash runway extends through Q2 of next year at current burn; a financing round is likely required to reach IND filing." (open)
+[relation.created]        claim#77 --addresses--> question#66
+[relation.created]        claim#77 --derived_from--> document#76
+[object.created]          evidence#78 "Runway: through Q2 next year"
+[relation.created]        evidence#78 --supports--> claim#77
+[patch.applied]           question#66 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#67)
+[llm.requested]           evt_509  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~6086 budget_remaining=$4.803
+[llm.responded]           evt_510  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_511  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_512  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_513  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6224 budget_remaining=$4.798
+[llm.responded]           evt_514  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_515  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_516  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_517  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6268 budget_remaining=$4.795
+[llm.responded]           evt_518  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          document#79 "Fda Meeting"
+[object.created]          claim#80 "FDA pre-IND correspondence flagged Pinecone's manufacturing controls as requiring resolution before IND filing." (open)
+[relation.created]        claim#80 --addresses--> question#67
+[relation.created]        claim#80 --derived_from--> document#79
+[object.created]          evidence#81 "FDA flagged manufacturing controls"
+[relation.created]        evidence#81 --supports--> claim#80
+[patch.applied]           question#67 status: open -> answered
+[behavior.completed]      diligence.document_researcher (3 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#68)
+[llm.requested]           evt_528  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~6289 budget_remaining=$4.794
+[llm.responded]           evt_529  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_530  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_531  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_532  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6427 budget_remaining=$4.788
+[llm.responded]           evt_533  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_534  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_535  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_536  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6471 budget_remaining=$4.785
+[llm.responded]           evt_537  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#82 "Pinecone Bio: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#82 --addresses--> question#68
+[relation.created]        claim#82 --derived_from--> document#73
+[object.created]          evidence#83 "(no fixture quote)"
+[relation.created]        evidence#83 --supports--> claim#82
+[patch.applied]           question#68 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#69)
+[llm.requested]           evt_546  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~6396 budget_remaining=$4.784
+[llm.responded]           evt_547  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_548  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_549  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_550  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6534 budget_remaining=$4.778
+[llm.responded]           evt_551  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_552  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_553  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_554  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6578 budget_remaining=$4.775
+[llm.responded]           evt_555  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#84 "Pinecone Bio: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#84 --addresses--> question#69
+[relation.created]        claim#84 --derived_from--> document#73
+[object.created]          evidence#85 "(no fixture quote)"
+[relation.created]        evidence#85 --supports--> claim#84
+[patch.applied]           question#69 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#70)
+[llm.requested]           evt_564  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~6507 budget_remaining=$4.774
+[llm.responded]           evt_565  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_566  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_567  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_568  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6645 budget_remaining=$4.769
+[llm.responded]           evt_569  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_570  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_571  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_572  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6689 budget_remaining=$4.766
+[llm.responded]           evt_573  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#86 "Pinecone Bio: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#86 --addresses--> question#70
+[relation.created]        claim#86 --derived_from--> document#73
+[object.created]          evidence#87 "(no fixture quote)"
+[relation.created]        evidence#87 --supports--> claim#86
+[patch.applied]           question#70 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#71)
+[llm.requested]           evt_582  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~6622 budget_remaining=$4.765
+[llm.responded]           evt_583  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_584  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_585  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_586  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6760 budget_remaining=$4.759
+[llm.responded]           evt_587  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_588  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_589  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_590  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6804 budget_remaining=$4.756
+[llm.responded]           evt_591  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#88 "Pinecone Bio: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#88 --addresses--> question#71
+[relation.created]        claim#88 --derived_from--> document#73
+[object.created]          evidence#89 "(no fixture quote)"
+[relation.created]        evidence#89 --supports--> claim#88
+[patch.applied]           question#71 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.document_researcher  (matched object.created: question#72)
+[llm.requested]           evt_600  diligence.document_researcher  model=claude-sonnet-4-5 tokens_in~6730 budget_remaining=$4.755
+[llm.responded]           evt_601  diligence.document_researcher  tokens_in=100 tokens_out=15 cost=$0.001 latency=0.3s
+[tool.requested]          evt_602  diligence.document_researcher  tool=diligence.fetch_company_docs args_hash=6419f36b
+[tool.responded]          evt_603  diligence.document_researcher  tool=diligence.fetch_company_docs latency=0.0s cost=$0.005
+[llm.requested]           evt_604  diligence.document_researcher  model=claude-sonnet-4-5 turn=1 tokens_in~6868 budget_remaining=$4.749
+[llm.responded]           evt_605  diligence.document_researcher  tokens_in=120 tokens_out=20 cost=$0.001 latency=0.3s
+[tool.requested]          evt_606  diligence.document_researcher  tool=diligence.summarize_document args_hash=5d6ebf6a
+[tool.responded]          evt_607  diligence.document_researcher  tool=diligence.summarize_document latency=0.0s cost=$0.002
+[llm.requested]           evt_608  diligence.document_researcher  model=claude-sonnet-4-5 turn=2 tokens_in~6912 budget_remaining=$4.746
+[llm.responded]           evt_609  diligence.document_researcher  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          claim#90 "Pinecone Bio: no specific finding for this question in the fixtures." (open)
+[relation.created]        claim#90 --addresses--> question#72
+[relation.created]        claim#90 --derived_from--> document#73
+[object.created]          evidence#91 "(no fixture quote)"
+[relation.created]        evidence#91 --supports--> claim#90
+[patch.applied]           question#72 status: open -> answered
+[behavior.completed]      diligence.document_researcher (2 objects, 3 relations)
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#74)
+[llm.requested]           evt_618  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6681 budget_remaining=$4.745
+[llm.responded]           evt_619  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          risk#92 "customer concentration"
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#75)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#77)
+[llm.requested]           evt_625  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6773 budget_remaining=$4.744
+[llm.responded]           evt_626  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#78)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#80)
+[llm.requested]           evt_631  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6734 budget_remaining=$4.743
+[llm.responded]           evt_632  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#81)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#82)
+[llm.requested]           evt_637  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6726 budget_remaining=$4.742
+[llm.responded]           evt_638  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#83)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#84)
+[llm.requested]           evt_643  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6727 budget_remaining=$4.741
+[llm.responded]           evt_644  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#85)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#86)
+[llm.requested]           evt_649  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6693 budget_remaining=$4.740
+[llm.responded]           evt_650  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#87)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#88)
+[llm.requested]           evt_655  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6696 budget_remaining=$4.739
+[llm.responded]           evt_656  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#89)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.risk_identifier  (matched object.created: claim#90)
+[llm.requested]           evt_661  diligence.risk_identifier  model=claude-sonnet-4-5 tokens_in~6697 budget_remaining=$4.738
+[llm.responded]           evt_662  diligence.risk_identifier  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[behavior.completed]      diligence.risk_identifier
+[behavior.started]        diligence.evidence_linker  (matched object.created: evidence#91)
+[behavior.completed]      diligence.evidence_linker
+[behavior.started]        diligence.memo_synthesizer  (matched object.created: risk#92)
+[llm.requested]           evt_667  diligence.memo_synthesizer  model=claude-sonnet-4-5 tokens_in~6834 budget_remaining=$4.737
+[llm.responded]           evt_668  diligence.memo_synthesizer  tokens_in=110 tokens_out=22 cost=$0.001 latency=0.4s
+[object.created]          memo#93
+[behavior.completed]      diligence.memo_synthesizer
+[runtime.idle]            queue empty, budget remaining
+
+----------------------------------------------------------------------------
+ Memo: Northwind Robotics
+----------------------------------------------------------------------------
+
+Summary:
+  Northwind Robotics shows healthy +28% YoY top-line growth with stable
+  41% gross margin. The picture is bottlenecked by single-customer
+  concentration (26% from the largest account, 52% from the top three).
+  Product roadmap (NW-7 cobot in food-and-beverage) is incremental and
+  credible. Recommendation: pass unless concentration risk can be
+  diligenced to the satisfaction of the IC.
+
+Key claims:
+  - Northwind Q3 revenue grew 28% YoY to $42M. (evidence: @evidence:Q3 revenue quote)
+  - Top three customers represent 52% of revenue. (evidence: @evidence:top three quote)
+  - Single largest customer represents 26% of revenue. (evidence: @evidence:largest customer quote)
+  - Q3 gross margin was 41%. (evidence: @evidence:gross margin quote)
+
+Open contradictions:
+  (no contradictions found)
+
+Risks:
+  - customer concentration (severity: high)
+
+Memos for Stellar Logistics, Pinecone Bio were produced under the same contract. Output written to sqlite:////tmp/activegraph_quickstart/quickstart_demo_run.db.
+
+----------------------------------------------------------------------------
+ What just happened
+----------------------------------------------------------------------------
+
+  1. You loaded a pack. A pack is a Python package that registers
+     object types, behaviors, tools, and prompts. The Diligence pack
+     ships with activegraph.
+
+  2. The runtime received three goals (one per company) and reactive
+     behaviors fired automatically as objects appeared on the graph.
+     You did not write a workflow. The behaviors are pattern-matched
+     against event types and object shapes.
+
+  3. Every LLM call was cached against a recorded fixture, so the run
+     is deterministic and runs offline. The trace above shows
+     `cache_hit=true` on every llm.responded — production runs would
+     hit a real provider instead.
+
+  4. Each memo cites evidence for every claim, surfaces at least one
+     risk, and either lists open contradictions or states explicitly
+     that none were found. This is the pack's "verifiable memo bar" —
+     a memo without these properties is a bug in the pack.
+
+  5. Every event is on disk. The full causal chain from goal to memo
+     is reconstructable from the event log alone.
+
+----------------------------------------------------------------------------
+ Try next
+----------------------------------------------------------------------------
+
+  See your run:        activegraph inspect sqlite:////tmp/activegraph_quickstart/quickstart_demo_run.db
+  Write a behavior:    activegraph quickstart --interactive
+  Read the tutorial:   https://yoheinakajima.github.io/activegraph/quickstart
+  Concept: the graph:  https://yoheinakajima.github.io/activegraph/concepts/graph
+  Concept: behaviors:  https://yoheinakajima.github.io/activegraph/concepts/behaviors
+  Common patterns:     https://yoheinakajima.github.io/activegraph/cookbook/common-patterns
+

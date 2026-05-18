@@ -2465,6 +2465,20 @@ the quickstart flow to understand what's structurally different
 about the framework. The transcript has an explicit beat for that
 moment of recognition.
 
+### v1.0 #1 errata — fixture source
+
+The original prompt for the quickstart-command commit framed
+fixtures as living under a separately-installable `activegraph_diligence`
+package with a "depends on diligence pack" optional-dep check.
+That was wrong: the diligence pack lives in `activegraph/packs/diligence/`
+as part of the main install and cannot be uninstalled separately.
+The optional-dep recovery path is dead code by construction.
+
+The correct shape: the quickstart command imports
+`from activegraph.packs.diligence import pack, fixtures` directly.
+No optional-dep check; no install-instruction error path. The
+pack is always present.
+
 ## v1.0 #2. Build order is fixed
 
 1. `examples/quickstart_session.txt` (the spec)

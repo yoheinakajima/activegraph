@@ -290,6 +290,38 @@ def _fmt_runtime_idle(_: Event) -> str:
     return f'{_format_tag("runtime.idle")}queue empty, budget remaining'
 
 
+def _fmt_pack_loaded(e: Event) -> str:
+    """CONTRACT v0.9 #25:
+    `[pack.loaded]    diligence v0.1.0 (8 object_types, 6 relation_types,
+                     7 behaviors, 3 tools, 2 policies, 5 prompts)`
+
+    The pack.loaded event payload carries the pack name, version, and
+    the full structural inventory. The trace line summarizes counts;
+    the full payload is in the JSONL export and on `activegraph
+    inspect --pack-version` for operators who need the prompt hashes.
+    """
+    p = e.payload or {}
+    name = p.get("name", "?")
+    version = p.get("version", "?")
+    # (count, singular, plural) — "policy" needs the irregular plural;
+    # the rest are regular but the table keeps the form explicit so
+    # future additions don't drift through _plural()'s simple +s rule.
+    counts = [
+        (len(p.get("object_types") or []), "object_type", "object_types"),
+        (len(p.get("relation_types") or []), "relation_type", "relation_types"),
+        (len(p.get("behaviors") or []), "behavior", "behaviors"),
+        (len(p.get("tools") or []), "tool", "tools"),
+        (len(p.get("policies") or []), "policy", "policies"),
+        (len(p.get("prompts") or {}), "prompt", "prompts"),
+    ]
+    summary = ", ".join(
+        f"{n} {singular if n == 1 else plural}"
+        for n, singular, plural in counts
+        if n > 0
+    )
+    return f'{_format_tag("pack.loaded")}{name} v{version} ({summary})'
+
+
 def _fmt_runtime_budget_exhausted(e: Event) -> str:
     by = e.payload.get("exhausted_by", "?")
     return f'{_format_tag("runtime.budget_exhausted")}stopped: {by}'
@@ -330,6 +362,7 @@ _FORMATTERS = {
     "tool.responded": _fmt_tool_responded,
     "pattern.matched": _fmt_pattern_matched,
     "runtime.idle": _fmt_runtime_idle,
+    "pack.loaded": _fmt_pack_loaded,
     "runtime.budget_exhausted": _fmt_runtime_budget_exhausted,
 }
 

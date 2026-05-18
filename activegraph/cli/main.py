@@ -132,6 +132,17 @@ def cli() -> None:
     """Inspect, replay, fork, diff, export, and migrate activegraph runs."""
 
 
+# ---- quickstart ---------------------------------------------------------
+# v1.0-rc1: the onboarding command. Lives in its own module
+# (activegraph/cli/quickstart.py) because the implementation is large
+# enough to deserve isolation and the command surface here is just
+# the registration.
+
+from activegraph.cli.quickstart import cmd_quickstart as _cmd_quickstart
+
+cli.add_command(_cmd_quickstart)
+
+
 # ---- pack ---------------------------------------------------------------
 
 
