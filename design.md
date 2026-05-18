@@ -1,15 +1,11 @@
-# ActionGraph — Design
+# Active Graph — Design
 
 > The graph is the world. Behaviors are physics. The trace is the proof.
 
 This document is the canonical product, UX, and design reference for
-**ActionGraph** — the company, the marketing site, and the cloud
-product built on top of the **Active Graph** open-source runtime. It
-is not for the OSS repository (which has its own README, CONTRACT,
-and doc site). It is for the company that promotes the runtime,
-distributes it, and sells the operator surface that the runtime
-deliberately leaves out (web UI, hosted store, team workspace,
-approval inboxes, pack registry).
+**Active Graph** — the open-source runtime, the marketing site that
+promotes it, and the cloud control plane built on top of it. One
+brand, one name, one voice across every surface.
 
 A human designer or AI coding agent should be able to read this file
 and ship a coherent marketing site, dashboard, or feature without
@@ -17,35 +13,45 @@ asking "what is this product for?" Anything that contradicts this
 file is drift — fix the implementation or update this file in the
 same change.
 
+This file lives in the OSS repo but is **for the company side**
+(marketing site and cloud product). The OSS runtime has its own
+references — `README.md`, `CONTRACT.md`, and the doc site at
+`docs.activegraph.ai`. This document does not duplicate them; it
+defines the layer that *promotes and extends* them.
+
 ---
 
 ## 1. Project Overview
 
-**Project name.** ActionGraph.
+**Project name.** Active Graph.
 
-**One-liner.** ActionGraph is the home of Active Graph, the
-event-sourced reactive graph runtime for long-running, auditable
-agentic systems — and the cloud control plane for teams that run
-it in production.
+**Package name.** `activegraph` on PyPI. Lower-case, one word, no
+hyphen. Same name everywhere the brand appears: domain
+(`activegraph.ai`), CLI (`activegraph quickstart`), docs
+(`docs.activegraph.ai`), cloud (`app.activegraph.ai`),
+GitHub (`github.com/yoheinakajima/activegraph`).
+
+**One-liner.** Active Graph is the event-sourced reactive graph
+runtime for long-running, auditable agentic systems — and the
+cloud control plane for teams that run it in production.
 
 **Tagline (marketing).** *Agents you can audit.*
 
-**Two surfaces, one brand:**
+**Two surfaces, one product:**
 
-- **Active Graph (OSS).** The Python runtime. MIT-licensed.
-  `pip install activegraph`. Source of truth lives at
-  `github.com/yoheinakajima/activegraph`. Docs at
-  `docs.activegraph.ai`.
-- **ActionGraph Cloud (commercial, planned).** Hosted event store,
-  web UI for `inspect / replay / fork / diff`, team approval
-  inboxes, pack registry, observability dashboards. Everything the
-  OSS deliberately doesn't ship.
+- **The runtime (OSS).** Python, MIT-licensed.
+  `pip install activegraph`. The runtime, the CLI, the pack format,
+  the SQLite and Postgres stores, the recorded-provider testing
+  primitives. Source of truth: the repo and the doc site.
+- **The cloud (commercial, planned).** Hosted event store, web UI
+  for `inspect / replay / fork / diff`, team approval inboxes,
+  pack registry, observability dashboards. Everything the OSS
+  deliberately doesn't ship.
 
-The brand is unified ("ActionGraph") on marketing surfaces and the
-cloud product. The OSS retains the `Active Graph` / `activegraph`
-package name — renaming a published PyPI package mid-stream is more
-damaging than a small naming asymmetry. Marketing copy says "Active
-Graph is the open-source runtime behind ActionGraph."
+The cloud is an Active Graph product — same name, same logo, same
+voice. There is no second brand. Marketing speaks of "Active Graph"
+and "Active Graph Cloud" when the distinction matters; otherwise
+just "Active Graph."
 
 **Target users.**
 
@@ -110,8 +116,8 @@ one yields.
    that shows a run should make the graph and the event log
    reachable in one click. The trace is not a debug panel; it is
    the canonical record. The UI surfaces it as such.
-2. **Show, then explain.** The OSS landing page runs the framework
-   in the visitor's eyes (animated diligence demo, or interactive
+2. **Show, then explain.** The landing page runs the framework in
+   the visitor's eyes (animated diligence demo, or interactive
    pyodide REPL) before it talks about the framework. Same rule
    for cloud features: the screenshot leads the copy.
 3. **Inspectability over magic.** When the system does something on
@@ -169,7 +175,7 @@ sideways.
 - Rerunning to reproduce a bug costs API tokens.
 
 **Typical workflow.**
-1. Lands on `actiongraph.dev`.
+1. Lands on `activegraph.ai`.
 2. Runs the demo without leaving the page.
 3. `pip install activegraph && activegraph quickstart`.
 4. Walks the 10-minute tutorial.
@@ -198,7 +204,7 @@ system did this."
 - He doesn't want to write a dashboard. He wants to use one.
 
 **Typical workflow.**
-1. Signs into ActionGraph Cloud. Sees all active runs in his
+1. Signs into Active Graph Cloud. Sees all active runs in his
    workspace.
 2. Filters to runs that hit a `behavior.failed` event in the last 24h.
 3. Opens a run. Sees the graph, the event log, the trace, the
@@ -225,7 +231,7 @@ when LLM vendors change, and that her audit team can sign off on.
 - Pricing is opaque.
 
 **Typical workflow.**
-1. Lands on `actiongraph.dev/why`.
+1. Lands on `activegraph.ai/why`.
 2. Reads the architecture page. Confirms MIT.
 3. Reads pricing. Confirms there is no per-seat tax.
 4. Forwards the link to her tech-lead with "let's prototype with
@@ -248,7 +254,7 @@ monetize a premium variant later.
 
 **Typical workflow.**
 1. Publishes a pack via `activegraph pack publish` (post-MVP CLI).
-2. Pack appears on `actiongraph.dev/packs`.
+2. Pack appears on `activegraph.ai/packs`.
 3. Users install via `activegraph pack install <name>`.
 4. Pack page shows downloads, compatible runtime versions, and a
    live fixture demo.
@@ -266,7 +272,7 @@ Eight workflows define the product. Each maps to specific screens
 ### 4.1 First-touch: visitor evaluates the OSS
 
 - **Persona.** Builder, Decision-Maker.
-- **Trigger.** Visitor lands on `actiongraph.dev` from HN /
+- **Trigger.** Visitor lands on `activegraph.ai` from HN /
   Twitter / Discord / a friend.
 - **User goal.** Decide in under 60 seconds whether this is worth
   10 minutes.
@@ -313,9 +319,9 @@ Eight workflows define the product. Each maps to specific screens
 - **User goal.** Connect their run to the cloud console without
   rewriting code.
 - **Flow.**
-  1. Signs up on `actiongraph.dev/cloud` (email + GitHub).
+  1. Signs up on `activegraph.ai/cloud` (email + GitHub).
   2. Creates a workspace. Gets a connection string + token.
-  3. Sets `ACTIVEGRAPH_STORE_URL=actiongraph://...` and re-runs.
+  3. Sets `ACTIVEGRAPH_STORE_URL=activegraph+cloud://...` and re-runs.
      Existing event log streams to cloud as events emit.
      *(Alternative: `activegraph migrate <local> <cloud>` to ship a
      historical run.)*
@@ -400,7 +406,7 @@ Eight workflows define the product. Each maps to specific screens
 - **Trigger.** Builder wants a pre-built pack for their domain.
 - **User goal.** Find a pack, evaluate it, install it.
 - **Flow.**
-  1. Browses `actiongraph.dev/packs`. Filters by domain (finance,
+  1. Browses `activegraph.ai/packs`. Filters by domain (finance,
      research, sales, ops).
   2. Pack page shows: description, install command, settings
      schema, version compatibility, downloads-per-week, link to
@@ -424,7 +430,7 @@ Eight workflows define the product. Each maps to specific screens
   2. Click **Export for Audit**. Choose JSONL or a signed bundle
      (event log + pack manifest + content hashes).
   3. Download or email to the auditor with a verification link
-     (`actiongraph.dev/verify/<hash>`).
+     (`activegraph.ai/verify/<hash>`).
 - **System behavior.** Backed by OSS `export-trace`. The signed
   bundle includes pack content hashes so the auditor can verify
   prompts didn't drift.
@@ -434,7 +440,7 @@ Eight workflows define the product. Each maps to specific screens
 
 ## 5. Information Architecture
 
-### 5.1 Marketing site (`actiongraph.dev`)
+### 5.1 Marketing site (`activegraph.ai`)
 
 ```
 /                         Home
@@ -454,6 +460,12 @@ Eight workflows define the product. Each maps to specific screens
 /verify/<hash>            Audit-bundle verification (deep link only)
 ```
 
+**Domain layout.**
+- `activegraph.ai` — marketing site (this section).
+- `docs.activegraph.ai` — OSS docs (already live).
+- `app.activegraph.ai` — cloud console (§ 5.2).
+- `status.activegraph.ai` — status page.
+
 **Navigation.**
 - Top bar: `Why`, `Demo`, `Packs`, `Docs`, `Cloud`, `Pricing`,
   `GitHub` (icon), `Sign in` (right-aligned).
@@ -466,7 +478,7 @@ Eight workflows define the product. Each maps to specific screens
 - Blog: filter by tag (`tutorial`, `case-study`, `release`, `RFC`).
 - Docs search lives at `docs.activegraph.ai` (not duplicated).
 
-### 5.2 Cloud console (`app.actiongraph.dev`)
+### 5.2 Cloud console (`app.activegraph.ai`)
 
 ```
 /                                 Workspace overview
@@ -992,7 +1004,7 @@ Anti-noise rules:
 
 ## 10. AI / Automation Behavior
 
-ActionGraph is built around AI behaviors. The product's stance on
+Active Graph is built around AI behaviors. The product's stance on
 how to *display* AI work is as important as how to *invoke* it.
 
 ### 10.1 What AI can do (in the runtime)
@@ -1076,9 +1088,10 @@ claim. Confidence is shown as "the model said 0.7" — never as
 
 ### 11.1 Ingestion (cloud event stream)
 
-- A runtime configured with `ACTIVEGRAPH_STORE_URL=actiongraph://`
-  streams events to the cloud as they emit. Transport: HTTPS POST
-  per-event, with batch fallback if backpressure builds.
+- A runtime configured with
+  `ACTIVEGRAPH_STORE_URL=activegraph+cloud://...` streams events to
+  the cloud as they emit. Transport: HTTPS POST per-event, with
+  batch fallback if backpressure builds.
 - The cloud appends to the run's event log. The log is immutable
   per OSS contract.
 - Events arrive in monotonic order per run; out-of-order arrivals
@@ -1087,11 +1100,11 @@ claim. Confidence is shown as "the model said 0.7" — never as
 
 ### 11.2 Syncing (between OSS and cloud)
 
-- `activegraph migrate <source-url> <actiongraph://...>` ships a
-  historical run from a local SQLite or self-hosted Postgres into
+- `activegraph migrate <source-url> <activegraph+cloud://...>` ships
+  a historical run from a local SQLite or self-hosted Postgres into
   cloud. Idempotent.
-- `activegraph migrate <actiongraph://...> <local-url>` ships a
-  run *out* of cloud. **Equally first-class.** The export is the
+- `activegraph migrate <activegraph+cloud://...> <local-url>` ships
+  a run *out* of cloud. **Equally first-class.** The export is the
   exact event log; replaying it locally produces the same
   projection.
 
@@ -1208,7 +1221,7 @@ The cloud reaches GA when:
 1. Five external operators are running a real workload through it
    for 30 days with no critical incidents.
 2. The pack registry hosts three packs that aren't from the
-   ActionGraph team.
+   Active Graph team.
 3. Audit-export bundles verify against a third-party tool (proves
    the signature scheme is honest).
 4. Mean time from `behavior.failed` notification to landed event
@@ -1278,18 +1291,22 @@ anything else. The rules are short on purpose.
 8. **Match the OSS error voice in cloud errors.** State the
    problem, then the fix, then a `More:` link. The same shape as
    `docs.activegraph.ai/reference/errors/*`.
-9. **Mobile is read-mostly + Inbox-approve.** Don't ship
-   write-heavy flows on mobile; redirect to desktop with a clear
-   message.
-10. **Flag conflicts between implementation and this document.**
+9. **One brand: Active Graph.** Lowercase `activegraph` in code,
+   URLs, CLI, package names. "Active Graph" (two words, both
+   capitalized) in prose. "Active Graph Cloud" when the
+   distinction from the OSS matters. Never invent a second brand.
+10. **Mobile is read-mostly + Inbox-approve.** Don't ship
+    write-heavy flows on mobile; redirect to desktop with a clear
+    message.
+11. **Flag conflicts between implementation and this document.**
     If you discover the code is doing something different from
     what this file says, file it (or surface it to the user). Do
     not silently reconcile by editing this file to match buggy
     behavior.
-11. **Never invent confidence scores, completion percentages, or
+12. **Never invent confidence scores, completion percentages, or
     "AI reliability" badges.** Per § 10.4, only show what the
     model claimed.
-12. **No new analytics events without listing them in the audit
+13. **No new analytics events without listing them in the audit
     log (§ 9.3) or the privacy page (§ 11.7).** If you're tempted
     to add silent telemetry, stop.
 
@@ -1303,18 +1320,18 @@ tracker, not in this file long-term.
 
 ### Product
 
-- **Q1 (brand).** Do we ever rename the OSS package from
-  `activegraph` to `actiongraph` on PyPI? Current answer: no,
-  cost outweighs benefit. Revisit if the asymmetry confuses more
-  than 10% of new users in qualitative testing.
-- **Q2 (cloud pricing model).** Per-event, per-run, per-seat, or
+- **Q1 (cloud pricing model).** Per-event, per-run, per-seat, or
   flat tier? Need 5 customer-development conversations before
   locking. MVP launches with a single $X/month team tier and
   metered overage TBD.
-- **Q3 (free tier).** How generous? Need to support the builder
+- **Q2 (free tier).** How generous? Need to support the builder
   persona (Tessa) using cloud for personal projects without
   abusing it. Working hypothesis: 1 user, 1 workspace, 1k events
   per day, 7-day retention.
+- **Q3 (cloud naming).** "Active Graph Cloud" is the working name;
+  consider "Active Graph for Teams" if user testing shows "Cloud"
+  reads too infrastructure-y for the operator buyer. Decide before
+  the `/cloud` page ships.
 
 ### UX
 
@@ -1408,6 +1425,21 @@ this as the brief.
 - "Enterprise-grade" (used by every B2B startup; means nothing).
 - "Delightful developer experience."
 - Anything that an AI startup landing page generator would write.
+
+---
+
+## Appendix C — Naming rules
+
+Because the brand is one word and we will be asked again:
+
+- **Package / CLI / URL / code.** Lowercase, one word: `activegraph`.
+  `pip install activegraph`, `activegraph quickstart`,
+  `activegraph.ai`, `docs.activegraph.ai`, `app.activegraph.ai`.
+- **Prose.** Two words, both capitalized: "Active Graph."
+- **The cloud offering.** "Active Graph Cloud" (when distinguishing
+  from the OSS) or just "the cloud / the console" in context.
+- **Never used.** ActiveGraph (camelCase), Active-Graph (hyphen),
+  activegraph.ai/cloud as a separate brand, or any second name.
 
 ---
 
