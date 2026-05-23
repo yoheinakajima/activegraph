@@ -109,6 +109,7 @@ plugins:
           - concepts/failure-model.md: A behavior failure is a `behavior.failed` event, not an exception; exceptions live at runtime entry points only.
         Guides:
           - guides/operating-in-production.md: Running Active Graph as a production service — observability, persistence, policies, budgets.
+          - guides/testing-falkordb-locally.md: Step-by-step guide for manually testing the FalkorDB event-store backend on your development machine.
           - guides/authoring-packs.md: Authoring a pack — object types, behaviors, tools, prompts, and policies bundled for a domain.
         Cookbook:
           - cookbook/common-patterns.md: Recurring patterns — subscriptions, fork-with-set, approval flows — with copy-pasteable code.
@@ -221,6 +222,7 @@ nav:
       - Failure model: concepts/failure-model.md
   - Guides:
       - Operating in production: guides/operating-in-production.md
+      - Testing FalkorDB locally: guides/testing-falkordb-locally.md
       - Authoring packs: guides/authoring-packs.md
   - Cookbook:
       - Common patterns: cookbook/common-patterns.md
