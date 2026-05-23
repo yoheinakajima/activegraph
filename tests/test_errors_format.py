@@ -1186,6 +1186,67 @@ def test_invalid_argument_type_postgres_target_snapshot() -> None:
     _check_snapshot("invalid_argument_type__postgres_target", err)
 
 
+def test_missing_optional_dependency_falkordb_snapshot() -> None:
+    """The shared MissingOptionalDependency leaf — FalkorDB case
+    (v1.1 STORE-FALKORDB)."""
+    err = MissingOptionalDependency(
+        package="falkordb",
+        feature="FalkorDBEventStore",
+        extras="falkordb",
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("missing_optional_dependency__falkordb", err)
+
+
+def test_invalid_argument_type_falkordb_target_snapshot() -> None:
+    """FalkorDBEventStore target type check (v1.1 STORE-FALKORDB).
+    Recovery enumerates the three accepted types with concrete usage."""
+    err = InvalidArgumentType(
+        "FalkorDBEventStore target has wrong type (got int)",
+        what_failed=(
+            "FalkorDBEventStore was constructed with a target of type int:\n"
+            "  value: 42\n  type:  int\n"
+            "Accepted types are: a `falkor://...` URL string, a "
+            "`falkordb.FalkorDB` client, or a `falkordb.Graph` instance."
+        ),
+        why=(
+            "FalkorDBEventStore's constructor branches on the target's "
+            "type — strings open a fresh client (owned), FalkorDB clients "
+            "are borrowed without ownership and have a graph selected "
+            "from them, and Graph instances are used directly. An "
+            "unknown type has no defined lifecycle, and a fuzzy match "
+            "would silently leak connections or double-close them."
+        ),
+        how_to_fix=(
+            "Pass one of:\n"
+            "    FalkorDBEventStore('falkor://host:6379/mygraph', run_id=...)\n"
+            "    FalkorDBEventStore(my_falkordb_client, run_id=...)\n"
+            "    FalkorDBEventStore(my_falkordb_graph, run_id=...)\n"
+            "\n"
+            "If you have a raw redis-py connection, construct a "
+            "falkordb.FalkorDB client from it first and pass that."
+        ),
+        context={"type": "int", "repr": "42"},
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("invalid_argument_type__falkordb_target", err)
+
+
+def test_invalid_store_url_falkordb_no_host_snapshot() -> None:
+    """falkor:///graphname is rejected — host is required (v1.1 STORE-FALKORDB)."""
+    from activegraph import InvalidStoreURL
+
+    err = None
+    try:
+        from activegraph.store.url import parse_store_url
+        parse_store_url("falkor:///mygraph")
+    except InvalidStoreURL as e:
+        err = e
+    assert err is not None, "expected InvalidStoreURL"
+    _assert_format_compliant(err)
+    _check_snapshot("invalid_store_url__falkordb_no_host", err)
+
+
 def test_invalid_runtime_config_conflicting_args_snapshot() -> None:
     """Runtime(persist_to=, store=) — the most common misconfiguration."""
     err = InvalidRuntimeConfiguration(

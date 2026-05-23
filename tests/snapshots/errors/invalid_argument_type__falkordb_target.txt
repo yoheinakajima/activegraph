@@ -1,0 +1,21 @@
+InvalidArgumentType: FalkorDBEventStore target has wrong type (got int)
+
+What failed:
+  FalkorDBEventStore was constructed with a target of type int:
+    value: 42
+    type:  int
+  Accepted types are: a `falkor://...` URL string, a `falkordb.FalkorDB` client, or a `falkordb.Graph` instance.
+
+Why:
+  FalkorDBEventStore's constructor branches on the target's type — strings open a fresh client (owned), FalkorDB clients are borrowed without ownership and have a graph selected from them, and Graph instances are used directly. An unknown type has no defined lifecycle, and a fuzzy match would silently leak connections or double-close them.
+
+How to fix:
+  Pass one of:
+      FalkorDBEventStore('falkor://host:6379/mygraph', run_id=...)
+      FalkorDBEventStore(my_falkordb_client, run_id=...)
+      FalkorDBEventStore(my_falkordb_graph, run_id=...)
+
+  If you have a raw redis-py connection, construct a falkordb.FalkorDB client from it first and pass that.
+
+More:
+  https://docs.activegraph.ai/errors/invalid-argument-type

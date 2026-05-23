@@ -15,7 +15,24 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-Nothing yet. v1.1 scope is tracked in `v1.1-plan.md` (consolidated by
+### Added
+
+- **`FalkorDBEventStore`** (v1.1 STORE-FALKORDB): a third event-store
+  backend, alongside SQLite and Postgres. FalkorDB is a Redis-module
+  property graph database with OpenCypher; the event log is modelled
+  as `(:Run)-[:HAS_EVENT]->(:Event)` nodes so operators who pick
+  FalkorDB can ad-hoc-query the audit trail in Cypher with the same
+  DSL the framework already uses for behavior subscriptions. Opt-in
+  via `pip install 'activegraph[falkordb]'`; URL form is
+  `falkor://[user:pass@]host[:port]/<graph_name>` (also
+  `falkordb://...`). The full `EventStoreConformance` suite runs
+  against a live FalkorDB in CI (gated on
+  `ACTIVEGRAPH_TEST_FALKORDB_URL`, mirroring the Postgres pattern).
+  Phase 2 (graph-projection backend for the live runtime graph) and
+  Phase 3 (subscription-Cypher reuse) are scoped in the FalkorDB
+  store module docstring and remain follow-ups.
+
+Nothing else yet. v1.1 scope is tracked in `v1.1-plan.md` (consolidated by
 the post-v1.0.3 contract review). v1.0.4 surfaced two additional v1.1
 candidates: C-3 (lock the failure-routing convention for eval-time
 pattern failures and `ReplayDivergenceError`) and I-4 (cross-link

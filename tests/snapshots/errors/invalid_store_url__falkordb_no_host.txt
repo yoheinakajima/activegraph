@@ -1,0 +1,18 @@
+InvalidStoreURL: falkordb URL 'falkor:///mygraph' has no host
+
+What failed:
+  The URL 'falkor:///mygraph' has a `falkor` scheme but no host. FalkorDB is a Redis-protocol service; a host is required.
+
+Why:
+  The framework addresses stores by URL everywhere — runtime, CLI, library — so the same string can be passed around without ambiguity about which driver opens it. A malformed URL is refused at parse time rather than silently coerced to a default scheme; guessing wrong would either corrupt the audit trail or open an unintended store.
+
+How to fix:
+  Use:
+      falkor://host/graphname
+  or with port and credentials:
+      falkor://user:pass@host:6379/graphname
+
+  The path component (after the host) is the FalkorDB graph name; if omitted, the store uses the graph named 'activegraph'.
+
+More:
+  https://docs.activegraph.ai/errors/invalid-store-url-error

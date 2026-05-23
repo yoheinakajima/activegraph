@@ -25,18 +25,22 @@ from activegraph.errors import StorageError
 
 SQLITE_SCHEMES = ("sqlite",)
 POSTGRES_SCHEMES = ("postgres", "postgresql")
+FALKORDB_SCHEMES = ("falkor", "falkordb")
 
 
 @dataclass(frozen=True)
 class StoreURL:
     scheme: str
-    """Normalised: "sqlite" or "postgres"."""
+    """Normalised: "sqlite", "postgres", or "falkordb"."""
 
     raw: str
     """The original URL as the user typed it."""
 
     sqlite_path: Optional[str] = None
     """Filesystem path; populated for SQLite URLs only."""
+
+    falkordb_graph: Optional[str] = None
+    """Graph name from the URL path; populated for FalkorDB URLs only."""
 
 
 class InvalidStoreURL(StorageError, ValueError):
@@ -179,6 +183,30 @@ def parse_store_url(url: str) -> StoreURL:
                 url=url,
             )
         return StoreURL(scheme="postgres", raw=url)
+    if scheme in FALKORDB_SCHEMES:
+        if not parsed.hostname:
+            raise _invalid_url(
+                f"falkordb URL {url!r} has no host",
+                what_failed=(
+                    f"The URL {url!r} has a `{scheme}` scheme but no host. "
+                    f"FalkorDB is a Redis-protocol service; a host is required."
+                ),
+                how_to_fix=(
+                    "Use:\n"
+                    "    falkor://host/graphname\n"
+                    "or with port and credentials:\n"
+                    "    falkor://user:pass@host:6379/graphname\n"
+                    "\n"
+                    "The path component (after the host) is the FalkorDB graph "
+                    "name; if omitted, the store uses the graph named "
+                    "'activegraph'."
+                ),
+                url=url,
+            )
+        graph_name = parsed.path.lstrip("/") or "activegraph"
+        return StoreURL(
+            scheme="falkordb", raw=url, falkordb_graph=graph_name
+        )
     raise _invalid_url(
         f"unsupported store URL scheme {scheme!r} in {url!r}",
         what_failed=(
@@ -189,8 +217,9 @@ def parse_store_url(url: str) -> StoreURL:
             "Supported schemes are:\n"
             "    sqlite:///...        local SQLite file\n"
             "    postgres://...       PostgreSQL (also accepted: postgresql://)\n"
+            "    falkor://...         FalkorDB (also accepted: falkordb://)\n"
             "\n"
-            "Other databases are not supported in v1.0; the EventStore protocol "
+            "Other databases are not supported in v1.1; the EventStore protocol "
             "in activegraph/store/base.py is the path for adding new backends."
         ),
         url=url,
@@ -214,6 +243,10 @@ def open_store(url: str, run_id: str) -> Any:
         from activegraph.store.postgres import PostgresEventStore
 
         return PostgresEventStore(parsed.raw, run_id=run_id)
+    if parsed.scheme == "falkordb":
+        from activegraph.store.falkordb import FalkorDBEventStore
+
+        return FalkorDBEventStore(parsed.raw, run_id=run_id)
     # Defensive: parse_store_url should have rejected this already.
     raise _invalid_url(
         f"unhandled scheme {parsed.scheme!r}",

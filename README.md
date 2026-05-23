@@ -40,6 +40,7 @@ pip install "activegraph[llm]"             # Anthropic + OpenAI providers
 pip install "activegraph[anthropic]"       # Anthropic provider only
 pip install "activegraph[openai]"          # OpenAI provider only (+ tiktoken)
 pip install "activegraph[postgres]"        # Postgres-backed event store
+pip install "activegraph[falkordb]"        # FalkorDB-backed event store (Cypher graph DB)
 pip install "activegraph[prometheus]"      # Prometheus metrics
 pip install "activegraph[all]"             # everything
 ```

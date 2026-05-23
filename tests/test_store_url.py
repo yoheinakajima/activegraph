@@ -55,3 +55,30 @@ class TestParseStoreURL:
     def test_postgres_missing_host(self):
         with pytest.raises(InvalidStoreURL):
             parse_store_url("postgres://")
+
+    def test_falkor_basic(self):
+        u = parse_store_url("falkor://localhost:6379/mygraph")
+        assert u.scheme == "falkordb"
+        assert u.falkordb_graph == "mygraph"
+        assert u.raw == "falkor://localhost:6379/mygraph"
+
+    def test_falkordb_alias(self):
+        u = parse_store_url("falkordb://host/mygraph")
+        assert u.scheme == "falkordb"
+        assert u.falkordb_graph == "mygraph"
+
+    def test_falkor_default_graph_when_path_omitted(self):
+        u = parse_store_url("falkor://localhost:6379")
+        assert u.scheme == "falkordb"
+        assert u.falkordb_graph == "activegraph"
+
+    def test_falkor_with_credentials(self):
+        u = parse_store_url("falkor://user:pass@host:6379/g")
+        assert u.scheme == "falkordb"
+        assert u.falkordb_graph == "g"
+
+    def test_falkor_missing_host_rejected(self):
+        with pytest.raises(InvalidStoreURL) as exc:
+            parse_store_url("falkor:///mygraph")
+        msg = str(exc.value).lower()
+        assert "no host" in msg or "host" in msg

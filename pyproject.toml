@@ -38,6 +38,7 @@ anthropic = ["anthropic>=0.40", "pydantic>=2"]
 openai = ["openai>=1.0", "tiktoken>=0.7", "pydantic>=2"]
 sqlite = []     # SQLite is stdlib — no extra deps needed for the v0.5 store
 postgres = ["psycopg[binary]>=3.1,<4"]
+falkordb = ["falkordb>=1.0"]
 prometheus = ["prometheus_client>=0.20"]
 all = [
     "anthropic>=0.40",
@@ -45,6 +46,7 @@ all = [
     "tiktoken>=0.7",
     "pydantic>=2",
     "psycopg[binary]>=3.1,<4",
+    "falkordb>=1.0",
     "prometheus_client>=0.20",
 ]
 dev = [
@@ -52,6 +54,7 @@ dev = [
     "pydantic>=2",
     "prometheus_client>=0.20",
     "psycopg[binary]>=3.1,<4",
+    "falkordb>=1.0",
 ]
 # Doc-site build deps. The docs workflow installs from this extra so
 # the install line and the mkdocs config can't drift the way they did
@@ -112,6 +115,7 @@ exclude = ["tests*", "examples*"]
 [tool.pytest.ini_options]
 markers = [
     "postgres: tests that require a running Postgres (skipped unless ACTIVEGRAPH_TEST_POSTGRES_URL is set)",
+    "falkordb: tests that require a running FalkorDB (skipped unless ACTIVEGRAPH_TEST_FALKORDB_URL is set)",
     "slow: long-running tests opt-in by name in CI (e.g. wheel-completeness gate; builds + installs into a fresh venv)",
 ]
 

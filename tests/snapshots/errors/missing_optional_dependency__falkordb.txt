@@ -1,0 +1,16 @@
+MissingOptionalDependency: FalkorDBEventStore requires the 'falkordb' Python package
+
+What failed:
+  While initializing FalkorDBEventStore, the import of 'falkordb' failed because the package is not installed in this environment.
+
+Why:
+  The framework keeps optional subsystems off the default install path so a minimal install stays small. Each optional subsystem declares its dependency explicitly; missing it produces this error rather than failing later with a confusing AttributeError or ImportError deep inside the subsystem.
+
+How to fix:
+  Install the optional dependency:
+      pip install 'activegraph[falkordb]'
+
+  If you don't need FalkorDBEventStore, the bare `activegraph` install does not depend on 'falkordb' — the error only fires when the subsystem is actually used.
+
+More:
+  https://docs.activegraph.ai/errors/missing-optional-dependency

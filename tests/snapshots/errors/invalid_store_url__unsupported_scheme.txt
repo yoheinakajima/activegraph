@@ -10,8 +10,9 @@ How to fix:
   Supported schemes are:
       sqlite:///...        local SQLite file
       postgres://...       PostgreSQL (also accepted: postgresql://)
+      falkor://...         FalkorDB (also accepted: falkordb://)
 
-  Other databases are not supported in v1.0; the EventStore protocol in activegraph/store/base.py is the path for adding new backends.
+  Other databases are not supported in v1.1; the EventStore protocol in activegraph/store/base.py is the path for adding new backends.
 
 More:
   https://docs.activegraph.ai/errors/invalid-store-url-error
