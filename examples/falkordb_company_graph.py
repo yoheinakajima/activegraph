@@ -5,24 +5,23 @@ Creates a realistic graph of a small software company:
   - Typed relations: works_in, leads, assigned_to, depends_on, part_of
   - Behaviors that react to events and populate the graph reactively
 
-The script does two things:
-  1. Runs the activegraph runtime with FalkorDB as the **event log** store
-     (Run + Event nodes — the source of truth for replay/fork/audit).
-  2. Materialises the derived graph state as real Cypher nodes & relations
-     in a separate FalkorDB graph called ``company_graph``, so you can
-     query the business data directly with Cypher.
+activegraph uses FalkorDB as the event store (Run + Event nodes).
+After the runtime finishes, the script also writes the derived business
+objects (person, department, project, task) and their relationships as
+real Cypher nodes/rels into the **same** FalkorDB graph.  Different labels
+coexist without interference, so you can query business data directly.
 
 Requires FalkorDB running locally (see docs/guides/testing-falkordb-locally.md):
 
     docker run -d --name falkordb -p 6379:6379 falkordb/falkordb:latest
     python examples/falkordb_company_graph.py
 
-After it runs, inspect the business graph:
+After it runs, query the business graph:
 
     redis-cli -p 6379
-    GRAPH.QUERY company_graph "MATCH (p:person)-[:works_in]->(d:department) RETURN p.name, d.name"
-    GRAPH.QUERY company_graph "MATCH (t:task) WHERE t.priority = 'high' RETURN t.title, t.project ORDER BY t.story_points DESC"
-    GRAPH.QUERY company_graph "MATCH (t:task)-[:depends_on]->(b:task) RETURN t.title, b.title"
+    GRAPH.QUERY company "MATCH (p:person)-[:works_in]->(d:department) RETURN p.name, d.name"
+    GRAPH.QUERY company "MATCH (t:task) WHERE t.priority = 'high' RETURN t.title, t.project ORDER BY t.story_points DESC"
+    GRAPH.QUERY company "MATCH (t:task)-[:depends_on]->(b:task) RETURN t.title, b.title"
 """
 
 from __future__ import annotations
@@ -253,76 +252,58 @@ def register_behaviors() -> None:
 # ── materialise derived graph to FalkorDB ─────────────────────────────────
 
 
-def _falkordb_client_from_url(url: str):
-    """Parse falkor://host:port/graph-name and return (FalkorDB client, graph name)."""
-    import falkordb as fdb
-
-    # Normalise to a single scheme then strip it
-    url = url.replace("falkordb://", "falkor://")
-    if url.startswith("falkor://"):
-        url = url[len("falkor://"):]
-    host_port, _, graph_name = url.partition("/")
-    host, _, port_str = host_port.partition(":")
-    port = int(port_str) if port_str else 6379
-    return fdb.FalkorDB(host=host, port=port), graph_name or "company"
+# ── materialise derived graph into the same FalkorDB graph ────────────────
 
 
-def materialize_to_falkordb(ag_graph, url: str, derived_graph_name: str) -> None:
-    """Write the activegraph in-memory graph as real Cypher nodes & relations.
+def materialize_to_falkordb(ag_graph, url: str) -> None:
+    """Write activegraph objects/relations as labelled nodes & Cypher rels.
 
-    This creates a separate FalkorDB graph (``derived_graph_name``) where each
-    activegraph object becomes a labelled node and each relation becomes a Cypher
-    relationship.  This is independent of the event-log graph used by the store.
+    Uses the same FalkorDB graph as the event store.  Business nodes
+    (person, department, task …) coexist with Run/Event nodes because they
+    carry different labels — no interference with the event log.
     """
     import falkordb as fdb
 
-    db, _ = _falkordb_client_from_url(url)
-    g = db.select_graph(derived_graph_name)
+    # Parse falkor[db]://host:port/graph-name
+    raw = url.replace("falkordb://", "falkor://")
+    if raw.startswith("falkor://"):
+        raw = raw[len("falkor://"):]
+    host_port, _, graph_name = raw.partition("/")
+    host, _, port_str = host_port.partition(":")
+    port = int(port_str) if port_str else 6379
+    graph_name = graph_name or "company"
 
-    # Drop and recreate for a clean run
-    try:
-        g.delete()
-    except Exception:
-        pass
+    db = fdb.FalkorDB(host=host, port=port)
+    g = db.select_graph(graph_name)
 
-    print(f"\n⬆  Materialising derived graph → FalkorDB graph '{derived_graph_name}'")
+    print(f"\n⬆  Writing business nodes/rels into FalkorDB graph '{graph_name}'")
 
-    # --- nodes ---------------------------------------------------------------
+    # nodes
     for obj in ag_graph.all_objects():
-        # Flatten obj.data as individual node properties so Cypher can filter on them
         props = {"ag_id": obj.id}
         for k, v in obj.data.items():
             if isinstance(v, (str, int, float, bool)):
                 props[k] = v
             elif isinstance(v, list):
-                props[k] = json.dumps(v)   # lists → JSON string (FalkorDB 1.x)
-        prop_str = ", ".join(
-            f"{k}: {json.dumps(v)}" for k, v in props.items()
-        )
+                props[k] = json.dumps(v)
+        prop_str = ", ".join(f"{k}: {json.dumps(v)}" for k, v in props.items())
         g.query(f"CREATE (:{obj.type} {{{prop_str}}})")
 
-    nodes_created = g.query("MATCH (n) RETURN count(n)").result_set[0][0]
-    print(f"   nodes created   : {nodes_created}")
-
-    # --- relations -----------------------------------------------------------
-    rels_written = 0
+    # relations
     for rel in ag_graph.all_relations():
-        cypher = (
+        g.query(
             f"MATCH (a {{ag_id: {json.dumps(rel.source)}}}), "
             f"(b {{ag_id: {json.dumps(rel.target)}}}) "
             f"CREATE (a)-[:{rel.type}]->(b)"
         )
-        g.query(cypher)
-        rels_written += 1
 
-    print(f"   relations created: {rels_written}")
-    print(f"   graph name       : {derived_graph_name}")
-    print(f"\n   Sample queries (redis-cli -p <port>):")
-    print(f'   GRAPH.QUERY {derived_graph_name} "MATCH (p:person)-[:works_in]->(d:department) RETURN p.name, d.name"')
-    print(f'   GRAPH.QUERY {derived_graph_name} "MATCH (t:task) WHERE t.priority = \'high\' RETURN t.title, t.project ORDER BY t.story_points DESC"')
-    print(f'   GRAPH.QUERY {derived_graph_name} "MATCH (t:task)-[:depends_on]->(b:task) RETURN t.title, b.title"')
-
-
+    total_nodes = g.query("MATCH (n) RETURN count(n)").result_set[0][0]
+    print(f"   total nodes in '{graph_name}': {total_nodes}  "
+          f"(Run/Event + {len(list(ag_graph.all_objects()))} business nodes)")
+    print(f"\n   Sample queries:")
+    print(f'   GRAPH.QUERY {graph_name} "MATCH (p:person)-[:works_in]->(d:department) RETURN p.name, d.name"')
+    print(f'   GRAPH.QUERY {graph_name} "MATCH (t:task) WHERE t.priority = \'high\' RETURN t.title, t.project"')
+    print(f'   GRAPH.QUERY {graph_name} "MATCH (t:task)-[:depends_on]->(b:task) RETURN t.title, b.title"')
 
 
 
@@ -401,12 +382,10 @@ def main() -> None:
                 f" ← blocks ←  {blocker.data['title'][:35]}"
             )
 
-    # ── materialise derived graph as real Cypher nodes/relations ─────────
-    materialize_to_falkordb(graph, FALKOR_URL, "company_graph")
+    # ── materialise business nodes/rels into the same FalkorDB graph ─────
+    materialize_to_falkordb(graph, FALKOR_URL)
 
-    print("\n✅ Done.")
-    print(f"\nNote: '{FALKOR_URL.rsplit('/', 1)[-1]}' holds the event log (Run + Event nodes).")
-    print(f"The derived business graph is in 'company_graph' — query it with the commands above.")
+    print("\n✅ Done. Query the graph above with redis-cli.")
     print()
 
 
