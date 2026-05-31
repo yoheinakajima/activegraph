@@ -1,3 +1,13 @@
+## Document map pointer (v1.1 cleanup path)
+
+See [`CONTRACT-INDEX.md`](CONTRACT-INDEX.md) for the current map of
+contract, changelog, roadmap, future-ideas, and audit documents.
+`CONTRACT.md` remains the source of truth for locked decisions and
+historical archeology. Future v1.1 implementation scoping lives in
+[`ROADMAP.md`](ROADMAP.md), not inline inside `CONTRACT.md`.
+
+---
+
 ## Post-v1.0.3 contract review banner (2026-05-19)
 
 A documentation-heavy review of the cumulative document was run after
