@@ -218,6 +218,9 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
   via Claude Code, Cursor, Replit, and similar tooling.
 - **[CHANGELOG.md](CHANGELOG.md)** — every release, with per-version
   migration notes.
+- **[Tau2 Regimes port milestone](docs/tau2_regimes_port_milestone.md)** —
+  implementation handoff for turning tau2-bench tracing, write-intent,
+  and observer artifacts into an artifact-first `regimes` target.
 - **[CONTRACT.md](CONTRACT.md)** — locked design decisions, version
   by version. Useful when you want to know *why* something is the way
   it is.
