@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from activegraph.runtime.diff import Diff, DivergentObject
+
 from activegraph import (
     FrozenClock,
     Graph,
@@ -51,9 +53,7 @@ def test_diff_identical_runs_has_no_divergence(tmp_path):
 
     diff = parent.diff(fork)
     # The fork ran to idle without divergent input; final state should match.
-    assert diff.is_identical or (
-        not diff.divergent_objects and not diff.divergent_relations
-    )
+    assert diff.is_identical is True
 
 
 def test_diff_reports_divergent_objects(tmp_path):
@@ -119,3 +119,18 @@ def test_diff_same_logical_event_id_different_payload_is_not_shared(tmp_path):
     fork_only_ids = {e.id for e in diff.fork_only_events}
     overlap = parent_ids_in_shared & fork_only_ids
     assert not overlap, "shared / fork-only event partitions overlapped"
+
+def test_diff_is_identical_is_a_bool_property():
+    """`Diff.is_identical` is documented and used as a bool, not a method.
+
+    A previous regression turned it into a plain method, which made
+    `if diff.is_identical:` vacuously truthy (bound methods always are).
+    Pin the contract: a freshly constructed `Diff` reports
+    `is_identical is True`, and adding a divergent object flips it to
+    `False`. The exact `is True` / `is False` matters because anything
+    truthy would silently re-introduce the bug.
+    """
+    d = Diff(parent_run_id="p", fork_run_id="f")
+    assert d.is_identical is True
+    d.divergent_objects.append(DivergentObject(id="x", in_parent=None, in_fork=None))
+    assert d.is_identical is False
