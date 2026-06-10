@@ -14,3 +14,5 @@ guide.
 ::: activegraph.NoOpMetrics
 
 ::: activegraph.PrometheusMetrics
+
+::: activegraph.OpenTelemetryMetrics
