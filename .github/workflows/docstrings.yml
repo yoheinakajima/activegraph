@@ -23,11 +23,6 @@ on:
       - "scripts/gate_docstrings.py"
       - ".github/workflows/docstrings.yml"
   pull_request:
-    paths:
-      - "activegraph/**"
-      - "docstring_gaps.toml"
-      - "scripts/gate_docstrings.py"
-      - ".github/workflows/docstrings.yml"
   workflow_dispatch:
 
 jobs:
