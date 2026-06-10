@@ -40,13 +40,6 @@ cheap.
 
 ## The CLI surface
 
-!!! note "The `--set` flag is part of the v1.1 release"
-    The `--set <pack>.<key>=<value>` flag below is documented in
-    CONTRACT v1.0 but lands in v1.1 (see [CONTRACT v1.1 #1](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md#v11-1-cli-flags-specd-but-not-implemented)).
-    Until then, use the Python-API form documented in
-    [Fork with a pack-setting override (v1.0 — Python API)](../cookbook/common-patterns.md#fork-with-a-pack-setting-override-v10-python-api)
-    for fork-with-override workflows.
-
 ```bash
 activegraph fork <parent-url> \
     --run-id <parent-run> \
@@ -63,17 +56,19 @@ Three flags shape the fork:
   fork. The key is a dotted path into pack settings only
   (`diligence.confidence_threshold_for_review=0.9` is in scope;
   `runtime.budget.max_cost_usd=10` is out of scope). Multiple
-  `--set` flags compose; type coercion is Pydantic's job; unknown
-  keys fail loud at fork-time with a `RegistrationError`-style
-  message naming the typo and the valid keys.
+  `--set` flags compose. Syntax and "pack was not loaded by this
+  fork point" errors fail at fork time; unknown setting paths and
+  type coercion errors fail when the pack reloads and Pydantic
+  validates the resulting settings.
 - **`--record`** — mark the fork as a re-recording. Behaviors
   whose prompts changed since the parent run will be re-recorded
   rather than cache-hit; new cache entries land in the fork's
   events.
 
-`--set` is the primitive that makes "what if I'd configured this
-differently?" cheap. The semantics — pack settings only, fail
-loud on typos — are documented in the
+`--set` records a fork-local `pack.settings_overridden` event,
+then normal pack loading applies and validates that override before
+post-fork behaviors run. The semantics — pack settings only,
+auditable event-log override, fail loud on typos — are documented in the
 [CLI reference](../reference/cli/).
 
 ## How the cache replays

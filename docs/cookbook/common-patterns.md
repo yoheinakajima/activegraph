@@ -13,11 +13,14 @@ right next stop.
 
 ## Retry behaviors on transient failures
 
-The canonical pattern for handling LLM or tool failures that are
-non-deterministic (network errors, rate limits, timeouts).
-`behavior.failed` events carry the original `reason` code; a
-retry behavior subscribes to them with a `where=` filter on the
-codes that warrant retry:
+The canonical pattern for handling terminal LLM or tool failures
+that are non-deterministic (network errors, rate limits, timeouts).
+LLM provider-call transients (`llm.network_error`,
+`llm.rate_limited`) already get a small bounded retry loop inside
+the runtime; only the exhausted terminal failure reaches
+`behavior.failed`. `behavior.failed` events carry the original
+`reason` code, so a retry behavior can subscribe to them with a
+`where=` filter on the codes that warrant a higher-level retry:
 
 ```python
 from activegraph import behavior
@@ -45,10 +48,11 @@ def retry_transient(event, graph, ctx):
     })
 ```
 
-Retries are first-class graph citizens (CONTRACT v0.6 #13). Every
-retry appears in the trace and can be forked from. Per-behavior
-caps live in the behavior body; the framework doesn't have a
-global retry policy. See
+Retries are first-class graph citizens (CONTRACT v0.6 #13). Runtime
+LLM attempts appear as `llm.requested` / `llm.responded(error=...)`
+pairs; terminal retry behavior events appear in the trace and can be
+forked from. Per-behavior caps live in the behavior body; the
+framework's built-in provider-call retry is intentionally small. See
 [`failure-model`](../concepts/failure-model.md) for why
 `behavior.failed` is an event rather than an exception that
 escapes to your code.
@@ -58,14 +62,6 @@ escapes to your code.
 When you want to know "what would happen if I changed this
 setting," fork from a point before the setting takes effect, run
 the fork with the override, and diff.
-
-!!! note "The `fork --set` flag is part of the v1.1 release"
-    The CLI form below shows the `--set <pack>.<key>=<value>` flag
-    documented in CONTRACT v1.0. The flag itself lands in v1.1
-    (see [CONTRACT v1.1 #1](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md#v11-1-cli-flags-specd-but-not-implemented)).
-    Until then, use the Python-API form in
-    [Fork with a pack-setting override (v1.0 — Python API)](#fork-with-a-pack-setting-override-v10-python-api)
-    below.
 
 ```bash
 # Find the event before the setting matters (usually the goal
@@ -90,22 +86,31 @@ the `--set` rules (pack-settings-only, fail-loud-on-typo).
 
 ## Fork with a pack-setting override (v1.0 — Python API)
 
-The canonical home for the fork-with-override workflow until the
-CLI's `--set` flag lands in v1.1. The Python form does the same
-thing the CLI form will: copies the parent's events up to the
-fork point, then resumes execution under different pack settings.
+Use the Python API when your application already owns runtime
+construction or needs to compute settings objects directly. It does
+the same conceptual work as `activegraph fork --set`: copies the
+parent's events up to the fork point, then resumes execution under
+different pack settings.
 
 ```python
-from activegraph import Graph, IDGen, FrozenClock, Runtime
+import sqlite3
+
+from activegraph import Runtime
 from activegraph.packs.diligence import DiligenceSettings, pack as diligence_pack
 from activegraph.packs.diligence.fixtures import (
-    RecordedDiligenceProvider, THREE_COMPANIES, company_goal,
+    RecordedDiligenceProvider,
+    THREE_COMPANIES,
 )
 from activegraph.store import open_store
 
 PARENT_URL = "sqlite:////tmp/activegraph_quickstart/quickstart_demo_run.db"
 PARENT_RUN = "quickstart_demo_run"
 FORK_RUN = "quickstart_cautious_fork"
+
+# Remove a prior copy if you are re-running this snippet.
+with sqlite3.connect("/tmp/activegraph_quickstart/quickstart_demo_run.db") as _conn:
+    _conn.execute("DELETE FROM events WHERE run_id = ?", (FORK_RUN,))
+    _conn.execute("DELETE FROM runs WHERE run_id = ?", (FORK_RUN,))
 
 # Find a fork point — typically the goal.created event for the
 # company you want to re-run with the override.
@@ -127,7 +132,11 @@ SQLiteEventStore.fork_run(
 )
 
 # Load the fork and run it with the override settings.
-fork_rt = Runtime.load(PARENT_URL, run_id=FORK_RUN)
+fork_rt = Runtime.load(
+    PARENT_URL,
+    run_id=FORK_RUN,
+    llm_provider=RecordedDiligenceProvider(companies=THREE_COMPANIES),
+)
 fork_rt.load_pack(
     diligence_pack,
     settings=DiligenceSettings(
@@ -148,9 +157,8 @@ activegraph diff sqlite:////tmp/activegraph_quickstart/quickstart_demo_run.db \
 ```
 
 The diff shows the structural difference produced by the
-threshold change. When `--set` lands in v1.1, the same workflow
-collapses to a single CLI command; until then, this is the
-canonical recipe.
+threshold change. For operator workflows, prefer the CLI form above;
+for embedded application code, keep the Python form.
 
 ## Pattern subscriptions for cross-object reactivity
 

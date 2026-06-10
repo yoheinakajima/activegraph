@@ -8,6 +8,7 @@ import tempfile
 
 import pytest
 from click.testing import CliRunner
+from pydantic import BaseModel
 
 from activegraph import Graph, Runtime, behavior, clear_registry
 from activegraph.cli.main import (
@@ -20,6 +21,7 @@ from activegraph.cli.main import (
     EXIT_USAGE_ERROR,
     cli,
 )
+from activegraph.packs import Pack, PackSettingsMissingError
 
 
 def _seed_run(path: str) -> str:
@@ -34,6 +36,32 @@ def _seed_run(path: str) -> str:
     rt.run_goal("test")
     rt.save_state()
     return rt.run_id
+
+
+def _seed_memo_run(path: str) -> str:
+    g = Graph()
+    rt = Runtime(g, persist_to=path)
+    company = rt.graph.add_object("company", {"name": "Northwind"})
+    rt.graph.add_object(
+        "memo",
+        {
+            "company_id": company.id,
+            "summary": "Needle-bearing summary for the operator.",
+            "key_claims": [
+                {"text": "Revenue is growing.", "evidence_ids": ["evidence#1"]}
+            ],
+            "open_contradictions": [],
+            "contradictions_note": "No contradictions in fixture data.",
+            "risks": [{"title": "Customer concentration", "severity": "medium"}],
+        },
+    )
+    rt.save_state()
+    return rt.run_id
+
+
+class _CliSettings(BaseModel):
+    n: int = 1
+    enabled: bool = True
 
 
 @pytest.fixture
@@ -212,6 +240,88 @@ class TestFork:
         assert result.exit_code == EXIT_OK, result.output
         assert "recording fork" in result.output
 
+    def test_set_records_fork_settings_override_event(self, temp_db, runner):
+        pack = Pack(name="demo", version="0.1.0", settings_schema=_CliSettings)
+        rt = Runtime(Graph(), persist_to=temp_db)
+        rt.load_pack(pack, settings=_CliSettings(n=1))
+        fork_at = next(e.id for e in rt.graph.events if e.type == "pack.loaded")
+
+        result = runner.invoke(
+            cli,
+            [
+                "fork", f"sqlite:///{temp_db}",
+                "--run-id", rt.run_id,
+                "--at-event", fork_at,
+                "--set", "demo.n=42",
+                "--set", "demo.enabled=false",
+                "--json",
+            ],
+        )
+        assert result.exit_code == EXIT_OK, result.output
+        obj = json.loads(result.output)
+        assert obj["settings_overrides"] == {
+            "demo": {"n": 42, "enabled": False}
+        }
+        assert obj["settings_override_events"]
+
+        fork_rt = Runtime.load(f"sqlite:///{temp_db}", run_id=obj["new_run_id"])
+        override_events = [
+            e for e in fork_rt.graph.events
+            if e.type == "pack.settings_overridden"
+        ]
+        assert len(override_events) == 1
+        assert override_events[0].payload["overrides"] == {
+            "n": 42,
+            "enabled": False,
+        }
+
+        fork_rt.load_pack(pack)
+        assert fork_rt._pack_state.pack_settings["demo"].n == 42
+        assert fork_rt._pack_state.pack_settings["demo"].enabled is False
+        latest_load = [
+            e for e in fork_rt.graph.events if e.type == "pack.loaded"
+        ][-1]
+        assert latest_load.payload["settings"]["n"] == 42
+
+    def test_set_rejects_pack_not_loaded_by_fork_point(self, temp_db, runner):
+        run_id = _seed_run(temp_db)
+        rt = Runtime.load(f"sqlite:///{temp_db}", run_id=run_id)
+        fork_at = next(e.id for e in rt.graph.events if e.type == "object.created")
+
+        result = runner.invoke(
+            cli,
+            [
+                "fork", f"sqlite:///{temp_db}",
+                "--run-id", run_id,
+                "--at-event", fork_at,
+                "--set", "demo.n=42",
+            ],
+        )
+        assert result.exit_code == EXIT_USAGE_ERROR, result.output
+        assert "no pack.loaded event" in result.output
+
+    def test_set_unknown_setting_fails_when_pack_loads(self, temp_db, runner):
+        pack = Pack(name="demo", version="0.1.0", settings_schema=_CliSettings)
+        rt = Runtime(Graph(), persist_to=temp_db)
+        rt.load_pack(pack, settings=_CliSettings(n=1))
+        fork_at = next(e.id for e in rt.graph.events if e.type == "pack.loaded")
+
+        result = runner.invoke(
+            cli,
+            [
+                "fork", f"sqlite:///{temp_db}",
+                "--run-id", rt.run_id,
+                "--at-event", fork_at,
+                "--set", "demo.missing=42",
+                "--json",
+            ],
+        )
+        assert result.exit_code == EXIT_OK, result.output
+        fork_id = json.loads(result.output)["new_run_id"]
+        fork_rt = Runtime.load(f"sqlite:///{temp_db}", run_id=fork_id)
+        with pytest.raises(PackSettingsMissingError, match="demo.missing"):
+            fork_rt.load_pack(pack)
+
 
 class TestInspectFlags:
     """v1.0 CLI follow-ons: --event, --behaviors, --pack-version.
@@ -321,7 +431,7 @@ class TestInspectFlags:
         assert obj == []
 
     def test_selectors_are_mutually_exclusive(self, temp_db, runner):
-        """--event, --behaviors, --pack-version are selectors, not
+        """Focused inspect flags are selectors, not
         filters — combining them is a usage error."""
         run_id = _seed_run(temp_db)
         result = runner.invoke(
@@ -330,11 +440,73 @@ class TestInspectFlags:
                 "inspect", f"sqlite:///{temp_db}",
                 "--run-id", run_id,
                 "--behaviors",
-                "--pack-version",
+                "--memo",
             ],
         )
         assert result.exit_code == EXIT_USAGE_ERROR, result.output
         assert "mutually exclusive" in result.output
+
+    def test_memo_selector_renders_operator_format(self, temp_db, runner):
+        run_id = _seed_memo_run(temp_db)
+        result = runner.invoke(
+            cli,
+            [
+                "inspect", f"sqlite:///{temp_db}",
+                "--run-id", run_id,
+                "--memo",
+            ],
+        )
+        assert result.exit_code == EXIT_OK, result.output
+        assert "Memo: Northwind" in result.output
+        assert "Summary:" in result.output
+        assert "Key claims:" in result.output
+        assert "Customer concentration" in result.output
+
+    def test_memo_selector_json(self, temp_db, runner):
+        run_id = _seed_memo_run(temp_db)
+        result = runner.invoke(
+            cli,
+            [
+                "inspect", f"sqlite:///{temp_db}",
+                "--run-id", run_id,
+                "--memo",
+                "--json",
+            ],
+        )
+        assert result.exit_code == EXIT_OK, result.output
+        obj = json.loads(result.output)
+        assert obj[0]["company"] == "Northwind"
+        assert obj[0]["object"]["type"] == "memo"
+
+    def test_search_selector_text(self, temp_db, runner):
+        run_id = _seed_memo_run(temp_db)
+        result = runner.invoke(
+            cli,
+            [
+                "inspect", f"sqlite:///{temp_db}",
+                "--run-id", run_id,
+                "--search", "needle-bearing",
+            ],
+        )
+        assert result.exit_code == EXIT_OK, result.output
+        assert "matches" in result.output
+        assert "object.created" in result.output
+        assert "Needle-bearing" in result.output
+
+    def test_search_selector_json(self, temp_db, runner):
+        run_id = _seed_memo_run(temp_db)
+        result = runner.invoke(
+            cli,
+            [
+                "inspect", f"sqlite:///{temp_db}",
+                "--run-id", run_id,
+                "--search", "northwind",
+                "--json",
+            ],
+        )
+        assert result.exit_code == EXIT_OK, result.output
+        obj = json.loads(result.output)
+        assert any(m["type"] == "object.created" for m in obj)
 
 
 class TestDiff:

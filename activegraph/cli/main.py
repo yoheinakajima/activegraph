@@ -234,6 +234,17 @@ def cmd_pack_list() -> None:
         "the recorded run was using vs. what's installed today."
     ),
 )
+@click.option(
+    "--memo",
+    is_flag=True,
+    help="Render memo objects in the run using the quickstart/operator format.",
+)
+@click.option(
+    "--search",
+    "search_query",
+    default=None,
+    help="Search event ids, types, actors, and payload JSON for a substring.",
+)
 def cmd_inspect(
     url: str,
     run_id: Optional[str],
@@ -242,19 +253,21 @@ def cmd_inspect(
     event_id: Optional[str],
     behaviors: bool,
     pack_version: bool,
+    memo: bool,
+    search_query: Optional[str],
 ) -> None:
     """Print a status snapshot for a run.
 
-    With ``--event``, ``--behaviors``, or ``--pack-version``, prints only
-    that focused section instead of the full status. The three are
+    With selector flags, prints only that focused section instead of
+    the full status. Selectors are
     mutually exclusive — they're selectors, not filters.
     """
     from activegraph.observability.status import status_to_dict
     from activegraph.runtime.runtime import Runtime
 
-    if sum([bool(event_id), behaviors, pack_version]) > 1:
+    if sum([bool(event_id), behaviors, pack_version, memo, bool(search_query)]) > 1:
         click.echo(
-            "--event, --behaviors, and --pack-version are mutually exclusive.",
+            "--event, --behaviors, --pack-version, --memo, and --search are mutually exclusive.",
             err=True,
         )
         raise SystemExit(EXIT_USAGE_ERROR)
@@ -277,6 +290,12 @@ def cmd_inspect(
         return
     if pack_version:
         _print_pack_versions(rt, as_json)
+        return
+    if memo:
+        _print_memos(rt, as_json)
+        return
+    if search_query:
+        _print_search(rt, search_query, as_json)
         return
 
     status = rt.status(recent=tail)
@@ -318,15 +337,7 @@ def _print_event(rt, event_id: str, as_json: bool) -> None:
         click.echo(f"event {event_id!r} not found in run {rt.run_id}", err=True)
         raise SystemExit(EXIT_NOT_FOUND)
     if as_json:
-        click.echo(_json.dumps({
-            "id": target.id,
-            "type": target.type,
-            "actor": target.actor,
-            "frame_id": target.frame_id,
-            "caused_by": target.caused_by,
-            "timestamp": target.timestamp,
-            "payload": target.payload,
-        }, default=str))
+        click.echo(_json.dumps(_event_to_dict(target), default=str))
         return
     click.echo(f"event:       {target.id}")
     click.echo(f"type:        {target.type}")
@@ -401,6 +412,95 @@ def _print_pack_versions(rt, as_json: bool) -> None:
                 click.echo(f"    prompt {prompt_name:24s} hash={short}")
 
 
+def _print_memos(rt, as_json: bool) -> None:
+    """v1.1 CLI follow-on: render memo objects from a run."""
+    from activegraph.cli.renderers import company_name_for_memo, print_memo_section
+
+    memos = [o for o in rt.graph.all_objects() if o.type == "memo"]
+    if as_json:
+        click.echo(_json.dumps([
+            {
+                "company": company_name_for_memo(rt, memo),
+                "object": memo.to_dict(),
+            }
+            for memo in memos
+        ], default=str))
+        return
+    if not memos:
+        click.echo("(no memo objects in this run)")
+        return
+    write = lambda s: click.echo(s)
+    for memo in memos:
+        print_memo_section(write, rt, memo)
+
+
+def _print_search(rt, query: str, as_json: bool) -> None:
+    """v1.1 CLI follow-on: substring search across run events."""
+    q = query.casefold()
+    matches = []
+    for e in rt.graph.events:
+        fields = {
+            "id": e.id,
+            "type": e.type,
+            "actor": e.actor or "",
+            "payload": _json.dumps(e.payload, sort_keys=True, default=str),
+        }
+        matched_fields = [name for name, value in fields.items() if q in value.casefold()]
+        if not matched_fields:
+            continue
+        payload_text = fields["payload"]
+        matches.append(
+            {
+                "id": e.id,
+                "type": e.type,
+                "actor": e.actor,
+                "timestamp": e.timestamp,
+                "matched_fields": matched_fields,
+                "snippet": _search_snippet(payload_text, query),
+            }
+        )
+    if as_json:
+        click.echo(_json.dumps(matches, default=str))
+        return
+    if not matches:
+        click.echo(f"(no matches for {query!r})")
+        return
+    click.echo(f"matches ({len(matches)}):")
+    for m in matches:
+        actor = m["actor"] or "(none)"
+        click.echo(
+            f"  {m['id']:18s} {m['type']:24s} actor={actor} fields={','.join(m['matched_fields'])}"
+        )
+        if m["snippet"]:
+            click.echo(f"    {m['snippet']}")
+
+
+def _event_to_dict(event) -> dict[str, Any]:
+    return {
+        "id": event.id,
+        "type": event.type,
+        "actor": event.actor,
+        "frame_id": event.frame_id,
+        "caused_by": event.caused_by,
+        "timestamp": event.timestamp,
+        "payload": event.payload,
+    }
+
+
+def _search_snippet(text: str, query: str, *, width: int = 120) -> str:
+    idx = text.casefold().find(query.casefold())
+    if idx == -1:
+        return text[:width]
+    start = max(0, idx - width // 3)
+    end = min(len(text), start + width)
+    snippet = text[start:end]
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(text):
+        snippet += "..."
+    return snippet
+
+
 # ---- replay -------------------------------------------------------------
 
 
@@ -462,6 +562,15 @@ def cmd_replay(url: str, run_id: str, as_json: bool) -> None:
         "so the LLM cache and tool cache write-through new entries."
     ),
 )
+@click.option(
+    "--set",
+    "settings_overrides",
+    multiple=True,
+    help=(
+        "Override a pack setting in the fork. Shape: "
+        "<pack>.<setting>=<value>. Repeat to compose overrides."
+    ),
+)
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def cmd_fork(
     url: str,
@@ -470,6 +579,7 @@ def cmd_fork(
     label: Optional[str],
     to_url: Optional[str],
     record: bool,
+    settings_overrides: tuple[str, ...],
     as_json: bool,
 ) -> None:
     """Create a new run by copying events up to and including --at-event."""
@@ -479,6 +589,7 @@ def cmd_fork(
 
     if to_url is None:
         to_url = url
+    parsed_overrides = _parse_fork_settings_overrides(settings_overrides)
     if record:
         # Label suffix is informational; the actual "recording" semantics
         # emerge when the new run is later loaded with replay_strict=False
@@ -498,6 +609,18 @@ def cmd_fork(
     except InvalidStoreURL as e:
         click.echo(str(e), err=True)
         raise SystemExit(EXIT_USAGE_ERROR)
+
+    if parsed_overrides:
+        loaded_packs = _pack_names_loaded_through_event(url, run_id, at_event)
+        missing = sorted(set(parsed_overrides) - loaded_packs)
+        if missing:
+            click.echo(
+                "cannot apply --set override: no pack.loaded event for "
+                + ", ".join(repr(p) for p in missing)
+                + f" exists at or before {at_event!r} in run {run_id!r}",
+                err=True,
+            )
+            raise SystemExit(EXIT_USAGE_ERROR)
 
     new_run_id = IDGen().run()
     try:
@@ -527,6 +650,15 @@ def cmd_fork(
         click.echo(str(e), err=True)
         raise SystemExit(EXIT_NOT_FOUND)
 
+    override_event_ids: list[str] = []
+    if parsed_overrides:
+        override_event_ids = _record_fork_settings_overrides(
+            to_url,
+            run_id=new_run_id,
+            caused_by=at_event,
+            overrides=parsed_overrides,
+        )
+
     out = {
         "parent_run_id": run_id,
         "new_run_id": new_run_id,
@@ -534,17 +666,153 @@ def cmd_fork(
         "label": label,
         "events_copied": n,
     }
+    if parsed_overrides:
+        out["settings_overrides"] = {
+            pack: data["overrides"] for pack, data in parsed_overrides.items()
+        }
+        out["settings_override_events"] = override_event_ids
     if as_json:
         if record:
             out["recording"] = True
         click.echo(_json.dumps(out))
         return
     click.echo(f"forked {run_id} at {at_event} -> {new_run_id} ({n} events)")
+    for event_id in override_event_ids:
+        click.echo(f"  settings override recorded: {event_id}")
     if record:
         click.echo(
             "  recording fork: load this run without replay_strict=True to "
             "accept new LLM/tool cache entries."
         )
+
+
+def _parse_fork_settings_overrides(
+    raw_values: tuple[str, ...],
+) -> dict[str, dict[str, Any]]:
+    """Parse repeated --set flags into pack-grouped override payloads."""
+    parsed: dict[str, dict[str, Any]] = {}
+    for raw in raw_values:
+        if "=" not in raw:
+            click.echo(
+                f"--set value {raw!r} must have shape <pack>.<setting>=<value>",
+                err=True,
+            )
+            raise SystemExit(EXIT_USAGE_ERROR)
+        key, raw_value = raw.split("=", 1)
+        parts = key.split(".")
+        if len(parts) < 2 or any(not p for p in parts):
+            click.echo(
+                f"--set key {key!r} must have shape <pack>.<setting>",
+                err=True,
+            )
+            raise SystemExit(EXIT_USAGE_ERROR)
+        pack = parts[0]
+        value = _coerce_cli_value(raw_value)
+        entry = parsed.setdefault(pack, {"overrides": {}, "assignments": []})
+        _set_nested_override(entry["overrides"], parts[1:], value, raw)
+        entry["assignments"].append(raw)
+    return parsed
+
+
+def _coerce_cli_value(raw: str) -> Any:
+    """Best-effort string-to-JSON coercion for --set values.
+
+    Pydantic performs final validation when the pack is loaded. This
+    parser only turns obvious JSON scalars/lists/maps into Python values.
+    """
+    lowered = raw.strip().lower()
+    if lowered == "none":
+        return None
+    try:
+        return _json.loads(raw)
+    except ValueError:
+        return raw
+
+
+def _set_nested_override(
+    root: dict[str, Any],
+    path: list[str],
+    value: Any,
+    raw: str,
+) -> None:
+    cursor = root
+    for segment in path[:-1]:
+        existing = cursor.get(segment)
+        if existing is None:
+            nested: dict[str, Any] = {}
+            cursor[segment] = nested
+            cursor = nested
+            continue
+        if not isinstance(existing, dict):
+            click.echo(
+                f"--set value {raw!r} conflicts with an earlier override for "
+                f"{segment!r}",
+                err=True,
+            )
+            raise SystemExit(EXIT_USAGE_ERROR)
+        cursor = existing
+    leaf = path[-1]
+    if isinstance(cursor.get(leaf), dict):
+        click.echo(
+            f"--set value {raw!r} conflicts with an earlier nested override",
+            err=True,
+        )
+        raise SystemExit(EXIT_USAGE_ERROR)
+    cursor[leaf] = value
+
+
+def _pack_names_loaded_through_event(url: str, run_id: str, at_event: str) -> set[str]:
+    store = _open_store_or_die(url, run_id)
+    loaded: set[str] = set()
+    seen_cutoff = False
+    try:
+        for event in store.iter_events():
+            if event.type == "pack.loaded":
+                name = (event.payload or {}).get("name")
+                if isinstance(name, str) and name:
+                    loaded.add(name)
+            if event.id == at_event:
+                seen_cutoff = True
+                break
+    finally:
+        close = getattr(store, "close", None)
+        if close is not None:
+            close()
+    if not seen_cutoff:
+        click.echo(f"event {at_event!r} not found in run {run_id!r}", err=True)
+        raise SystemExit(EXIT_NOT_FOUND)
+    return loaded
+
+
+def _record_fork_settings_overrides(
+    url: str,
+    *,
+    run_id: str,
+    caused_by: str,
+    overrides: dict[str, dict[str, Any]],
+) -> list[str]:
+    from activegraph.core.event import Event
+    from activegraph.runtime.runtime import Runtime
+
+    rt = Runtime.load(url, run_id=run_id)
+    event_ids: list[str] = []
+    for pack, data in overrides.items():
+        event = Event(
+            id=rt.graph.ids.event(),
+            type="pack.settings_overridden",
+            payload={
+                "pack": pack,
+                "overrides": data["overrides"],
+                "assignments": list(data["assignments"]),
+            },
+            actor="runtime",
+            frame_id=rt.frame.id if rt.frame else None,
+            caused_by=caused_by,
+            timestamp=rt.graph.clock.now(),
+        )
+        rt.graph.emit(event)
+        event_ids.append(event.id)
+    return event_ids
 
 
 # ---- diff ---------------------------------------------------------------
