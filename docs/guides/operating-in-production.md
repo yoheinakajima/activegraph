@@ -28,10 +28,11 @@ recoverable without reading source code:
 2. **Structured logging** with a documented JSON schema. One log line
    per event, every line carries `run_id` / `event_id` when applicable.
 3. **Metrics**: a three-method `Metrics` protocol with a `NoOpMetrics`
-   default and a reference `PrometheusMetrics` implementation. The
-   runtime emits a fixed, documented set of counters, histograms, and
-   gauges. Custom backends (OpenTelemetry, Datadog, statsd) implement
-   the protocol — three methods.
+   default plus reference `PrometheusMetrics` and
+   `OpenTelemetryMetrics` implementations. The runtime emits a fixed,
+   documented set of counters, histograms, and gauges. Custom backends
+   (Datadog, statsd, internal collectors) implement the protocol —
+   three methods.
 4. **`activegraph` CLI**: `inspect`, `replay`, `fork`, `diff`,
    `export-trace`, `migrate`, `pack`, `quickstart`. The CLI is a thin
    wrapper around library APIs; anything it does, programmatic callers
@@ -273,14 +274,26 @@ from activegraph.observability import PrometheusMetrics
 rt = Runtime(graph, metrics=PrometheusMetrics())
 ```
 
+```python
+from activegraph.observability import OpenTelemetryMetrics
+rt = Runtime(graph, metrics=OpenTelemetryMetrics())
+```
+
 The default is `NoOpMetrics`, which does nothing. The runtime is
 fully functional with no metrics configured.
 
 `PrometheusMetrics` lazy-imports `prometheus_client`. Install with
 `pip install 'activegraph[prometheus]'`.
 
-For OpenTelemetry, Datadog, statsd, or anything else: write a class
-with three methods. We do not ship adapters.
+`OpenTelemetryMetrics` lazy-imports `opentelemetry-api` and
+`opentelemetry-sdk`. Install with
+`pip install 'activegraph[opentelemetry]'`. Counters and histograms
+map to native OTel instruments. Synchronous `gauge()` calls are
+represented as UpDownCounter deltas so the latest point-in-time value
+is preserved.
+
+For Datadog, statsd, or anything else: write a class with the same
+three methods.
 
 ### Standard metrics
 
