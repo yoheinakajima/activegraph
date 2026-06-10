@@ -8,6 +8,7 @@ by family prefix.
 from __future__ import annotations
 
 import os
+import sys
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -180,6 +181,11 @@ def test_count_tokens_delegates_to_sdk():
 
 def test_missing_api_key_raises_when_constructing_real_client(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "anthropic",
+        SimpleNamespace(Anthropic=lambda: object()),
+    )
     p = AnthropicProvider()  # no client override
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         p.count_tokens(system="", messages=[], model="claude-sonnet-4-5")
