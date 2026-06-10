@@ -22,10 +22,6 @@ on:
       - "pyproject.toml"
       - ".github/workflows/types.yml"
   pull_request:
-    paths:
-      - "activegraph/**"
-      - "pyproject.toml"
-      - ".github/workflows/types.yml"
   workflow_dispatch:
 
 jobs:

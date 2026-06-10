@@ -15,12 +15,14 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-Nothing yet. v1.1 scope is tracked in `v1.1-plan.md` (consolidated by
-the post-v1.0.3 contract review). v1.0.4 surfaced two additional v1.1
-candidates: C-3 (lock the failure-routing convention for eval-time
-pattern failures and `ReplayDivergenceError`) and I-4 (cross-link
-`replay-divergence-error.md` to replay/fixture documentation). v1.0.5
-surfaced two more: content negotiation on the docs host (serving
+Nothing yet. v1.1 scope is tracked in `ROADMAP.md`; `v1.1-plan.md`
+remains the post-v1.0.3 consolidated backlog source, and
+`FUTURE_IDEAS.md` carries unscheduled candidates. v1.0.4 surfaced two
+additional v1.1 candidates: C-3 (lock the failure-routing
+convention for eval-time pattern failures and `ReplayDivergenceError`)
+and I-4 (cross-link `replay-divergence-error.md` to replay/fixture
+documentation). v1.0.5 surfaced two more: content negotiation on the
+docs host (serving
 `text/markdown` per-page complementing the static `/llms.txt` and
 `/llms-full.txt` files), and an editorial doc-readability pass
 (front-loaded page summaries, terminology normalization).
