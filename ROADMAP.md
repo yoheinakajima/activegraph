@@ -14,7 +14,13 @@ This roadmap is organized as mergeable slices. Each item is marked:
 - **DEFERRED** — recognized during v1.1 scoping, but intentionally not a
   v1.1 blocker in this pass.
 
+Status for the v1.1 readiness branch: Phases 0-7 are shipped or
+intentionally deferred as marked below.
+
 ## Phase 0 — Contract/planning split and backlog reconciliation
+
+**Status: shipped.** `CONTRACT-INDEX.md`, the `CONTRACT.md` pointer,
+the `v1.1-plan.md` banner, and this roadmap/FUTURE split are in place.
 
 - **MUST: Add the planning document map.** Introduce
   `CONTRACT-INDEX.md` so readers can distinguish locked contract
@@ -23,13 +29,17 @@ This roadmap is organized as mergeable slices. Each item is marked:
 - **MUST: Banner the old backlog.** Mark `v1.1-plan.md` as the
   post-v1.0.3 consolidated backlog and point current scope to this file.
 - **MUST: Add a CONTRACT pointer without moving history.** Point the top
-  of `CONTRACT.md` to `CONTRACT-INDEX.md` and state that future v1.1
-  implementation scoping lives here, not inline inside CONTRACT.
+  of `CONTRACT.md` to `CONTRACT-INDEX.md` and state that v1.1
+  implementation scoping lived here, not inline inside CONTRACT.
 - **MUST: Reconcile post-v1.0.3 candidates.** Every v1.1 candidate named
   in `CHANGELOG.md` Unreleased is classified either in this roadmap or
   in `FUTURE_IDEAS.md`.
 
 ## Phase 1 — Contract modularization path
+
+**Status: shipped/deferred.** The chosen v1.1 shape is additive
+navigation first (`CONTRACT-INDEX.md` plus banners). Physical movement
+of historical CONTRACT sections remains deferred.
 
 - **MUST: Decide the modularization shape before moving sections.** Pick
   the v1.1 path for making the historical contract easier to navigate
@@ -44,6 +54,10 @@ This roadmap is organized as mergeable slices. Each item is marked:
 
 ## Phase 2 — Drift gates
 
+**Status: shipped.** `tests/test_cli_docs_flags.py`,
+`tests/test_doc_python_snippets.py`, and the tagged-release additions
+to `tests/test_version_sync.py` cover this phase.
+
 - **MUST: CLI flag gate.** Add an executable check that compares the
   documented CLI flags against the implemented CLI surface so reference
   docs do not drift from parser behavior.
@@ -55,6 +69,9 @@ This roadmap is organized as mergeable slices. Each item is marked:
 
 ## Phase 3 — Read-only CLI gaps
 
+**Status: shipped.** `inspect --memo` and `inspect --search` are
+implemented, documented, and covered in `tests/test_cli.py`.
+
 - **MUST: `inspect --memo`.** Add the read-only inspect surface for memo
   visibility, including docs and tests.
 - **MUST: `inspect --search`.** Add the read-only inspect search surface,
@@ -63,6 +80,10 @@ This roadmap is organized as mergeable slices. Each item is marked:
   semantics into the inspect-gap slice.
 
 ## Phase 4 — `fork --set`
+
+**Status: shipped/deferred.** `fork --set` records
+`pack.settings_overridden` events and applies them during pack loading.
+Broader fork cache-prepopulation ergonomics stay in `FUTURE_IDEAS.md`.
 
 - **SHOULD: Implement `fork --set` after design questions are answered.**
   The feature belongs in v1.1 if the scope stays bounded and the design
@@ -80,6 +101,16 @@ This roadmap is organized as mergeable slices. Each item is marked:
 
 ## Phase 5 — Small correctness and docs-drift items
 
+**Status: shipped.** Issue #27, `object.patched` docs drift,
+reason-code taxonomy, failure-routing convention, and the replay
+cross-link are resolved in code/docs/tests.
+
+- **MUST: Resolve #27 LLM transient retry before terminal fallback.**
+  Provider-call failures with `reason=llm.network_error` or
+  `reason=llm.rate_limited` must get bounded runtime retry attempts
+  before the terminal `behavior.failed` path, so provider outages do
+  not become indistinguishable from legitimate empty extractions in
+  long-running caches.
 - **MUST: Decide `object.patched` docs-vs-code drift.** The v1.0.5.post2
   candidate is classified here: either correct the docs to match the
   emitted `patch.applied` event or intentionally add / lock a distinct
@@ -99,6 +130,10 @@ This roadmap is organized as mergeable slices. Each item is marked:
 
 ## Phase 6 — OpenAI tool-shape translation
 
+**Status: shipped/deferred.** OpenAI tool definitions and returned
+tool calls now round-trip through the shared provider/runtime contract.
+Native structured-output mode remains deferred in `FUTURE_IDEAS.md`.
+
 - **MUST: Translate tool definitions for OpenAI.** Add provider-aware
   tool definition shape support so Anthropic-style
   `{name, description, input_schema}` and OpenAI-style
@@ -115,6 +150,10 @@ This roadmap is organized as mergeable slices. Each item is marked:
 
 ## Phase 7 — v1.1 release closure
 
+**Status: shipped.** `CHANGELOG.md` has v1.1 release notes and
+migration notes, and the final verification gates have passed on the
+readiness branch.
+
 - **MUST: Update release notes and migration notes.** Summarize shipped
   v1.1 behavior in `CHANGELOG.md` and document any required migration.
 - **MUST: Verify contract and version sync.** Run the doc-link,
@@ -128,8 +167,8 @@ This roadmap is organized as mergeable slices. Each item is marked:
 
 ## CHANGELOG Unreleased reconciliation
 
-The post-v1.0.3 v1.1 candidates currently named in `CHANGELOG.md`
-Unreleased are classified as follows:
+The post-v1.0.3 v1.1 candidates that were named in `CHANGELOG.md`
+before v1.1 closure were classified as follows:
 
 | Candidate | Classification |
 | --- | --- |

@@ -7,8 +7,8 @@ of the target they observed, and whether the change succeeded or
 was refused.
 
 A direct `graph.patch_object(target, diff)` call also lands in the
-event log (as `object.patched`), but the patch primitive is
-different: it's a **two-phase** operation. The first phase records
+event log as `patch.applied`, but the patch primitive is different:
+it's a **two-phase** operation. The first phase records
 the proposal as a `patch.proposed` event, with the proposer's
 identity, the version of the target they observed, and the
 intended diff. The second phase applies (success) or rejects
