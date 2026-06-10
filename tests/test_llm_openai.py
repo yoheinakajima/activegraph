@@ -3,16 +3,17 @@
 CONTRACT v1.0.1 #5 / CONTRACT v0.6 #11: exception mapping (network vs
 rate-limit), no-API-key handling, structured-output extraction
 through the shared `parse_structured_response` path, family-prefix
-pricing lookup, tool-use rejection until v1.1, count_tokens fallback.
+pricing lookup, tool-use parity with the runtime loop, count_tokens fallback.
 
 Mirrors `tests/test_llm_anthropic.py`. Same fake-client shape; the
 only intentional divergences are the OpenAI response structure
 (`choices[0].message.content`, `usage.prompt_tokens`) and the tool-
-use rejection test.
+call wire shape.
 """
 
 from __future__ import annotations
 
+import sys
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -20,10 +21,20 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel
 
+from activegraph import (
+    Graph,
+    Runtime,
+    clear_registry,
+    clear_tool_registry,
+    behavior,
+    llm_behavior,
+    tool,
+)
 from activegraph.llm import (
     LLMBehaviorError,
     LLMMessage,
     OpenAIProvider,
+    ToolCall,
 )
 
 
@@ -31,19 +42,40 @@ class _Out(BaseModel):
     n: int
 
 
-def _client_returning(text: str, *, in_tok: int = 10, out_tok: int = 5):
+class _ToolIn(BaseModel):
+    q: str
+
+
+class _ToolOut(BaseModel):
+    answer: str
+
+
+def _raw_response(
+    text: str | None,
+    *,
+    in_tok: int = 10,
+    out_tok: int = 5,
+    tool_calls=None,
+    finish_reason: str = "stop",
+):
     raw = SimpleNamespace(
         choices=[
             SimpleNamespace(
-                message=SimpleNamespace(content=text),
-                finish_reason="stop",
+                message=SimpleNamespace(content=text, tool_calls=tool_calls),
+                finish_reason=finish_reason,
             )
         ],
         usage=SimpleNamespace(prompt_tokens=in_tok, completion_tokens=out_tok),
         model="gpt-4o-mini",
     )
+    return raw
+
+
+def _client_returning(text: str, *, in_tok: int = 10, out_tok: int = 5):
     client = MagicMock()
-    client.chat.completions.create.return_value = raw
+    client.chat.completions.create.return_value = _raw_response(
+        text, in_tok=in_tok, out_tok=out_tok
+    )
     return client
 
 
@@ -183,28 +215,200 @@ def test_complete_maps_auth_failure_to_network_error():
     assert "Invalid API key" in str(exc.value)
 
 
-def test_complete_rejects_tool_use_with_v11_pointer():
-    # CONTRACT v1.0.1 #5 + v1.1 #7-and-beyond: tool-shape translation
-    # deferred. The Protocol signature still accepts `tools=`; the
-    # divergence triggers only on non-empty.
+def test_complete_translates_framework_tools_and_extracts_openai_tool_calls():
+    tool_call = SimpleNamespace(
+        id="call_1",
+        function=SimpleNamespace(name="lookup", arguments='{"q": "northwind"}'),
+    )
     client = MagicMock()
+    client.chat.completions.create.return_value = _raw_response(
+        None,
+        tool_calls=[tool_call],
+        finish_reason="tool_calls",
+    )
     p = OpenAIProvider(client=client)
-    with pytest.raises(LLMBehaviorError) as exc:
-        p.complete(
-            system="",
-            messages=[LLMMessage(role="user", content="u")],
-            model="gpt-4o-mini",
-            max_tokens=64,
-            temperature=0.0,
-            top_p=1.0,
-            output_schema=None,
-            timeout_seconds=30,
-            tools=[{"name": "foo", "description": "d", "input_schema": {}}],
-        )
-    assert exc.value.reason == "llm.network_error"
-    assert "v1.1" in str(exc.value)
-    # The SDK was never called — the rejection is pre-call.
-    client.chat.completions.create.assert_not_called()
+    r = p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+        tools=[
+            {
+                "name": "lookup",
+                "description": "Find a thing",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            }
+        ],
+    )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Find a thing",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            },
+        }
+    ]
+    assert r.parsed is None
+    assert r.finish_reason == "tool_calls"
+    assert r.tool_calls == [
+        ToolCall(id="call_1", name="lookup", args={"q": "northwind"})
+    ]
+
+
+def test_complete_accepts_openai_style_tool_definition():
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client)
+    p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Find a thing",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+    )
+    assert client.chat.completions.create.call_args.kwargs["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Find a thing",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+
+def test_messages_echo_assistant_tool_calls_in_openai_shape():
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client)
+    p.complete(
+        system="",
+        messages=[
+            LLMMessage(role="user", content="u"),
+            LLMMessage(
+                role="assistant",
+                content="",
+                tool_calls=(
+                    ToolCall(id="call_1", name="lookup", args={"q": "x"}),
+                ),
+            ),
+            LLMMessage(role="tool", content='{"answer": "ok"}', tool_use_id="call_1"),
+        ],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+    )
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert messages[1] == {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": '{"q": "x"}',
+                },
+            }
+        ],
+    }
+    assert messages[2] == {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": '{"answer": "ok"}',
+    }
+
+
+def test_runtime_tool_loop_with_openai_provider():
+    clear_registry()
+    clear_tool_registry()
+
+    @tool(
+        name="lookup",
+        description="Find a thing",
+        input_schema=_ToolIn,
+        output_schema=_ToolOut,
+        deterministic=True,
+    )
+    def lookup(args, ctx):
+        return _ToolOut(answer=f"answer:{args.q}")
+
+    @behavior(name="seed_openai_tool_test", on=["goal.created"])
+    def seed(event, graph, ctx):
+        graph.add_object("doc", {"title": "Northwind"})
+
+    received = []
+
+    @llm_behavior(
+        name="openai_tool_user",
+        on=["object.created"],
+        where={"object.type": "doc"},
+        output_schema=_Out,
+        tools=[lookup],
+    )
+    def openai_tool_user(event, graph, ctx, out):
+        received.append(out)
+
+    first = _raw_response(
+        None,
+        tool_calls=[
+            SimpleNamespace(
+                id="call_1",
+                function=SimpleNamespace(name="lookup", arguments='{"q": "northwind"}'),
+            )
+        ],
+        finish_reason="tool_calls",
+    )
+    second = _raw_response('{"n": 42}', finish_reason="stop")
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [first, second]
+
+    g = Graph()
+    Runtime(g, llm_provider=OpenAIProvider(client=client)).run_goal("g")
+
+    assert len(received) == 1
+    assert received[0].n == 42
+    assert client.chat.completions.create.call_count == 2
+    first_kwargs = client.chat.completions.create.call_args_list[0].kwargs
+    assert first_kwargs["tools"][0]["type"] == "function"
+    assert first_kwargs["tools"][0]["function"]["name"] == "lookup"
+
+    second_messages = client.chat.completions.create.call_args_list[1].kwargs["messages"]
+    assert any(m.get("role") == "assistant" and m.get("tool_calls") for m in second_messages)
+    assert any(m.get("role") == "tool" and m.get("tool_call_id") == "call_1" for m in second_messages)
+    assert any(e.type == "tool.requested" for e in g.events)
+    assert any(e.type == "tool.responded" for e in g.events)
 
 
 def test_estimate_cost_uses_family_prefix():
@@ -247,6 +451,11 @@ def test_count_tokens_heuristic_fallback_when_tiktoken_missing(monkeypatch):
 
 def test_missing_api_key_raises_when_constructing_real_client(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=lambda: object()),
+    )
     p = OpenAIProvider()  # no client override
     # The error message must name OPENAI_API_KEY so the operator
     # knows which env var to set.

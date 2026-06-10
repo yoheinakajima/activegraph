@@ -104,9 +104,9 @@ by design: only *recognized* cross-provider mismatches fire.
 | Recognized model families (per `recognizes_model()`) | `claude-*` | `gpt-*`, `o1-*`, `o3-*`, `o4-*` |
 | API key env | `ANTHROPIC_API_KEY` | `OPENAI_API_KEY` |
 | SDK | `anthropic>=0.40` | `openai>=1.0` |
-| Structured output | Instruction-based: schema + example instance embedded in the system prompt by [`build_system_prompt`](api/index.md); provider parses JSON out of the response via the shared `parse_structured_response` helper | Same path. Native `response_format={"type":"json_schema",...}` mode is a v1.1 candidate |
+| Structured output | Instruction-based: schema + example instance embedded in the system prompt by [`build_system_prompt`](api/index.md); provider parses JSON out of the response via the shared `parse_structured_response` helper | Same path. Native `response_format={"type":"json_schema",...}` mode is deferred to a future provider-native structured-output pass |
 | `count_tokens()` | Server-side via `messages.count_tokens` (1 roundtrip per call when `budget.max_cost_usd` is set and no cache hit) | Client-side via `tiktoken` when available; char/4 heuristic fallback with a one-time debug log if tiktoken is missing |
-| Tool use | Supported (`Tool.to_definition()` emits Anthropic shape) | **Not supported in v1.0.1.** A non-empty `tools=` raises `LLMBehaviorError(reason="llm.network_error")` with a v1.1 pointer. Tool-shape translation is a scheduled v1.1 item |
+| Tool use | Supported (`Tool.to_definition()` emits Anthropic shape) | Supported. The provider translates framework/Anthropic-shaped tool definitions into OpenAI Chat Completions `function` tools and extracts returned `tool_calls` into the shared `ToolCall` shape |
 | Exception mapping | `llm.rate_limited` on 429-shaped errors; `llm.network_error` for everything else (timeouts, connection errors, **auth failures**) | Same mapping |
 | Pricing | Family-prefix lookup; override with `pricing=` kwarg | Family-prefix lookup; override with `pricing=` kwarg |
 
@@ -175,5 +175,4 @@ the shipped providers — same `llm.parse_error` and
 See [CONTRACT v1.0.1 #5](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
 for the provider-commitment surface: which methods are stable,
 which behaviors are provider-dependent (`count_tokens`), and which
-capabilities are explicitly v1.1 (tool use for OpenAI, native
-structured-output modes).
+capabilities are still future work (native structured-output modes).
