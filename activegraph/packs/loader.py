@@ -97,6 +97,7 @@ def load_pack_into_runtime(
 
     # ---- 2. settings ------------------------------------------------------
     settings_obj = _build_settings(pack, settings)
+    settings_obj = _apply_recorded_settings_overrides(rt, pack, settings_obj)
 
     # ---- 3. pre-emptive conflict detection (no mutation yet) -------------
     pack_behavior_names = {b.name for b in pack.behaviors}
@@ -399,6 +400,89 @@ def _build_settings(pack: Pack, settings: Optional[BaseModel]) -> BaseModel:
             f"instance (got {type(settings).__name__})"
         )
     return settings
+
+
+def _apply_recorded_settings_overrides(
+    rt: "Runtime",
+    pack: Pack,
+    settings_obj: BaseModel,
+) -> BaseModel:
+    """Apply fork-local `pack.settings_overridden` events for this pack.
+
+    The CLI records `--set` as events so the parent prefix remains intact
+    and the fork carries an auditable settings override. Validation stays
+    here, at pack registration time, because this is where the settings
+    schema is known.
+    """
+    events = getattr(getattr(rt, "graph", None), "events", [])
+    matching = [
+        e for e in events
+        if e.type == "pack.settings_overridden"
+        and (e.payload or {}).get("pack") == pack.name
+    ]
+    if not matching:
+        return settings_obj
+
+    merged = _canonical_settings_dump(settings_obj)
+    applied_event_ids: list[str] = []
+    for event in matching:
+        overrides = (event.payload or {}).get("overrides")
+        if not isinstance(overrides, dict):
+            continue
+        _merge_settings_override(
+            pack.settings_schema,
+            merged,
+            overrides,
+            pack_name=pack.name,
+            event_id=event.id,
+        )
+        applied_event_ids.append(event.id)
+    if not applied_event_ids:
+        return settings_obj
+    return _build_settings(pack, merged)
+
+
+def _merge_settings_override(
+    schema: type[BaseModel],
+    target: dict[str, Any],
+    overrides: dict[str, Any],
+    *,
+    pack_name: str,
+    event_id: str,
+    path: tuple[str, ...] = (),
+) -> None:
+    fields = getattr(schema, "model_fields", {})
+    for key, value in overrides.items():
+        current_path = path + (key,)
+        if key not in fields:
+            dotted = ".".join((pack_name, *current_path))
+            raise PackSettingsMissingError(
+                f"pack {pack_name!r}: unknown settings override {dotted!r} "
+                f"recorded by {event_id}"
+            )
+        nested_schema = _field_model_schema(fields[key])
+        if isinstance(value, dict) and nested_schema is not None:
+            existing = target.get(key)
+            if not isinstance(existing, dict):
+                existing = {}
+                target[key] = existing
+            _merge_settings_override(
+                nested_schema,
+                existing,
+                value,
+                pack_name=pack_name,
+                event_id=event_id,
+                path=current_path,
+            )
+        else:
+            target[key] = value
+
+
+def _field_model_schema(field: Any) -> type[BaseModel] | None:
+    annotation = getattr(field, "annotation", None)
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    return None
 
 
 # ---------------------------------------------------------------- wrap behavior

@@ -65,6 +65,7 @@ Print a status snapshot of a run.
 ```
 activegraph inspect <url> [--run-id <run>] [--tail N] [--json]
                           [--event <evt-id>] [--behaviors] [--pack-version]
+                          [--memo] [--search <query>]
 ```
 
 | Flag | Meaning |
@@ -76,12 +77,15 @@ activegraph inspect <url> [--run-id <run>] [--tail N] [--json]
 | `--event <id>` | Print one event's full payload by id. |
 | `--behaviors` | Print only the registered-behaviors section. |
 | `--pack-version` | Print every `pack.loaded` event (name, version, prompt content hashes). |
+| `--memo` | Render memo objects using the same operator format as `activegraph quickstart`. |
+| `--search <query>` | Search event ids, types, actors, and payload JSON for a substring. |
 
-The three selectors (`--event`, `--behaviors`, `--pack-version`)
+The selectors (`--event`, `--behaviors`, `--pack-version`,
+`--memo`, `--search`)
 are mutually exclusive — they're focused queries, not filters on
 the full status. Combining them is a usage error (exit 2).
 
-**JSON shape (default)**: `{run_id, state, queue_depth, events_processed, frame, budget, registered_behaviors, recent_events}`. With a selector, the shape narrows to that selector's payload (one event, one behaviors list, one packs list).
+**JSON shape (default)**: `{run_id, state, queue_depth, events_processed, frame, budget, registered_behaviors, recent_events}`. With a selector, the shape narrows to that selector's payload (one event, one behaviors list, one packs list, one memo list, or one search-results list).
 
 Exits: 0 on success, 3 if the store / run / event id doesn't exist, 2 on bad selector combination.
 
@@ -118,15 +122,6 @@ Exits: 0 on success, 3 if the store / run doesn't exist.
 Create a new run by copying events from a parent run up to and
 including `--at-event`.
 
-!!! note "The `--set` flag is part of the v1.1 release"
-    `--set <pack>.<setting>=<value>` is documented in CONTRACT
-    v1.0 and shown in the signature below, but the implementation
-    lands in v1.1 (see [CONTRACT v1.1 #1](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md#v11-1-cli-flags-specd-but-not-implemented)).
-    Until then, use the Python-API form in
-    [Fork with a pack-setting override (v1.0 — Python API)](../cookbook/common-patterns.md#fork-with-a-pack-setting-override-v10-python-api)
-    for fork-with-override workflows. Other flags below (`--at-event`,
-    `--label`, `--to`, `--record`, `--json`) are available now.
-
 ```
 activegraph fork <url> --run-id <parent> --at-event <evt> \
                       [--label <text>] [--to <dest-url>]
@@ -140,7 +135,7 @@ activegraph fork <url> --run-id <parent> --at-event <evt> \
 | `--at-event <evt>` | Event id at which to fork (inclusive). Required. |
 | `--label <text>` | Optional human-readable label for the new run. |
 | `--to <dest-url>` | Destination store URL. Defaults to the source store (cross-store fork is not supported in v1.0; use `migrate` first). |
-| `--set <key>=<value>` | Override a pack setting in the fork. Pack-settings-only; dotted-path `<pack>.<setting>=<value>`; multiple `--set` flags compose; unknown keys fail loud with a registration-time error (see the [errors catalog](errors/replay-divergence-error.md) for the family). |
+| `--set <key>=<value>` | Override a pack setting in the fork. Pack-settings-only; dotted-path `<pack>.<setting>=<value>`; multiple `--set` flags compose. Syntax and pack-presence errors fail at fork time; unknown setting keys and type errors fail when the pack reloads and validates its settings. |
 | `--record` | Mark the fork as a re-recording. The new run accepts new cache entries instead of strict-checking against the parent's prompt hashes. |
 | `--json` | Machine-readable output. |
 
@@ -150,7 +145,7 @@ model and the `--set` semantics are documented in
 [fork-and-diff cookbook pattern](../cookbook/common-patterns.md)
 shows the common workflow.
 
-**JSON shape**: `{parent_run_id, new_run_id, at_event, label, events_copied, recording?}` (`recording: true` when `--record` was passed).
+**JSON shape**: `{parent_run_id, new_run_id, at_event, label, events_copied, settings_overrides?, settings_override_events?, recording?}` (`recording: true` when `--record` was passed).
 
 Exits: 0 on success, 3 if the parent run or `--at-event` id doesn't exist, 2 if `--to` names a different store from the source (cross-store fork not supported).
 
@@ -187,7 +182,7 @@ Exits: 0 on success, 3 if either run doesn't exist.
 Export a run's trace as `text` or `jsonl`.
 
 ```
-activegraph export-trace <url> --run-id <run> [--format text|jsonl] [--out <path>]
+activegraph export-trace <url> --run-id <run> [--format text|jsonl] [--output <path>]
 ```
 
 | Flag | Meaning |
@@ -195,7 +190,7 @@ activegraph export-trace <url> --run-id <run> [--format text|jsonl] [--out <path
 | `<url>` | Store URL. Required positional. |
 | `--run-id <run>` | Run to export. Required. |
 | `--format` | `text` (default; the human-scannable trace) or `jsonl` (one event JSON per line). |
-| `--out <path>` | Destination file. Defaults to stdout. |
+| `--output <path>` | Destination file. Defaults to stdout. |
 
 `jsonl` format is the canonical handoff to log aggregators and
 event-processing pipelines. Every event lands as one JSON object
@@ -288,12 +283,22 @@ Exits: 0 always (an empty list is not an error).
 
 ## `quickstart`
 
-> **Placeholder.** The `quickstart` subcommand is documented when
-> the command ships in the v1.0-rc1 work. The shape is locked by
-> the transcript at `examples/quickstart_session.txt` —
-> fixture-backed demo of the Diligence pack with a "what just
-> happened" prose section, plus an `--interactive` mode for
-> writing a first behavior.
+Run the bundled Diligence demo, or walk through writing a first
+behavior.
+
+```
+activegraph quickstart [--interactive]
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--interactive` | Start the guided REPL for writing and testing a first behavior. Omit it for the deterministic fixture-backed Diligence demo. |
+
+Default mode uses bundled fixtures, no API key, and no network. The
+output includes the canonical trace, one memo rendered in full, a
+"what just happened" section, and next-step links.
+
+Exits: 0 on success.
 
 ---
 
