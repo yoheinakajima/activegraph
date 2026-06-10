@@ -14,6 +14,8 @@ through `runtime.run_goal()` and reads the trace).
 
 See [`failure-model`](../../concepts/failure-model.md) for why
 behavior failures are events, not exceptions you have to catch.
+For the complete reason-code table, see
+[`reason-codes`](../reason-codes.md).
 
 ## Quick fix by category
 
@@ -23,8 +25,16 @@ distinguishes ~5 reasons but the recovery shapes cluster.
 ### Failures you can't fix in code: retry
 
 `llm.network_error`, `llm.rate_limited`. The provider is briefly
-unavailable. The right pattern is a **retry behavior** that
-subscribes to `behavior.failed` and re-fires the work with backoff:
+unavailable. The runtime first makes a bounded set of provider-call
+retries before it emits the terminal `behavior.failed` event. Each
+failed attempt appears as an `llm.responded` event with an `error`
+payload; a successful later attempt is the one cached and stamped
+into object provenance.
+
+After the built-in attempts are exhausted, the right higher-level
+pattern is still a **retry behavior** that subscribes to
+`behavior.failed` and re-fires the work with run-specific backoff or
+operator policy:
 
 ```python
 @behavior(
@@ -45,9 +55,10 @@ def llm_retry(event, graph, ctx):
     })
 ```
 
-Retries are first-class graph citizens (CONTRACT v0.6 #13), not
-buried in framework middleware. You see every retry in the trace
-and can fork from any of them.
+Terminal retries are first-class graph citizens (CONTRACT v0.6 #13).
+Provider-call attempts are visible as `llm.requested` /
+`llm.responded(error=...)` pairs, and higher-level retries appear as
+normal behavior-emitted events that you can fork from.
 
 ### Failures from your prompt: tighten the prompt
 
@@ -167,6 +178,18 @@ emitted in your behalf:
 The recovery flow always starts there. The error's `More:` link
 points at this page; the trace event points at the behavior that
 fired the carrier.
+
+For transient provider failures, inspect the preceding `llm.responded`
+events as well. Failed attempts carry:
+
+```json
+{
+  "error": {"reason": "llm.network_error", "message": "..."},
+  "retryable": true,
+  "attempt_index": 0,
+  "max_attempts": 3
+}
+```
 
 ## When does this fire
 

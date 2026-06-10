@@ -9,6 +9,7 @@ from activegraph import (
     behavior,
     relation_behavior,
 )
+from activegraph.runtime.diff import Diff, DivergentObject
 
 
 def _tmp_db(tmp_path):
@@ -51,9 +52,21 @@ def test_diff_identical_runs_has_no_divergence(tmp_path):
 
     diff = parent.diff(fork)
     # The fork ran to idle without divergent input; final state should match.
-    assert diff.is_identical or (
-        not diff.divergent_objects and not diff.divergent_relations
+    assert diff.is_identical is True
+
+
+def test_diff_is_identical_is_bool_property():
+    diff = Diff(parent_run_id="parent", fork_run_id="fork")
+    assert diff.is_identical is True
+
+    diff.divergent_objects.append(
+        DivergentObject(
+            id="task#1",
+            in_parent={"id": "task#1", "version": 1},
+            in_fork=None,
+        )
     )
+    assert diff.is_identical is False
 
 
 def test_diff_reports_divergent_objects(tmp_path):

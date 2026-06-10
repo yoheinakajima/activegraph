@@ -12,6 +12,43 @@ from decimal import Decimal
 from tests._llm_helpers import Claim, ClaimList, FailingProvider, ScriptedProvider
 
 
+class _FlakyThenSucceedsProvider:
+    default_model = "claude-sonnet-4-5"
+
+    def __init__(self, failures: int, reason: str = "llm.network_error"):
+        self.failures = failures
+        self.reason = reason
+        self.call_log: list[dict] = []
+
+    def recognizes_model(self, name: str) -> bool:
+        return True
+
+    def complete(self, **kwargs):
+        self.call_log.append(kwargs)
+        if len(self.call_log) <= self.failures:
+            raise LLMBehaviorError(
+                self.reason,
+                "temporary provider failure",
+                payload_extras={"retry_after_seconds": 0},
+            )
+        return LLMResponse(
+            raw_text='{"claims":[{"text":"recovered","confidence":0.8}]}',
+            parsed=ClaimList(claims=[Claim(text="recovered", confidence=0.8)]),
+            input_tokens=10,
+            output_tokens=5,
+            cost_usd=Decimal("0.001"),
+            latency_seconds=0.01,
+            model=kwargs["model"],
+            finish_reason="end_turn",
+        )
+
+    def estimate_cost(self, *, input_tokens, output_tokens, model):
+        return Decimal("0.001")
+
+    def count_tokens(self, *, system, messages, model):
+        return 10
+
+
 def _seed_doc():
     @behavior(name="seed", on=["goal.created"])
     def seed(event, graph, ctx):
@@ -50,6 +87,128 @@ def test_network_error_becomes_behavior_failed_with_reason():
         if e.type == "behavior.failed" and e.payload["behavior"] == "extractor"
     )
     assert failed.payload["reason"] == "llm.network_error"
+
+
+def test_transient_llm_network_error_retries_before_handler_runs():
+    """#27: a transient provider failure is not treated as an empty
+    extraction. The runner retries before invoking the handler or
+    emitting the terminal behavior.failed event."""
+
+    _seed_doc()
+
+    @llm_behavior(
+        name="extractor",
+        on=["object.created"],
+        where={"object.type": "document"},
+        output_schema=ClaimList,
+        view={"around": "event.payload.object.id", "depth": 1},
+    )
+    def extractor(event, graph, ctx, out):
+        for claim in out.claims:
+            graph.add_object(
+                "claim", {"text": claim.text, "confidence": claim.confidence}
+            )
+
+    provider = _FlakyThenSucceedsProvider(failures=1)
+    g = Graph()
+    Runtime(
+        g,
+        llm_provider=provider,
+        llm_retry_max_attempts=3,
+        llm_retry_initial_delay_seconds=0,
+    ).run_goal("g")
+
+    assert len(provider.call_log) == 2
+    assert not any(
+        e.type == "behavior.failed" and e.payload["behavior"] == "extractor"
+        for e in g.events
+    )
+    claim = next(o for o in g.all_objects() if o.type == "claim")
+    assert claim.data["text"] == "recovered"
+
+    requests = [e for e in g.events if e.type == "llm.requested"]
+    responses = [e for e in g.events if e.type == "llm.responded"]
+    assert len(requests) == 2
+    assert len(responses) == 2
+    assert responses[0].payload["error"]["reason"] == "llm.network_error"
+    assert responses[0].payload["retryable"] is True
+    assert responses[0].caused_by == requests[0].id
+    assert responses[1].payload.get("error") is None
+    assert responses[1].caused_by == requests[1].id
+    assert requests[1].payload["retry_of"] == requests[0].id
+    assert claim.provenance["llm_request_event_id"] == requests[1].id
+
+
+def test_transient_llm_network_error_exhausts_after_max_attempts():
+    _seed_doc()
+
+    @llm_behavior(
+        name="extractor",
+        on=["object.created"],
+        where={"object.type": "document"},
+        output_schema=ClaimList,
+        view={"around": "event.payload.object.id", "depth": 1},
+    )
+    def extractor(event, graph, ctx, out):
+        graph.add_object("claim", {"text": "should not happen"})
+
+    provider = _FlakyThenSucceedsProvider(failures=99)
+    g = Graph()
+    Runtime(
+        g,
+        llm_provider=provider,
+        llm_retry_max_attempts=2,
+        llm_retry_initial_delay_seconds=0,
+    ).run_goal("g")
+
+    assert len(provider.call_log) == 2
+    assert not any(o.type == "claim" for o in g.all_objects())
+    assert len([e for e in g.events if e.type == "llm.requested"]) == 2
+    errored = [
+        e for e in g.events
+        if e.type == "llm.responded" and e.payload.get("error")
+    ]
+    assert len(errored) == 2
+    failed = next(
+        e
+        for e in g.events
+        if e.type == "behavior.failed" and e.payload["behavior"] == "extractor"
+    )
+    assert failed.payload["reason"] == "llm.network_error"
+    assert failed.payload["attempts"] == 2
+    assert failed.payload["max_attempts"] == 2
+    assert failed.payload["retry_exhausted"] is True
+
+
+def test_non_transient_llm_error_does_not_retry():
+    _seed_doc()
+
+    @llm_behavior(
+        name="extractor",
+        on=["object.created"],
+        where={"object.type": "document"},
+        output_schema=ClaimList,
+        view={"around": "event.payload.object.id", "depth": 1},
+    )
+    def extractor(event, graph, ctx, out):
+        pass
+
+    provider = _FlakyThenSucceedsProvider(failures=1, reason="llm.parse_error")
+    g = Graph()
+    Runtime(
+        g,
+        llm_provider=provider,
+        llm_retry_max_attempts=3,
+        llm_retry_initial_delay_seconds=0,
+    ).run_goal("g")
+
+    assert len(provider.call_log) == 1
+    failed = next(
+        e
+        for e in g.events
+        if e.type == "behavior.failed" and e.payload["behavior"] == "extractor"
+    )
+    assert failed.payload["reason"] == "llm.parse_error"
 
 
 def test_schema_violation_becomes_behavior_failed():
