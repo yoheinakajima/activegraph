@@ -15,9 +15,9 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-v1.1 scope is tracked in `ROADMAP.md`; `v1.1-plan.md` remains the
-post-v1.0.3 backlog source, and `FUTURE_IDEAS.md` carries unscheduled
-candidates.
+No changes yet.
+
+## [v1.1.0] — 2026-06-10
 
 ### Added
 
