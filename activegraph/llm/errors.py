@@ -101,27 +101,27 @@ def _llm_prose_rate_limited(message: str) -> tuple[str, str, str]:
     return (
         f"The LLM provider rejected the request as rate-limited:\n  {message}",
         "Providers cap requests per minute / tokens per minute. When the cap "
-        "is hit, retries within the rate-limit window will fail again — the "
-        "framework refuses to silently retry-loop without an explicit "
-        "operator decision, because a long retry loop can quietly exhaust "
-        "the behavior's budget.",
+        "is hit, the runtime makes a small bounded set of provider-call "
+        "retries before emitting the terminal `behavior.failed` event. The "
+        "retry attempts are recorded as `llm.responded` events with an "
+        "`error` payload so operators can distinguish provider unavailability "
+        "from a legitimate empty extraction.",
         "Wait until the rate-limit window resets (provider-specific — usually "
-        "60 seconds), then re-run. For long-running goals, set a higher "
-        "`max_seconds` budget so the runtime tolerates intermittent "
-        "rate-limits. If this happens during fork/replay, the cache hit "
-        "should normally prevent the live call — check whether the prompt "
-        "hash matches the recorded one.",
+        "60 seconds), then re-run from the last good event. If this happens "
+        "during fork/replay, the cache hit should normally prevent the live "
+        "call — check whether the prompt hash matches the recorded one.",
     )
 
 
 def _llm_prose_network_error(message: str) -> tuple[str, str, str]:
     return (
         f"The LLM provider call failed with a network error:\n  {message}",
-        "The framework treats network failures as transient but not "
-        "automatically retryable: a silent retry could mask a real outage "
-        "or burn budget on a flaky network. The error escapes to the caller "
-        "so the operator decides what to do.",
-        "If the network is unreliable, re-run the goal — fork-and-replay "
+        "The framework treats network failures as transient and retries the "
+        "provider call a small bounded number of times before emitting the "
+        "terminal `behavior.failed` event. Failed attempts are visible in "
+        "the log as `llm.responded` events with an `error` payload, so a "
+        "provider outage cannot be confused with a valid empty response.",
+        "If the retry budget is exhausted, re-run the goal — fork-and-replay "
         "from the last successful event:\n"
         "    activegraph fork <run> --at-event <last-good> --record\n"
         "For systematic outages, the provider's status page is the canonical "

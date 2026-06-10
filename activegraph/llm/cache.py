@@ -11,8 +11,9 @@ Population paths:
   * `LLMCache.from_events(events)` — used at `Runtime.load(...,
     replay_llm_cache=True)` and `runtime.fork(...,
     replay_llm_cache=True)`. Walks the recorded log and harvests every
-    `llm.responded` event whose preceding `llm.requested` carries a
-    `prompt_hash`.
+    successful `llm.responded` event whose preceding `llm.requested`
+    carries a `prompt_hash`. Failed retry attempts carry
+    `payload["error"]` and are deliberately skipped.
 
   * `cache.record(prompt_hash, response, requesting_event_id)` —
     called inline from the LLM-behavior invocation path so that
@@ -114,12 +115,13 @@ class LLMCache:
 
     @classmethod
     def from_events(cls, events: Iterable[Event]) -> "LLMCache":
-        """Walk the log and harvest every `llm.responded` whose
-        preceding `llm.requested` carries a `prompt_hash`.
+        """Walk the log and harvest every successful `llm.responded`
+        whose preceding `llm.requested` carries a `prompt_hash`.
 
         The pairing rule: an `llm.responded.caused_by` points at its
         `llm.requested.id`. The `prompt_hash` is on the `llm.requested`
-        payload.
+        payload. Error-shaped `llm.responded` events are failed attempts,
+        not reusable model output.
         """
 
         cache = cls()
@@ -127,6 +129,8 @@ class LLMCache:
         by_id: dict[str, Event] = {e.id: e for e in events_list}
         for e in events_list:
             if e.type != "llm.responded":
+                continue
+            if e.payload.get("error"):
                 continue
             request_id = e.caused_by
             if request_id is None:

@@ -75,7 +75,10 @@ The complete set of framework-emitted event types:
 - **`llm.requested`** / **`llm.responded`** — every LLM call appears
   as a request/response pair in the event log. Payload carries
   prompt content hash, model name, recorded-fixture key (in
-  fixture-replay runs), and the response body.
+  fixture-replay runs), and the response body. Failed transient
+  attempts use the same `llm.responded` type with an `error` payload
+  and retry metadata; only successful responses populate the replay
+  cache.
 - **`tool.requested`** / **`tool.responded`** — every tool call,
   same shape. Payload carries the tool name, input, output, and
   cache-hit status.

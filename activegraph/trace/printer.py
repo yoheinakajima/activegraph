@@ -161,6 +161,10 @@ def _fmt_llm_requested(e: Event, *, hide_prompt_normalized: bool = False) -> str
     parts: list[str] = [f"{e.id}  {name}", f"model={p.get('model', '?')}"]
     if p.get("cache_hit"):
         parts.append("cache_hit=true")
+    if p.get("attempt_index") is not None:
+        parts.append(
+            f"retry={int(p.get('attempt_index', 0)) + 1}/{int(p.get('max_attempts', 1))}"
+        )
     turn_idx = p.get("turn_index")
     if turn_idx is not None and turn_idx > 0:
         parts.append(f"turn={turn_idx}")
@@ -185,6 +189,18 @@ def _fmt_llm_responded(e: Event) -> str:
     parts: list[str] = [f"{e.id}  {name}"]
     if p.get("cache_hit"):
         parts.append("cache_hit=true")
+    if p.get("attempt_index") is not None:
+        parts.append(
+            f"retry={int(p.get('attempt_index', 0)) + 1}/{int(p.get('max_attempts', 1))}"
+        )
+    err = p.get("error")
+    if err:
+        reason = err.get("reason", "llm.error") if isinstance(err, dict) else "llm.error"
+        parts.append(f"error={reason}")
+        lat = p.get("latency_seconds")
+        if lat is not None:
+            parts.append(f"latency={float(lat):.1f}s")
+        return f'{_format_tag("llm.responded")}{"  ".join([parts[0], " ".join(parts[1:])])}'
     in_tok = p.get("input_tokens")
     out_tok = p.get("output_tokens")
     if in_tok is not None:

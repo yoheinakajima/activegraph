@@ -238,6 +238,9 @@ class Runtime:
         llm_provider: Optional[LLMProvider] = None,
         replay_llm_cache: bool = False,
         llm_cache: Optional[LLMCache] = None,
+        llm_retry_max_attempts: int = 3,
+        llm_retry_initial_delay_seconds: float = 0.5,
+        llm_retry_max_delay_seconds: float = 8.0,
         # v0.7 additions
         tools: Optional[Iterable[Tool]] = None,
         replay_tool_cache: bool = False,
@@ -259,6 +262,14 @@ class Runtime:
         # Cache is content-keyed by prompt hash. May be pre-populated
         # (load/fork with replay_llm_cache=True) or lazily filled.
         self._llm_cache: Optional[LLMCache] = llm_cache
+        self.llm_retry_max_attempts = max(1, int(llm_retry_max_attempts))
+        self.llm_retry_initial_delay_seconds = max(
+            0.0, float(llm_retry_initial_delay_seconds)
+        )
+        self.llm_retry_max_delay_seconds = max(
+            self.llm_retry_initial_delay_seconds,
+            float(llm_retry_max_delay_seconds),
+        )
         # During _verify_replay we install the sequence of expected
         # prompt hashes (from recorded llm.requested events). A live
         # re-assembled prompt whose hash doesn't match the next
@@ -863,12 +874,12 @@ class Runtime:
         # append assistant/tool messages as it goes.
         running_messages: list[LLMMessage] = list(prompt.messages)
 
-        # The "last LLM request event id" gets stamped onto every
-        # object/relation/patch the handler creates. We track the
-        # most recent one — across the turn loop it's always the
-        # FINAL llm.requested whose response actually fed the handler.
+        # The successful LLM request event id gets stamped onto every
+        # object/relation/patch the handler creates. With retry enabled,
+        # failed attempts remain in the event log but provenance points
+        # at the request whose response actually fed the handler.
         last_llm_request_id: Optional[str] = None
-        first_llm_request_id: Optional[str] = None
+        successful_llm_request_id: Optional[str] = None
         response = None  # final non-tool response
 
         for turn_idx in range(max(1, b.max_tool_turns)):
@@ -931,61 +942,96 @@ class Runtime:
                     )
                     return
 
-            # ---- Emit llm.requested ----------------------------------------
-            requested_payload: dict[str, Any] = {
-                "behavior": b.name,
-                "model": prompt.model,
-                "prompt_hash": turn_hash,
-                "deterministic": prompt.deterministic,
-                "cache_hit": cached is not None,
-                "turn_index": turn_idx,
-                # CONTRACT v0.6 follow-up: surface the prompt-normalized
-                # flag explicitly so trace consumers can see that
-                # volatile-field stripping ran (always true in v0.7).
-                "prompt_normalized": True,
-            }
-            if turn_idx == 0:
-                # Only include full prompt body on turn 0; subsequent
-                # turns can be reconstructed from messages.
-                requested_payload["prompt"] = prompt.to_hashable()
-            if estimated_input_tokens is not None:
-                requested_payload["estimated_input_tokens"] = estimated_input_tokens
-            if pre_estimate_cost is not None:
-                requested_payload["estimated_cost_usd"] = str(pre_estimate_cost)
-            if self.budget.has_cost_limit():
-                remaining = self.budget.cost_remaining_amount()
-                requested_payload["budget_remaining_usd"] = (
-                    str(remaining) if remaining is not None else None
-                )
-            requested_evt = self._emit_llm_event(
-                "llm.requested",
-                requested_payload,
-                actor=b.name,
-                caused_by=event.id if turn_idx == 0 else last_llm_request_id,
-            )
-            if first_llm_request_id is None:
-                first_llm_request_id = requested_evt.id
-            last_llm_request_id = requested_evt.id
-
-            # ---- Strict-replay hash check ---------------------------------
-            if self.replay_strict and self._strict_expected_hashes is not None:
-                expected = (
-                    self._strict_expected_hashes.pop(0)
-                    if self._strict_expected_hashes
-                    else None
-                )
-                if expected is not None and expected != turn_hash:
-                    raise ReplayDivergenceError(
-                        event_id=requested_evt.id,
-                        expected=f"prompt_hash={expected}",
-                        actual=f"prompt_hash={turn_hash}",
+            # ---- Get the response (cache or provider, with retry) ----------
+            turn_response = None
+            max_attempts = 1 if cached is not None else self.llm_retry_max_attempts
+            first_attempt_request_id: Optional[str] = None
+            retry_caused_by: Optional[str] = None
+            for attempt_index in range(max_attempts):
+                if attempt_index > 0 and not self.budget.remaining():
+                    self._emit_behavior_failed(
+                        b.name,
+                        event.id,
+                        RuntimeError("budget exhausted before LLM retry"),
+                        reason=_budget_reason(self.budget.exhausted_by()),
+                        extras={
+                            "model": prompt.model,
+                            "attempt_index": attempt_index,
+                            "max_attempts": max_attempts,
+                        },
                     )
+                    return
 
-            # ---- Get the response (cache or provider) ---------------------
-            if cached is not None:
-                turn_response = cached
-            else:
+                requested_payload: dict[str, Any] = {
+                    "behavior": b.name,
+                    "model": prompt.model,
+                    "prompt_hash": turn_hash,
+                    "deterministic": prompt.deterministic,
+                    "cache_hit": cached is not None,
+                    "turn_index": turn_idx,
+                    # CONTRACT v0.6 follow-up: surface the prompt-normalized
+                    # flag explicitly so trace consumers can see that
+                    # volatile-field stripping ran (always true in v0.7).
+                    "prompt_normalized": True,
+                }
+                if attempt_index > 0:
+                    requested_payload["attempt_index"] = attempt_index
+                    requested_payload["max_attempts"] = max_attempts
+                    if first_attempt_request_id is not None:
+                        requested_payload["retry_of"] = first_attempt_request_id
+                if turn_idx == 0 and attempt_index == 0:
+                    # Only include full prompt body on turn 0's first attempt;
+                    # subsequent turns/retries can be reconstructed from
+                    # messages plus the shared prompt hash.
+                    requested_payload["prompt"] = prompt.to_hashable()
+                if estimated_input_tokens is not None:
+                    requested_payload["estimated_input_tokens"] = estimated_input_tokens
+                if pre_estimate_cost is not None:
+                    requested_payload["estimated_cost_usd"] = str(pre_estimate_cost)
+                if self.budget.has_cost_limit():
+                    remaining = self.budget.cost_remaining_amount()
+                    requested_payload["budget_remaining_usd"] = (
+                        str(remaining) if remaining is not None else None
+                    )
+                requested_evt = self._emit_llm_event(
+                    "llm.requested",
+                    requested_payload,
+                    actor=b.name,
+                    caused_by=(
+                        retry_caused_by
+                        if retry_caused_by is not None
+                        else event.id if turn_idx == 0 else last_llm_request_id
+                    ),
+                )
+                if first_attempt_request_id is None:
+                    first_attempt_request_id = requested_evt.id
+                last_llm_request_id = requested_evt.id
+
+                # ---- Strict-replay hash check -----------------------------
+                if (
+                    attempt_index == 0
+                    and self.replay_strict
+                    and self._strict_expected_hashes is not None
+                ):
+                    expected = (
+                        self._strict_expected_hashes.pop(0)
+                        if self._strict_expected_hashes
+                        else None
+                    )
+                    if expected is not None and expected != turn_hash:
+                        raise ReplayDivergenceError(
+                            event_id=requested_evt.id,
+                            expected=f"prompt_hash={expected}",
+                            actual=f"prompt_hash={turn_hash}",
+                        )
+
+                if cached is not None:
+                    turn_response = cached
+                    successful_llm_request_id = requested_evt.id
+                    break
+
                 try:
+                    call_t0 = _monotonic()
                     turn_response = self.llm_provider.complete(
                         system=prompt.system,
                         messages=running_messages,
@@ -998,18 +1044,84 @@ class Runtime:
                         tools=tool_defs,
                     )
                 except LLMBehaviorError as e:
+                    latency = _monotonic() - call_t0
+                    retryable = _is_transient_llm_reason(e.reason)
+                    error_evt = self._emit_llm_error_response(
+                        behavior_name=b.name,
+                        requested_evt=requested_evt,
+                        prompt_hash=turn_hash,
+                        model=prompt.model,
+                        reason=e.reason,
+                        message=str(e),
+                        payload_extras=e.payload_extras,
+                        attempt_index=attempt_index,
+                        max_attempts=max_attempts,
+                        retryable=retryable,
+                        latency_seconds=latency,
+                    )
+                    if retryable and attempt_index + 1 < max_attempts:
+                        delay = _llm_retry_delay_seconds(
+                            attempt_index=attempt_index,
+                            initial=self.llm_retry_initial_delay_seconds,
+                            maximum=self.llm_retry_max_delay_seconds,
+                            payload_extras=e.payload_extras,
+                        )
+                        retry_caused_by = error_evt.id
+                        if delay > 0:
+                            _time.sleep(delay)
+                        continue
+                    extras = dict(e.payload_extras)
+                    if retryable:
+                        extras.update(
+                            {
+                                "attempts": attempt_index + 1,
+                                "max_attempts": max_attempts,
+                                "retry_exhausted": True,
+                            }
+                        )
                     self._emit_behavior_failed(
-                        b.name, event.id, e, reason=e.reason,
-                        extras=e.payload_extras,
+                        b.name, event.id, e, reason=e.reason, extras=extras,
                     )
                     return
                 except Exception as e:
+                    latency = _monotonic() - call_t0
+                    extras = {"model": prompt.model}
+                    error_evt = self._emit_llm_error_response(
+                        behavior_name=b.name,
+                        requested_evt=requested_evt,
+                        prompt_hash=turn_hash,
+                        model=prompt.model,
+                        reason="llm.network_error",
+                        message=str(e),
+                        payload_extras=extras,
+                        attempt_index=attempt_index,
+                        max_attempts=max_attempts,
+                        retryable=True,
+                        latency_seconds=latency,
+                    )
+                    if attempt_index + 1 < max_attempts:
+                        delay = _llm_retry_delay_seconds(
+                            attempt_index=attempt_index,
+                            initial=self.llm_retry_initial_delay_seconds,
+                            maximum=self.llm_retry_max_delay_seconds,
+                            payload_extras=extras,
+                        )
+                        retry_caused_by = error_evt.id
+                        if delay > 0:
+                            _time.sleep(delay)
+                        continue
                     self._emit_behavior_failed(
                         b.name, event.id, e,
                         reason="llm.network_error",
-                        extras={"model": prompt.model},
+                        extras={
+                            "model": prompt.model,
+                            "attempts": attempt_index + 1,
+                            "max_attempts": max_attempts,
+                            "retry_exhausted": True,
+                        },
                     )
                     return
+                successful_llm_request_id = requested_evt.id
                 self._llm_cache.record(
                     turn_hash, turn_response, requesting_event_id=requested_evt.id
                 ) if self._llm_cache is not None else None
@@ -1019,6 +1131,10 @@ class Runtime:
                         turn_hash, turn_response, requesting_event_id=requested_evt.id
                     )
                 self.budget.add_cost(turn_response.cost_usd)
+                break
+
+            if turn_response is None:
+                return
 
             # ---- Emit llm.responded ---------------------------------------
             responded_payload = turn_response.to_dict() | {
@@ -1182,7 +1298,7 @@ class Runtime:
             return
 
         # ---- Invoke developer handler with provenance stamping -----------
-        bgraph._llm_request_event_id = first_llm_request_id  # noqa: SLF001
+        bgraph._llm_request_event_id = successful_llm_request_id  # noqa: SLF001
         bgraph._tool_request_event_ids = list(tool_request_event_ids)  # noqa: SLF001
         try:
             b.handler(event, bgraph, ctx, response.parsed)
@@ -1476,6 +1592,53 @@ class Runtime:
         )
         self.graph.emit(ev)
         return ev
+
+    def _emit_llm_error_response(
+        self,
+        *,
+        behavior_name: str,
+        requested_evt: Event,
+        prompt_hash: str,
+        model: str,
+        reason: str,
+        message: str,
+        payload_extras: dict[str, Any],
+        attempt_index: int,
+        max_attempts: int,
+        retryable: bool,
+        latency_seconds: float,
+    ) -> Event:
+        """Emit the response-side audit record for a failed LLM attempt.
+
+        Successful calls already emit ``llm.responded`` from
+        :class:`LLMResponse.to_dict`. Transient failures need the same
+        request/response shape so operators can distinguish "the provider
+        failed" from "the provider returned an empty extraction" when
+        inspecting long-running cache builds.
+        """
+
+        error = {
+            "reason": reason,
+            "message": message,
+            **dict(payload_extras or {}),
+        }
+        return self._emit_llm_event(
+            "llm.responded",
+            {
+                "behavior": behavior_name,
+                "prompt_hash": prompt_hash,
+                "model": model,
+                "error": error,
+                "cache_hit": False,
+                "retryable": retryable,
+                "attempt_index": attempt_index,
+                "max_attempts": max_attempts,
+                "latency_seconds": latency_seconds,
+                "cost_usd": "0",
+            },
+            actor=behavior_name,
+            caused_by=requested_evt.id,
+        )
 
     def _emit_behavior_failed(
         self,
@@ -2083,6 +2246,9 @@ class Runtime:
         replay_strict: bool = False,
         llm_provider: Optional[LLMProvider] = None,
         replay_llm_cache: bool = False,
+        llm_retry_max_attempts: int = 3,
+        llm_retry_initial_delay_seconds: float = 0.5,
+        llm_retry_max_delay_seconds: float = 8.0,
         tools: Optional[Iterable[Tool]] = None,
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
@@ -2134,6 +2300,9 @@ class Runtime:
             llm_provider=llm_provider,
             replay_llm_cache=replay_llm_cache,
             llm_cache=cache,
+            llm_retry_max_attempts=llm_retry_max_attempts,
+            llm_retry_initial_delay_seconds=llm_retry_initial_delay_seconds,
+            llm_retry_max_delay_seconds=llm_retry_max_delay_seconds,
             tools=tools,
             replay_tool_cache=replay_tool_cache,
             tool_cache=tcache,
@@ -2175,6 +2344,9 @@ class Runtime:
         behaviors: Optional[Iterable[Union[Behavior, RelationBehavior]]] = None,
         llm_provider: Optional[LLMProvider] = None,
         replay_llm_cache: bool = False,
+        llm_retry_max_attempts: int | None = None,
+        llm_retry_initial_delay_seconds: float | None = None,
+        llm_retry_max_delay_seconds: float | None = None,
         tools: Optional[Iterable[Tool]] = None,
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
@@ -2272,6 +2444,21 @@ class Runtime:
             llm_provider=llm_provider if llm_provider is not None else self.llm_provider,
             replay_llm_cache=replay_llm_cache,
             llm_cache=cache,
+            llm_retry_max_attempts=(
+                self.llm_retry_max_attempts
+                if llm_retry_max_attempts is None
+                else llm_retry_max_attempts
+            ),
+            llm_retry_initial_delay_seconds=(
+                self.llm_retry_initial_delay_seconds
+                if llm_retry_initial_delay_seconds is None
+                else llm_retry_initial_delay_seconds
+            ),
+            llm_retry_max_delay_seconds=(
+                self.llm_retry_max_delay_seconds
+                if llm_retry_max_delay_seconds is None
+                else llm_retry_max_delay_seconds
+            ),
             tools=tools,
             replay_tool_cache=replay_tool_cache,
             tool_cache=tcache,
@@ -2297,6 +2484,32 @@ _BUDGET_REASON_MAP = {
     "max_cost_usd": "budget.cost_exhausted",
     "max_llm_calls": "budget.llm_calls_exhausted",
 }
+
+
+_TRANSIENT_LLM_REASONS = frozenset({"llm.network_error", "llm.rate_limited"})
+
+
+def _is_transient_llm_reason(reason: str) -> bool:
+    return reason in _TRANSIENT_LLM_REASONS
+
+
+def _llm_retry_delay_seconds(
+    *,
+    attempt_index: int,
+    initial: float,
+    maximum: float,
+    payload_extras: Optional[dict[str, Any]] = None,
+) -> float:
+    extras = payload_extras or {}
+    retry_after = extras.get("retry_after_seconds")
+    if retry_after is not None:
+        try:
+            return max(0.0, min(float(retry_after), maximum))
+        except (TypeError, ValueError):
+            pass
+    if initial <= 0:
+        return 0.0
+    return min(initial * (2 ** attempt_index), maximum)
 
 
 def _resolve_and_validate_llm_models(source, provider) -> None:
@@ -2528,10 +2741,15 @@ def _verify_replay(
     # extract the sequence of expected prompt hashes (in the order the
     # behaviors fired them) so we can pin divergence at the right
     # event id.
+    non_replayable_llm_ids = _non_replayable_llm_attempt_event_ids(recorded_events)
     expected_hashes = [
         e.payload.get("prompt_hash")
         for e in recorded_events
-        if e.type == "llm.requested" and e.payload.get("prompt_hash")
+        if (
+            e.type == "llm.requested"
+            and e.id not in non_replayable_llm_ids
+            and e.payload.get("prompt_hash")
+        )
     ]
     cache = LLMCache.from_events(recorded_events)
 
@@ -2569,7 +2787,11 @@ def _verify_replay(
     fresh_rt.run_until_idle()
 
     # Compare type-stream of non-lifecycle events.
-    rec_stream = [(e.id, e.type) for e in recorded_events if not _is_lifecycle(e)]
+    rec_stream = [
+        (e.id, e.type)
+        for e in recorded_events
+        if not _is_lifecycle(e) and e.id not in non_replayable_llm_ids
+    ]
     new_stream = [(e.id, e.type) for e in fresh.events if not _is_lifecycle(e)]
     for i, (rec, new) in enumerate(zip(rec_stream, new_stream)):
         if rec[1] != new[1]:
@@ -2582,6 +2804,25 @@ def _verify_replay(
         expected = rec_stream[len(new_stream)][1] if len(new_stream) < len(rec_stream) else "<no recorded event>"
         actual = new_stream[len(rec_stream)][1] if len(rec_stream) < len(new_stream) else None
         raise ReplayDivergenceError(event_id=offending, expected=expected, actual=actual)
+
+
+def _non_replayable_llm_attempt_event_ids(events: list[Event]) -> set[str]:
+    """Return failed LLM attempt request/response ids.
+
+    Provider availability is not deterministic replay output. A run that
+    hit two transient network failures before a successful third attempt
+    should replay from the successful ``llm.responded`` cache entry, not
+    require the provider to fail twice again.
+    """
+
+    ids: set[str] = set()
+    for e in events:
+        if e.type != "llm.responded" or not e.payload.get("error"):
+            continue
+        ids.add(e.id)
+        if e.caused_by is not None:
+            ids.add(e.caused_by)
+    return ids
 
 
 def _is_lifecycle(e: Event) -> bool:

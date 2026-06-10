@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from decimal import Decimal
 
 import pytest
 
@@ -28,7 +29,7 @@ from activegraph import (
     clear_registry,
     llm_behavior,
 )
-from activegraph.llm import LLMCache
+from activegraph.llm import LLMBehaviorError, LLMCache, LLMResponse
 
 from tests._llm_helpers import Claim, ClaimList, ScriptedProvider
 
@@ -58,6 +59,42 @@ def _scripted(text="Sample claim"):
     )
 
 
+class _FailsOnceThenSucceeds:
+    default_model = "claude-sonnet-4-5"
+
+    def __init__(self):
+        self.calls = 0
+
+    def recognizes_model(self, name: str) -> bool:
+        return True
+
+    def complete(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            raise LLMBehaviorError(
+                "llm.network_error",
+                "temporary outage",
+                payload_extras={"retry_after_seconds": 0},
+            )
+        parsed = ClaimList(claims=[Claim(text="after retry", confidence=0.9)])
+        return LLMResponse(
+            raw_text=parsed.model_dump_json(),
+            parsed=parsed,
+            input_tokens=12,
+            output_tokens=6,
+            cost_usd=Decimal("0.001"),
+            latency_seconds=0.01,
+            model=kw["model"],
+            finish_reason="end_turn",
+        )
+
+    def estimate_cost(self, *, input_tokens, output_tokens, model):
+        return Decimal("0.001")
+
+    def count_tokens(self, *, system, messages, model):
+        return 12
+
+
 # ---------- LLMCache.from_events round-trip --------------------------------
 
 
@@ -82,6 +119,22 @@ def test_cache_miss_returns_none():
     cache = LLMCache()
     assert cache.get("nope") is None
     assert cache.has("nope") is False
+
+
+def test_cache_from_events_skips_failed_retry_attempts():
+    clear_registry()
+    _register()
+    provider = _FailsOnceThenSucceeds()
+    g = Graph()
+    Runtime(
+        g,
+        llm_provider=provider,
+        llm_retry_max_attempts=1,
+        llm_retry_initial_delay_seconds=0,
+    ).run_goal("test")
+
+    cache = LLMCache.from_events(g.events)
+    assert len(cache) == 0
 
 
 # ---------- fork with cache: hit + miss paths ------------------------------
@@ -258,6 +311,33 @@ def test_replay_strict_raises_on_prompt_hash_drift():
                 llm_provider=_scripted(),
                 replay_strict=True,
             )
+    finally:
+        if os.path.exists(db):
+            os.remove(db)
+
+
+def test_replay_strict_ignores_transient_failed_llm_attempts():
+    clear_registry()
+    _register()
+    db = tempfile.mktemp(suffix=".db")
+    try:
+        provider = _FailsOnceThenSucceeds()
+        g = Graph()
+        Runtime(
+            g,
+            llm_provider=provider,
+            persist_to=db,
+            llm_retry_initial_delay_seconds=0,
+        ).run_goal("test")
+        assert provider.calls == 2
+
+        clear_registry()
+        _register()
+        Runtime.load(
+            db,
+            llm_provider=_scripted("after retry"),
+            replay_strict=True,
+        )
     finally:
         if os.path.exists(db):
             os.remove(db)
