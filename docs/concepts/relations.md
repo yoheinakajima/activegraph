@@ -80,7 +80,7 @@ relationship, not to either endpoint?**
   dependency completes → relation behavior. The unblock logic is
   about the relationship, not about either task in isolation.
 - A `claim` getting flagged when its `confidence` drops below 0.5
-  → regular behavior on `object.patched`. The flag is about the
+  → regular behavior on `patch.applied`. The flag is about the
   claim itself; no relationship is involved.
 - A `contradicts` relation drafting a resolution memo when both
   endpoints change → agentic relation behavior. The reasoning needs

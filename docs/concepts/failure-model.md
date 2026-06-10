@@ -80,7 +80,7 @@ category for richer context.
 `approval.denied` — each carries a `reason` field with a stable
 discriminator code so downstream code can branch on the failure mode
 without parsing prose. The codes are documented in
-[Reference: Events](../reference/events/).
+[Reference: Reason codes](../reference/reason-codes.md).
 
 ## Observing failures in caller code
 
@@ -142,6 +142,33 @@ The two surfaces are *additive* and don't change the failure model:
 events stay the durable record, behaviors that fail still don't raise
 out of `run_goal()`, and existing code subscribing to `behavior.failed`
 keeps working unchanged.
+
+## Dispatch-Time Routing
+
+Most failures that happen while a behavior is executing become
+`behavior.failed`. That includes regular behavior body exceptions,
+LLM carrier errors (`LLMBehaviorError`), tool carrier errors
+(`ToolError` / `UnknownToolError`), and budget checks that stop a
+behavior before it can safely continue.
+
+Two dispatch-adjacent failures intentionally escape as exceptions:
+
+- **`ReplayDivergenceError`** during strict replay. Strict replay is a
+  caller-requested verification mode; a mismatch means the recorded
+  run and the live code no longer agree. Emitting `behavior.failed`
+  would hide the verifier's answer inside the log it is checking, so
+  the runtime raises to the caller instead.
+- **Pattern contract failures before behavior invocation.**
+  Unsupported pattern syntax is rejected at registration time. If a
+  pattern evaluator hits an unsupported shape while matching, no
+  behavior body has started and no behavior-owned recovery path exists;
+  the runtime raises the pattern error rather than inventing a
+  `behavior.failed` event for work that never began.
+
+The boundary is: once the runtime has entered a behavior body or an
+LLM/tool sub-step owned by that behavior, recoverable failures are
+events. Verification and contract-validation failures at runtime entry
+points remain exceptions.
 
 ## "When in doubt, an event"
 

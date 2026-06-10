@@ -15,32 +15,65 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-Nothing yet. v1.1 scope is tracked in `ROADMAP.md`; `v1.1-plan.md`
-remains the post-v1.0.3 consolidated backlog source, and
-`FUTURE_IDEAS.md` carries unscheduled candidates. v1.0.4 surfaced two
-additional v1.1 candidates: C-3 (lock the failure-routing
-convention for eval-time pattern failures and `ReplayDivergenceError`)
-and I-4 (cross-link `replay-divergence-error.md` to replay/fixture
-documentation). v1.0.5 surfaced two more: content negotiation on the
-docs host (serving
-`text/markdown` per-page complementing the static `/llms.txt` and
-`/llms-full.txt` files), and an editorial doc-readability pass
-(front-loaded page summaries, terminology normalization).
-v1.0.5.post1 surfaced three more: CLA / DCO decision (Apache 2.0 §5's
-implicit grant covers today; revisit if contribution volume or
-enterprise legal review makes the ceremony concrete);
-`CODE_OF_CONDUCT.md` paired with a contact channel (Contributor
-Covenant v2.1 is the standard text; the missing piece is the contact
-inbox); and the relaxation of the issues-first contribution policy
-(currently a pre-launch posture; revisit based on actual contribution
-patterns observed during v1.0.x's public window). v1.0.5.post2 surfaced
-two more: the `object.patched` event-name drift in
-`docs/concepts/events.md` (the page lists a framework event the code
-does not emit — fix the doc or fix the code, design call deferred);
-and a dedicated reason-code taxonomy reference (the closed
-`behavior.failed` / `tool.responded` `reason=` vocabulary is documented
-only across the per-error pages; a single enumeration would mirror the
-event-type listing v1.0.5.post2 ships).
+v1.1 scope is tracked in `ROADMAP.md`; `v1.1-plan.md` remains the
+post-v1.0.3 backlog source, and `FUTURE_IDEAS.md` carries unscheduled
+candidates.
+
+### Added
+
+- `Runtime` now performs bounded provider-call retries for transient
+  LLM failures (`llm.network_error`, `llm.rate_limited`) before the
+  terminal `behavior.failed` path. Failed attempts are visible as
+  error-shaped `llm.responded` events and successful object provenance
+  points at the successful retry attempt.
+- `activegraph inspect --memo` renders memo objects with the same
+  operator format used by `activegraph quickstart`.
+- `activegraph inspect --search <query>` searches event ids, types,
+  actors, and payload JSON.
+- `activegraph fork --set <pack>.<setting>=<value>` records fork-local
+  pack setting overrides as `pack.settings_overridden` events. Pack
+  loading applies and validates those overrides before post-fork
+  execution resumes.
+- `OpenTelemetryMetrics` ships as a second optional metrics backend
+  alongside `PrometheusMetrics`. Install with
+  `pip install 'activegraph[opentelemetry]'`.
+- `OpenAIProvider` now supports the shared LLM/tool loop by translating
+  framework tool definitions to OpenAI Chat Completions function tools
+  and extracting returned `tool_calls` into the shared `ToolCall` shape.
+- Release drift gates now cover CLI-reference flags, executable Python
+  doc snippets, reason-code docs, and tagged-release version
+  correspondence.
+
+### Changed
+
+- `LLMCache.from_events` ignores error-shaped `llm.responded` events so
+  retry failures cannot poison replay caches.
+- The trace printer annotates LLM retry attempts and error-shaped
+  responses.
+- Docs now use `patch.applied` for direct object patches instead of the
+  non-emitted `object.patched` event name.
+- The failure model now states why strict replay
+  `ReplayDivergenceError` and dispatch-time contract failures escape
+  instead of becoming `behavior.failed`.
+- The LLM provider reference now treats OpenAI and Anthropic tool use as
+  supported through the same runtime contract. Native provider
+  structured-output modes remain deferred in `FUTURE_IDEAS.md`.
+
+### Tests
+
+- Pinned `Diff.is_identical` as a bool property (`is True` /
+  `is False`) to close issue #28.
+- Added retry, replay-cache, CLI-selector, fork-override,
+  OpenTelemetry, OpenAI tool-parity, doc-snippet, CLI-reference, and
+  reason-code regression coverage.
+
+### Migration notes
+
+- No store schema migration is required.
+- Event consumers that treat framework event types as a closed list
+  should allow the new `pack.settings_overridden` event.
+- The new OpenTelemetry backend is optional; existing Prometheus and
+  custom `Metrics` implementations continue to work unchanged.
 
 ## [v1.0.5.post2] — 2026-05-20
 

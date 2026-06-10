@@ -13,6 +13,8 @@ authoring guide for pattern subscriptions).
 
 The hierarchy itself is documented at
 [Concepts: Failure model](../concepts/failure-model.md).
+The event payload reason-code vocabulary is documented at
+[Reference: Reason codes](reason-codes.md).
 
 ## By category
 
@@ -78,6 +80,9 @@ The seven category bases match the
 
 - [Concepts: Failure model](../concepts/failure-model.md) — the
   hierarchy and the events-not-exceptions principle.
+- [Reference: Reason codes](reason-codes.md) — the stable
+  `behavior.failed` / `tool.responded` / failed LLM attempt reason
+  vocabulary.
 - [API reference: Errors](api/errors.md) — the class hierarchy
   rendered from docstrings.
 - [Cookbook: Debugging](../cookbook/debugging.md) — diagnostic
