@@ -12,7 +12,8 @@ only escapes to your code if you're invoking the tool outside of an
 LLM behavior's tool-loop.
 
 See [`failure-model`](../../concepts/failure-model.md) for the
-broader principle.
+broader principle. For the complete reason-code table, see
+[`reason-codes`](../reason-codes.md).
 
 ## Quick fix by category
 

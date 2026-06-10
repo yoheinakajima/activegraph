@@ -40,8 +40,8 @@ families:
 
 - **Lifecycle**: `goal.created`, `runtime.idle`,
   `runtime.budget_exhausted` — boundary events around a run.
-- **Object mutations**: `object.created`, `object.patched`,
-  `object.removed` — every graph mutation lands as one of these.
+- **Object mutations**: `object.created`, `object.removed` — object
+  birth and removal.
 - **Relation mutations**: `relation.created`, `relation.removed`.
 - **Behavior dispatch**: `behavior.started`, `behavior.completed`,
   `behavior.failed`, `behavior.scheduled` — what the runtime did
@@ -51,14 +51,21 @@ families:
   carries the match count.
 - **LLM / tool**: `llm.requested`, `llm.responded`, `tool.requested`,
   `tool.responded` — every LLM call and every tool call appears as
-  a request/response pair.
+  a request/response pair. A successful `llm.responded` carries the
+  model output; a failed transient attempt carries an `error` payload
+  and can be followed by another `llm.requested` retry attempt.
 - **Patches**: `patch.proposed`, `patch.applied`, `patch.rejected`
-  — the patch lifecycle.
+  — the patch lifecycle. Direct `graph.patch_object(...)` shortcuts
+  also emit `patch.applied`.
 - **Approvals**: `approval.proposed`, `approval.granted` — the
   policy-gated approval lifecycle.
-- **Pack lifecycle**: `pack.loaded` — emitted once per
-  `runtime.load_pack` call, carries the pack name, version, and
-  prompt content hashes.
+- **Pack lifecycle**: `pack.loaded`, `pack.settings_overridden` —
+  `pack.loaded` is emitted once per `runtime.load_pack` call and
+  carries the pack name, version, settings, and prompt content
+  hashes. `pack.settings_overridden` records fork-local CLI
+  overrides from `activegraph fork --set`; the parent prefix stays
+  append-only, and pack loading applies the override before
+  post-fork execution resumes.
 
 Custom event types from user code live alongside these and follow
 the same shape. Behaviors subscribe to either set with the same
@@ -77,11 +84,11 @@ Three consequences:
 
 - **There's no "current value" of an object outside its event
   history.** An object's data is the result of applying every
-  `object.created` and `object.patched` event for that object id,
+  `object.created` and `patch.applied` event for that object id,
   in order. The in-memory `Object.data` dict is a cache of that
   computation, not an authoritative store.
 - **Operations that look like mutations are emissions.** `add_object`
-  emits `object.created`; `patch_object` emits `object.patched`;
+  emits `object.created`; `patch_object` emits `patch.applied`;
   `remove_object` emits `object.removed`. The graph in memory
   updates as a side effect of the emit.
 - **The audit trail is automatic.** Anything that happened in a

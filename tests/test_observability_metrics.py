@@ -213,3 +213,66 @@ class TestPrometheusMetricsOptional:
         assert "activegraph_events_emitted" in names  # _total suffix dropped
         assert "activegraph_behaviors_duration_seconds" in names
         assert "activegraph_queue_depth" in names
+
+
+class TestOpenTelemetryMetricsOptional:
+    """OpenTelemetry is opt-in. If installed, basic emission works."""
+
+    def test_available_flag(self):
+        from activegraph.observability.otel import OpenTelemetryMetrics
+
+        assert isinstance(OpenTelemetryMetrics.available(), bool)
+
+    def test_emit_with_opentelemetry_in_memory_reader(self):
+        from activegraph.observability.otel import OpenTelemetryMetrics
+
+        if not OpenTelemetryMetrics.available():
+            pytest.skip("opentelemetry-api/opentelemetry-sdk not installed")
+
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+        reader = InMemoryMetricReader()
+        provider = MeterProvider(metric_readers=[reader])
+        meter = provider.get_meter("activegraph.test")
+        m = OpenTelemetryMetrics(meter=meter)
+
+        m.counter("activegraph_events_emitted_total", {"event_type": "goal.created"})
+        m.histogram(
+            "activegraph_behaviors_duration_seconds",
+            {"behavior": "planner"},
+            0.25,
+        )
+        m.gauge("activegraph_queue_depth", {}, 2.0)
+        m.gauge("activegraph_queue_depth", {}, 5.0)
+
+        metrics = _otel_metrics_by_name(reader.get_metrics_data())
+        assert set(metrics) == {
+            "activegraph_events_emitted_total",
+            "activegraph_behaviors_duration_seconds",
+            "activegraph_queue_depth",
+        }
+
+        event_dp = metrics["activegraph_events_emitted_total"].data.data_points[0]
+        assert event_dp.attributes == {"event_type": "goal.created"}
+        assert event_dp.value == 1.0
+
+        duration_dp = metrics["activegraph_behaviors_duration_seconds"].data.data_points[0]
+        assert duration_dp.attributes == {"behavior": "planner"}
+        assert duration_dp.count == 1
+        assert duration_dp.sum == 0.25
+
+        queue_data = metrics["activegraph_queue_depth"].data
+        assert queue_data.is_monotonic is False
+        queue_dp = queue_data.data_points[0]
+        assert queue_dp.attributes == {}
+        assert queue_dp.value == 5.0
+
+
+def _otel_metrics_by_name(metrics_data):
+    out = {}
+    for resource_metrics in metrics_data.resource_metrics:
+        for scope_metrics in resource_metrics.scope_metrics:
+            for metric in scope_metrics.metrics:
+                out[metric.name] = metric
+    return out

@@ -118,6 +118,7 @@ plugins:
         Reference:
           - reference/cli.md: Full `activegraph` CLI reference — `quickstart`, `run`, `inspect`, `fork`, `pack`, and every flag.
           - reference/llm-providers.md: AnthropicProvider and OpenAIProvider side-by-side surface; recorded-fixture replay, model defaults, limitations.
+          - reference/reason-codes.md: Stable reason-code taxonomy for behavior.failed, tool.responded errors, and failed LLM attempts.
           - reference/errors.md: Catalog overview of every error class — when it fires, what triggers it, where to look.
           - reference/errors/*.md
           - reference/api/index.md: API reference overview — Runtime, Graph, Behaviors, Tools, Store, Packs, Errors, Observability.
@@ -229,6 +230,7 @@ nav:
   - Reference:
       - CLI: reference/cli.md
       - LLM providers: reference/llm-providers.md
+      - Reason codes: reference/reason-codes.md
       - API reference:
           - Overview: reference/api/index.md
           - Runtime: reference/api/runtime.md

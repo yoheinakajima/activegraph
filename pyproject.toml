@@ -39,6 +39,7 @@ openai = ["openai>=1.0", "tiktoken>=0.7", "pydantic>=2"]
 sqlite = []     # SQLite is stdlib — no extra deps needed for the v0.5 store
 postgres = ["psycopg[binary]>=3.1,<4"]
 prometheus = ["prometheus_client>=0.20"]
+opentelemetry = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25"]
 all = [
     "anthropic>=0.40",
     "openai>=1.0",
@@ -46,12 +47,17 @@ all = [
     "pydantic>=2",
     "psycopg[binary]>=3.1,<4",
     "prometheus_client>=0.20",
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
 ]
 dev = [
+    "build>=1.2",
     "pytest>=7",
     "pydantic>=2",
     "prometheus_client>=0.20",
     "psycopg[binary]>=3.1,<4",
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
 ]
 # Doc-site build deps. The docs workflow installs from this extra so
 # the install line and the mkdocs config can't drift the way they did

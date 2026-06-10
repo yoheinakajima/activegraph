@@ -5,8 +5,9 @@ Three pillars, all opt-in:
 - Structured logging (``configure_logging``) — JSON-line logger setup
   matching the documented schema. Off by default; users with existing
   ``logging`` config keep theirs.
-- Metrics (``Metrics`` protocol + ``NoOpMetrics`` + ``PrometheusMetrics``)
-  — three methods, fixed metric names. NoOp is the default.
+- Metrics (``Metrics`` protocol + ``NoOpMetrics`` + ``PrometheusMetrics`` +
+  ``OpenTelemetryMetrics``) — three methods, fixed metric names. NoOp is
+  the default.
 - Runtime introspection (``RuntimeStatus``) — frozen snapshot returned
   by ``runtime.status()``.
 
@@ -30,6 +31,7 @@ from activegraph.observability.migration import (
     MigrationRunReport,
     migrate,
 )
+from activegraph.observability.otel import OpenTelemetryMetrics
 from activegraph.observability.prometheus import PrometheusMetrics
 from activegraph.observability.status import (
     BehaviorInfo,
@@ -51,6 +53,7 @@ __all__ = [
     "MigrationReport",
     "MigrationRunReport",
     "NoOpMetrics",
+    "OpenTelemetryMetrics",
     "PrometheusMetrics",
     "RuntimeStatus",
     "configure_logging",

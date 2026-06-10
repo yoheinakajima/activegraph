@@ -284,12 +284,11 @@ decision, and got a structural comparison of the results.
 Hypothesis testing on an agentic system, without losing the parent
 run. This is what fork-and-diff means in this framework.
 
-The fork-and-diff workflow will collapse into a single
-`activegraph fork --set` CLI command in v1.1
-([CONTRACT v1.1 #1](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md#v11-1-cli-flags-specd-but-not-implemented));
-the Python form above is the v1.0 canonical recipe. For the
-conceptual deep-dive on forks (shared lineage, cache replay, the
-strict-vs-permissive replay distinction), read
+For operator workflows, the same idea can be recorded directly
+with `activegraph fork --set <pack>.<setting>=<value>`; the Python
+form above is useful when your application already owns runtime
+construction. For the conceptual deep-dive on forks (shared
+lineage, cache replay, the strict-vs-permissive replay distinction), read
 [`concepts/forking`](concepts/forking.md).
 
 ## What to read next

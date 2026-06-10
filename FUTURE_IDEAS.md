@@ -6,8 +6,9 @@ visible here with a one-line reason it is future / deferred rather than
 part of the current v1.1 blocker set.
 
 - **Native structured-output mode.** Deferred because v1.1 first needs
-  provider tool-shape parity; native JSON schema modes can follow once
-  provider semantics are stable.
+  to ship provider tool-shape parity without also changing structured
+  output semantics; native JSON schema modes can follow in a separate
+  provider-focused pass.
 - **Dict-form `output_schema` support.** Deferred because the current
   schema surface should stay narrow while v1.1 focuses on documented
   drift gates and provider parity.

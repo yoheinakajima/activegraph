@@ -25,11 +25,11 @@ What this provider does:
     shape as Anthropic's. Defaults track GPT-4o-family rates current
     in 2026; override via the ``pricing=`` constructor kwarg.
 
-Tool use is **not yet supported**. ``complete()`` accepts the ``tools=``
-kwarg for Protocol compatibility, but a non-empty list raises
-:class:`LLMBehaviorError` with ``reason="llm.network_error"`` and a
-message pointing at v1.1 for tool-shape translation. CONTRACT v1.1
-candidate, filed in v1.1 #7 and beyond.
+Tool use follows the runtime's shared LLM/tool-loop contract. The
+provider translates the framework's Anthropic-shaped tool definitions
+(``{name, description, input_schema}``) into OpenAI Chat Completions
+``tools=[{type:"function", function:{...}}]`` entries and extracts
+returned function tool calls into :class:`ToolCall` objects.
 
 API key comes from ``OPENAI_API_KEY`` — never from code, never from
 a checked-in config. Same loud-failure shape as ``ANTHROPIC_API_KEY``.
@@ -38,6 +38,7 @@ a checked-in config. Same loud-failure shape as ``ANTHROPIC_API_KEY``.
 from __future__ import annotations
 
 import logging
+import json
 import time
 from decimal import Decimal
 from typing import Any, Mapping, Optional
@@ -45,7 +46,7 @@ from typing import Any, Mapping, Optional
 from activegraph.llm.errors import LLMBehaviorError
 from activegraph.llm.parsing import parse_structured_response as _parse_structured
 from activegraph.llm.provider import LLMProvider
-from activegraph.llm.types import LLMMessage, LLMResponse
+from activegraph.llm.types import LLMMessage, LLMResponse, ToolCall
 
 
 _log = logging.getLogger("activegraph.llm.openai")
@@ -151,21 +152,6 @@ class OpenAIProvider(LLMProvider):
         timeout_seconds: float,
         tools: Optional[list[dict[str, Any]]] = None,
     ) -> LLMResponse:
-        if tools:
-            # CONTRACT v1.0.1 #5: tool-shape translation deferred to v1.1.
-            # Surfaces as the same structured error any other LLM failure
-            # produces, so downstream `behavior.failed` handling is uniform.
-            raise LLMBehaviorError(
-                "llm.network_error",
-                (
-                    "OpenAIProvider does not yet support tool use. "
-                    "Tool-using behaviors should use AnthropicProvider until "
-                    "v1.1, which will add OpenAI tool-shape translation. "
-                    "See CONTRACT v1.0.1 #5 and v1.1 #7-and-beyond."
-                ),
-                payload_extras={"model": model, "tools_count": len(tools)},
-            )
-
         client = self._client()
         openai_messages: list[dict[str, Any]] = []
         if system:
@@ -182,6 +168,8 @@ class OpenAIProvider(LLMProvider):
         }
         if top_p < 1.0:
             kwargs["top_p"] = float(top_p)
+        if tools:
+            kwargs["tools"] = [_tool_definition_to_openai(t) for t in tools]
 
         t0 = time.monotonic()
         try:
@@ -200,8 +188,9 @@ class OpenAIProvider(LLMProvider):
         latency = time.monotonic() - t0
 
         text = _extract_text(raw)
+        tool_calls = _extract_tool_calls(raw)
         parsed: Any = None
-        if output_schema is not None:
+        if output_schema is not None and not tool_calls:
             parsed = _parse_structured(text, output_schema)
 
         usage = getattr(raw, "usage", None)
@@ -230,7 +219,7 @@ class OpenAIProvider(LLMProvider):
             finish_reason=finish,
             seed=None,
             cache_hit=False,
-            tool_calls=None,
+            tool_calls=tool_calls or None,
         )
 
     def estimate_cost(
@@ -329,10 +318,6 @@ def _extract_text(raw: Any) -> str:
 
 def _message_to_openai(m: LLMMessage) -> dict[str, Any]:
     """Convert an LLMMessage to the OpenAI chat-message shape.
-
-    ``role="tool"`` is preserved (with ``tool_call_id``) for Protocol
-    compatibility, but the tool-use turn loop is rejected upstream in
-    ``complete()`` until v1.1 ships the shape-translation work.
     """
     if m.role == "tool":
         return {
@@ -340,7 +325,87 @@ def _message_to_openai(m: LLMMessage) -> dict[str, Any]:
             "tool_call_id": m.tool_use_id or "",
             "content": m.content,
         }
+    if m.role == "assistant" and m.tool_calls:
+        return {
+            "role": "assistant",
+            "content": m.content or None,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.args, sort_keys=True),
+                    },
+                }
+                for tc in m.tool_calls
+            ],
+        }
     return {"role": m.role, "content": m.content}
+
+
+def _tool_definition_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
+    """Translate framework/Anthropic tool definitions to OpenAI tools."""
+    if tool.get("type") == "function" and isinstance(tool.get("function"), dict):
+        fn = dict(tool["function"])
+        parameters = fn.get("parameters")
+        if parameters is None:
+            parameters = fn.get("input_schema")
+        return {
+            "type": "function",
+            "function": {
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "parameters": parameters or {"type": "object", "properties": {}},
+            },
+        }
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.get("name", ""),
+            "description": tool.get("description", ""),
+            "parameters": (
+                tool.get("parameters")
+                or tool.get("input_schema")
+                or {"type": "object", "properties": {}}
+            ),
+        },
+    }
+
+
+def _extract_tool_calls(raw: Any) -> list[ToolCall]:
+    choices = getattr(raw, "choices", None) or []
+    if not choices:
+        return []
+    message = getattr(choices[0], "message", None)
+    if message is None:
+        return []
+    raw_calls = getattr(message, "tool_calls", None)
+    if raw_calls is None and isinstance(message, dict):
+        raw_calls = message.get("tool_calls")
+    out: list[ToolCall] = []
+    for call in raw_calls or []:
+        call_id = _get(call, "id") or ""
+        fn = _get(call, "function") or {}
+        name = _get(fn, "name") or ""
+        args_raw = _get(fn, "arguments") or {}
+        if isinstance(args_raw, str):
+            try:
+                args = json.loads(args_raw)
+            except Exception:
+                args = {"_raw": args_raw}
+        elif isinstance(args_raw, dict):
+            args = args_raw
+        else:
+            args = {}
+        out.append(ToolCall(id=call_id, name=name, args=dict(args)))
+    return out
+
+
+def _get(obj: Any, key: str) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
 
 
 def _classify_provider_exception(e: Exception) -> str:

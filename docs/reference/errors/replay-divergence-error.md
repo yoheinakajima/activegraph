@@ -134,6 +134,20 @@ This is the same invariant-protection stance the framework takes
 everywhere: see [`failure-model`](../../concepts/failure-model.md)
 for the broader principle.
 
+## Why this is not `behavior.failed`
+
+`ReplayDivergenceError` is part of strict replay verification, not a
+behavior body failure. The caller asked the runtime to prove that the
+recorded event stream still matches the current behaviors; a mismatch
+is the answer to that call. Routing it through `behavior.failed` would
+append a new event to the log being verified and make the verifier
+harder to reason about.
+
+The replay model is covered in [Replay](../../concepts/replay.md).
+Fork-specific recovery is covered in [Forking](../../concepts/forking.md),
+especially the `--record` workflow for intentional prompt or behavior
+changes.
+
 ## What's related
 
 - **[failure-model](../../concepts/failure-model.md)** — why the

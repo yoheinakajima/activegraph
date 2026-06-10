@@ -34,6 +34,7 @@ extras in `pyproject.toml`:
 | `activegraph[llm]` | LLM behaviors (pack format requires this) | `anthropic`, `pydantic` |
 | `activegraph[postgres]` | `PostgresEventStore` | `psycopg>=3.1` |
 | `activegraph[prometheus]` | `PrometheusMetrics` | `prometheus_client` |
+| `activegraph[opentelemetry]` | `OpenTelemetryMetrics` | `opentelemetry-api`, `opentelemetry-sdk` |
 | `activegraph[all]` | All of the above | (everything) |
 
 A minimal install (just `pip install activegraph`) includes the
@@ -66,6 +67,8 @@ runs lazily, on the import inside the subsystem's lazy-import path:
 - `PostgresEventStore(...)` first construction → `psycopg` import
 - `PrometheusMetrics(...)` first construction → `prometheus_client`
   import
+- `OpenTelemetryMetrics(...)` first construction →
+  `opentelemetry-api` and `opentelemetry-sdk` imports
 - `import activegraph.packs` (or any pack-related import) →
   `pydantic` import (pack format depends on Pydantic models)
 
