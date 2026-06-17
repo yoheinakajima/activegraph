@@ -306,6 +306,48 @@ import re
 from activegraph import behavior
 
 
+# A shared helper that extracts the first numeric growth percentage from a
+# chunk of free-text. Used by the scaffolded behavior below and reused by
+# other behavior authors who want to wire the same regex. Returns `None`
+# when no percentage is found so callers can decide what to do (emit,
+# skip, fall through to a default threshold).
+#
+# The pattern is intentionally permissive — it matches "12%", "12.5 %",
+# "1,234%", etc. — but it does NOT match number-words ("twelve percent")
+# because activegraph runs on parsed text where digits are already
+# extracted upstream.
+_GROWTH_PERCENT_RE = re.compile(
+    r"(?P<pct>\d{1,3}(?:[,]\d{3})?(?:\.\d+)?)\s*%"
+)
+
+
+def _parse_growth_percent(text: str) -> float | None:
+    """Return the first growth percentage found in `text`, or None.
+
+    Example::
+
+        >>> _parse_growth_percent("Revenue grew 27% YoY in Q3.")
+        27.0
+        >>> _parse_growth_percent("Revenue grew 1,234.5% YoY.")
+        1234.5
+        >>> _parse_growth_percent("Revenue was flat.")
+        None
+    """
+    if not text:
+        return None
+    match = _GROWTH_PERCENT_RE.search(text)
+    if match is None:
+        return None
+    raw = match.group("pct").replace(",", "")
+    try:
+        return float(raw)
+    except ValueError:
+        # Defensive: the regex only allows digits, dots, and commas, so
+        # this branch should be unreachable. Return None to keep the
+        # behavior's contract ("None when no usable percentage is found").
+        return None
+
+
 @behavior(
     name="growth_flagger",
     on=["object.created"],
@@ -317,8 +359,9 @@ def growth_flagger(event, graph, ctx):
     # TODO: parse the text for a growth percentage and emit
     # `growth.flagged` with the claim id when the growth is > 25%.
     #
-    # Hint: a regex like r"(\\d+)%\\s+YoY" captures the percentage.
-    # Then: graph.emit("growth.flagged", {"claim_id": ..., "growth": ...})
+    # Hint: use `_parse_growth_percent(text)` (defined above) to pull
+    # out the percentage, compare to 25, and call
+    # `graph.emit("growth.flagged", {"claim_id": ..., "growth": ...})`.
     pass
 '''
 
