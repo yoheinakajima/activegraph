@@ -230,6 +230,13 @@ A few deliberate choices:
 - **Cascade-on-removal lives in the projector, not the database.** Removing
   an object deletes its relations via `apply_event` in `core.graph`, so the
   behavior is identical across every `GraphStore`.
+- **`Graph` queries read the whole projection.** Filters, neighborhood
+  walks, and `where` evaluation run in Python over `all_objects()` /
+  `all_relations()`, so each call fetches and decodes every node from
+  FalkorDB rather than pushing the query down as Cypher. This keeps query
+  semantics identical across every backend, but means FalkorDB is best for
+  small-to-medium live projections and Cypher-side inspection — not for
+  pushing large traversals into the database.
 
 Every value crosses the Cypher boundary as a bound `$param`, never via
 string interpolation — object ids, types, and payloads cannot inject
@@ -299,8 +306,10 @@ So FalkorDB is used where it pays off, and the CLI stays infrastructure-light.
 
 Use `FalkorDBGraphStore` when you want to:
 
-- **Query current state with Cypher** — dashboards, ad-hoc graph queries,
-  or graph-algorithm exploration over the live projection.
+- **Query current state with Cypher** — dashboards or ad-hoc queries over
+  the live projection. Match `AGRelation` nodes by their `source` / `target`
+  properties; relations are nodes, not native edges, so native
+  edge-traversal algorithms don't apply directly.
 - **Share the projection across processes** — one writer plus several
   read-only inspectors hitting the same FalkorDB graph.
 - **Keep a large graph off the heap** — projections that don't fit
