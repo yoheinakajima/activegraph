@@ -28,6 +28,7 @@ from typing import Any, Callable, Optional
 
 from activegraph.core.clock import Clock
 from activegraph.core.event import Event
+from activegraph.core.graph_store import GraphStore, InMemoryGraphStore
 from activegraph.core.ids import IDGen
 from activegraph.core.patch import Patch
 
@@ -104,16 +105,19 @@ class Graph:
         ids: Optional[IDGen] = None,
         clock: Optional[Clock] = None,
         run_id: Optional[str] = None,
+        graph_store: Optional[GraphStore] = None,
     ) -> None:
         self.ids = ids or IDGen()
         self.clock = clock or Clock()
         # CONTRACT v0.5 #6: every graph has a run_id.
         self.run_id: str = run_id or self.ids.run()
 
-        # projected state — touched ONLY by apply_event (CONTRACT v0.5 #15)
-        self._objects: dict[str, Object] = {}
-        self._relations: dict[str, Relation] = {}
-        self._patches: dict[str, Patch] = {}
+        # projected state — touched ONLY by apply_event (CONTRACT v0.5 #15).
+        # v1.1: the projection lives behind a GraphStore so it can be kept
+        # in process memory (the default) or pushed into an external graph
+        # database. `self._state` is the materialized current-state view; it
+        # is NOT the durable event log (that is `self._store`, an EventStore).
+        self._state: GraphStore = graph_store or InMemoryGraphStore()
 
         # the log
         self._events: list[Event] = []
@@ -147,19 +151,19 @@ class Graph:
         return frozenset(self._replayed_ids)
 
     def get_object(self, id_: str) -> Optional[Object]:
-        return self._objects.get(id_)
+        return self._state.get_object(id_)
 
     def get_relation(self, id_: str) -> Optional[Relation]:
-        return self._relations.get(id_)
+        return self._state.get_relation(id_)
 
     def get_patch(self, id_: str) -> Optional[Patch]:
-        return self._patches.get(id_)
+        return self._state.get_patch(id_)
 
     def all_objects(self) -> list[Object]:
-        return list(self._objects.values())
+        return self._state.all_objects()
 
     def all_relations(self) -> list[Relation]:
-        return list(self._relations.values())
+        return self._state.all_relations()
 
     def get_relations(
         self,
@@ -168,7 +172,7 @@ class Graph:
         direction: str = "both",
     ) -> list[Relation]:
         out: list[Relation] = []
-        for r in self._relations.values():
+        for r in self._state.all_relations():
             if type is not None and r.type != type:
                 continue
             if object_id is not None:
@@ -198,7 +202,7 @@ class Graph:
         stays as a backward-compatible alias.
         """
         out: list[Relation] = []
-        for r in self._relations.values():
+        for r in self._state.all_relations():
             if source is not None and r.source != source:
                 continue
             if target is not None and r.target != target:
@@ -209,14 +213,14 @@ class Graph:
         return out
 
     def neighborhood(self, object_id: str, depth: int = 1) -> tuple[list[Object], list[Relation]]:
-        if object_id not in self._objects:
+        if self._state.get_object(object_id) is None:
             return ([], [])
         seen_objs = {object_id}
         frontier = {object_id}
         seen_rels: set[str] = set()
         for _ in range(depth):
             next_frontier: set[str] = set()
-            for r in self._relations.values():
+            for r in self._state.all_relations():
                 if r.source in frontier or r.target in frontier:
                     seen_rels.add(r.id)
                     if r.source not in seen_objs:
@@ -227,9 +231,11 @@ class Graph:
             frontier = next_frontier
             if not frontier:
                 break
+        objs = [self._state.get_object(i) for i in seen_objs]
+        rels = [self._state.get_relation(i) for i in seen_rels]
         return (
-            [self._objects[i] for i in seen_objs if i in self._objects],
-            [self._relations[i] for i in seen_rels if i in self._relations],
+            [o for o in objs if o is not None],
+            [r for r in rels if r is not None],
         )
 
     def objects(
@@ -245,7 +251,7 @@ class Graph:
         as a backward-compatible alias.
         """
         out: list[Object] = []
-        for o in self._objects.values():
+        for o in self._state.all_objects():
             if type is not None and o.type != type:
                 continue
             if where and not _eval_where_on_object(where, o):
@@ -267,7 +273,7 @@ class Graph:
         return self.objects(type=object_type, where=where)
 
     def has_object_of_type(self, type_: str) -> bool:
-        return any(o.type == type_ for o in self._objects.values())
+        return any(o.type == type_ for o in self._state.all_objects())
 
     # ---------- listener API (runtime hooks here) ----------
 
@@ -399,7 +405,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._objects[obj_id]
+        return self._state.get_object(obj_id)
 
     def add_relation(
         self,
@@ -418,8 +424,8 @@ class Graph:
         clean = _strip_provenance(copy.deepcopy(data or {}))
         # v0.9: relation type validation (source/target type rules).
         if self._pack_relation_validator is not None:
-            src_obj = self._objects.get(source)
-            tgt_obj = self._objects.get(target)
+            src_obj = self._state.get_object(source)
+            tgt_obj = self._state.get_object(target)
             self._pack_relation_validator(
                 type,
                 src_obj.type if src_obj else None,
@@ -456,7 +462,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._relations[rel_id]
+        return self._state.get_relation(rel_id)
 
     def remove_relation(
         self,
@@ -466,7 +472,7 @@ class Graph:
         caused_by: Optional[str] = None,
         frame_id: Optional[str] = None,
     ) -> None:
-        if relation_id not in self._relations:
+        if self._state.get_relation(relation_id) is None:
             return
         event = Event(
             id=self.ids.event(),
@@ -487,7 +493,7 @@ class Graph:
         caused_by: Optional[str] = None,
         frame_id: Optional[str] = None,
     ) -> None:
-        if object_id not in self._objects:
+        if self._state.get_object(object_id) is None:
             return
         event = Event(
             id=self.ids.event(),
@@ -514,7 +520,7 @@ class Graph:
         tool_request_event_ids: Optional[list[str]] = None,
     ) -> Patch:
         """Auto-apply shortcut: build patch, version-check, emit applied/rejected."""
-        obj = self._objects.get(target)
+        obj = self._state.get_object(target)
         if obj is None:
             raise KeyError(f"unknown object: {target}")
         clean = _strip_provenance(copy.deepcopy(updates))
@@ -552,7 +558,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._patches[patch.id]
+        return self._state.get_patch(patch.id)
 
     def propose_patch(
         self,
@@ -570,7 +576,7 @@ class Graph:
     ) -> Patch:
         # Strip "object:" / "relation:" prefix if present (README sugar).
         normalized = target.split(":", 1)[1] if ":" in target else target
-        obj = self._objects.get(normalized)
+        obj = self._state.get_object(normalized)
         expected_version = obj.version if obj else 0
         clean = _strip_provenance(copy.deepcopy(value))
         patch = Patch(
@@ -602,7 +608,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._patches[patch.id]
+        return self._state.get_patch(patch.id)
 
     def apply_patch(
         self,
@@ -612,7 +618,7 @@ class Graph:
         caused_by: Optional[str] = None,
         frame_id: Optional[str] = None,
     ) -> Event:
-        patch = self._patches.get(patch_id)
+        patch = self._state.get_patch(patch_id)
         if patch is None:
             raise KeyError(f"unknown patch: {patch_id}")
         if patch.status != "proposed":
@@ -620,7 +626,7 @@ class Graph:
             raise InvalidPatchLifecycleState(
                 patch_id=patch_id, current_status=patch.status,
             )
-        target_obj = self._objects.get(patch.target)
+        target_obj = self._state.get_object(patch.target)
         current_version = target_obj.version if target_obj else 0
         if current_version != patch.expected_version:
             return self._reject(
@@ -667,8 +673,8 @@ class Graph:
         caused_by: Optional[str],
         frame_id: Optional[str],
     ) -> Event:
-        patch = self._patches[patch_id]
-        current = self._objects.get(patch.target)
+        patch = self._state.get_patch(patch_id)
+        current = self._state.get_object(patch.target)
         event = Event(
             id=self.ids.event(),
             type="patch.rejected",
@@ -732,57 +738,62 @@ def apply_event(graph: Graph, event: Event) -> None:
 
     if t == "object.created":
         o = p["object"]
-        graph._objects[o["id"]] = Object(
-            id=o["id"],
-            type=o["type"],
-            data=copy.deepcopy(o["data"]),
-            version=o["version"],
-            provenance=copy.deepcopy(o["provenance"]),
+        graph._state.put_object(
+            Object(
+                id=o["id"],
+                type=o["type"],
+                data=copy.deepcopy(o["data"]),
+                version=o["version"],
+                provenance=copy.deepcopy(o["provenance"]),
+            )
         )
 
     elif t == "object.removed":
-        graph._objects.pop(p["id"], None)
+        graph._state.remove_object(p["id"])
         # cascade: drop relations touching it
-        for rid in [
-            r.id for r in graph._relations.values() if p["id"] in (r.source, r.target)
-        ]:
-            graph._relations.pop(rid, None)
+        for r in graph._state.all_relations():
+            if p["id"] in (r.source, r.target):
+                graph._state.remove_relation(r.id)
 
     elif t == "relation.created":
         r = p["relation"]
-        graph._relations[r["id"]] = Relation(
-            id=r["id"],
-            source=r["source"],
-            target=r["target"],
-            type=r["type"],
-            data=copy.deepcopy(r["data"]),
-            provenance=copy.deepcopy(r["provenance"]),
+        graph._state.put_relation(
+            Relation(
+                id=r["id"],
+                source=r["source"],
+                target=r["target"],
+                type=r["type"],
+                data=copy.deepcopy(r["data"]),
+                provenance=copy.deepcopy(r["provenance"]),
+            )
         )
 
     elif t == "relation.removed":
-        graph._relations.pop(p["id"], None)
+        graph._state.remove_relation(p["id"])
 
     elif t == "patch.proposed":
         patch_dict = p["patch"]
-        graph._patches[patch_dict["id"]] = _patch_from_dict(patch_dict)
+        graph._state.put_patch(_patch_from_dict(patch_dict))
 
     elif t == "patch.applied":
         patch_dict = p["patch"]
         patch = _patch_from_dict({**patch_dict, "status": "applied"})
-        graph._patches[patch.id] = patch
-        obj = graph._objects.get(patch.target)
+        graph._state.put_patch(patch)
+        obj = graph._state.get_object(patch.target)
         if obj is not None:
             if patch.op == "update":
                 obj.data.update(patch.value)
             elif patch.op == "replace":
                 obj.data = copy.deepcopy(patch.value)
             obj.version += 1
+            graph._state.put_object(obj)
 
     elif t == "patch.rejected":
-        existing = graph._patches.get(p["patch_id"])
+        existing = graph._state.get_patch(p["patch_id"])
         if existing is not None:
             existing.status = "rejected"
             existing.rejection_reason = p["reason"]
+            graph._state.put_patch(existing)
 
 
 def _patch_from_dict(d: dict[str, Any]) -> Patch:

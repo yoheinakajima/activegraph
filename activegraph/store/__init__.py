@@ -11,6 +11,7 @@ The ``open_store(url, run_id)`` entry point picks the right driver from a
 connection URL (sqlite:///... or postgres://...).
 """
 
+from activegraph.core.graph_store import GraphStore, InMemoryGraphStore
 from activegraph.store.base import EventStore, RunRecord, replay_into
 from activegraph.store.errors import (
     CorruptedEventPayloadError,
@@ -18,6 +19,7 @@ from activegraph.store.errors import (
     EventNotFoundError,
     SchemaVersionMismatch,
 )
+from activegraph.store.falkordb import FalkorDBGraphStore
 from activegraph.store.memory import InMemoryEventStore
 from activegraph.store.serde import NonSerializableEventError
 from activegraph.store.sqlite import SQLiteEventStore
@@ -28,7 +30,10 @@ __all__ = [
     "DuplicateEventError",
     "EventNotFoundError",
     "EventStore",
+    "FalkorDBGraphStore",
+    "GraphStore",
     "InMemoryEventStore",
+    "InMemoryGraphStore",
     "InvalidStoreURL",
     "NonSerializableEventError",
     "RunRecord",

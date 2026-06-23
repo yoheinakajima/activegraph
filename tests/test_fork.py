@@ -61,6 +61,26 @@ def test_fork_creates_new_run_with_copied_events(tmp_path):
     assert runs[fork.run_id].label == "branch-A"
 
 
+def test_fork_threads_graph_store_into_projection(tmp_path):
+    """fork replays the copied log into a caller-supplied GraphStore."""
+    from activegraph import InMemoryGraphStore
+
+    _quickstart_behaviors()
+    db = _tmp_db(tmp_path)
+
+    parent = Runtime(Graph(clock=FrozenClock()), persist_to=db)
+    parent.run_goal("Evaluate")
+
+    target = parent.graph.events[3].id
+    store = InMemoryGraphStore()
+    fork = parent.fork(at_event=target, label="branch-A", graph_store=store)
+
+    # The fork's projection lives in the supplied store, not a fresh default.
+    assert fork.graph._state is store  # noqa: SLF001 — internal seam
+    # And the copied log was replayed into it.
+    assert fork.graph.all_objects()
+
+
 def test_parent_is_untouched_by_fork(tmp_path):
     _quickstart_behaviors()
     db = _tmp_db(tmp_path)
