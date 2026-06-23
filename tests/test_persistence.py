@@ -80,6 +80,29 @@ def test_save_then_load_produces_identical_graph(tmp_path):
     assert [e.id for e in loaded.graph.events] == [e.id for e in graph.events]
 
 
+def test_load_threads_graph_store_into_rebuilt_projection(tmp_path):
+    """Runtime.load replays the log into a caller-supplied GraphStore."""
+    from activegraph import InMemoryGraphStore
+
+    _quickstart_behaviors()
+    db = _tmp_db(tmp_path)
+
+    graph = Graph(clock=FrozenClock())
+    rt = Runtime(graph, persist_to=db)
+    rt.run_goal("Evaluate this startup idea")
+    rt.save_state()
+
+    store = InMemoryGraphStore()
+    loaded = Runtime.load(db, run_id=rt.run_id, graph_store=store)
+
+    # The projection lives in the supplied store, not a fresh default.
+    assert loaded.graph._state is store  # noqa: SLF001 — internal seam
+    # And the log was actually replayed into it.
+    assert {o.id for o in loaded.graph.all_objects()} == {
+        o.id for o in graph.all_objects()
+    }
+
+
 def test_late_bound_save_writes_in_memory_events_to_sqlite(tmp_path):
     """A purely in-memory run can be saved later via save_state(path)."""
     _quickstart_behaviors()

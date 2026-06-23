@@ -110,6 +110,7 @@ plugins:
         Guides:
           - guides/operating-in-production.md: Running Active Graph as a production service — observability, persistence, policies, budgets.
           - guides/authoring-packs.md: Authoring a pack — object types, behaviors, tools, prompts, and policies bundled for a domain.
+          - guides/using-falkordb.md: Backing the materialized graph projection with FalkorDB — connection modes, env vars, and Cypher inspection.
         Cookbook:
           - cookbook/common-patterns.md: Recurring patterns — subscriptions, fork-with-set, approval flows — with copy-pasteable code.
           - cookbook/debugging.md: Reading a trace, isolating a behavior failure, replaying a divergent run.
@@ -222,6 +223,7 @@ nav:
   - Guides:
       - Operating in production: guides/operating-in-production.md
       - Authoring packs: guides/authoring-packs.md
+      - Using the FalkorDB graph store: guides/using-falkordb.md
   - Cookbook:
       - Common patterns: cookbook/common-patterns.md
       - Debugging: cookbook/debugging.md

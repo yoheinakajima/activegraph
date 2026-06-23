@@ -15,7 +15,21 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- `GraphStore` abstraction for the materialized graph projection, with
+  `InMemoryGraphStore` (the default) and `FalkorDBGraphStore` backing the
+  current-state view in a FalkorDB graph. `Graph(graph_store=...)`,
+  `Runtime.load(..., graph_store=...)`, and `Runtime.fork(..., graph_store=...)`
+  select where the projection is materialized; the event log remains the
+  source of truth. The store
+  connects to a running FalkorDB via `url=`/`host=` arguments or the
+  `FALKORDB_URL` / `FALKORDB_HOST` (`_PORT` / `_USERNAME` / `_PASSWORD`)
+  environment variables, falling back to the embedded `falkordblite`
+  engine. Install with `pip install 'activegraph[falkordb]'` (server
+  client) or `'activegraph[falkordb-embedded]'` (embedded engine). See the
+  [Using the FalkorDB graph store](https://docs.activegraph.ai/guides/using-falkordb/)
+  guide.
 
 ## [v1.1.0] — 2026-06-10
 

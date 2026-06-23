@@ -13,6 +13,18 @@ projection of the event log) and
 
 ::: activegraph.SQLiteEventStore
 
+## Graph stores
+
+The materialized graph projection (objects, relations, patches) lives
+behind a `GraphStore`, distinct from the durable `EventStore` above. See
+the [Using the FalkorDB graph store](../../guides/using-falkordb.md) guide.
+
+::: activegraph.GraphStore
+
+::: activegraph.InMemoryGraphStore
+
+::: activegraph.FalkorDBGraphStore
+
 ## URL parsing + helpers
 
 ::: activegraph.open_store

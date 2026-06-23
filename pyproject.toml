@@ -38,6 +38,14 @@ anthropic = ["anthropic>=0.40", "pydantic>=2"]
 openai = ["openai>=1.0", "tiktoken>=0.7", "pydantic>=2"]
 sqlite = []     # SQLite is stdlib — no extra deps needed for the v0.5 store
 postgres = ["psycopg[binary]>=3.1,<4"]
+# v1.1: FalkorDBGraphStore backs the materialized graph state with FalkorDB.
+# Two modes: `falkordb` is the server client (connect to a running FalkorDB
+# via FALKORDB_URL / FALKORDB_HOST env vars or explicit args);
+# `falkordb-embedded` is the zero-config self-managed engine (falkordblite,
+# which needs Python 3.12+ and compiles Redis from source). Both are kept
+# out of [all]/[dev] so opting in is explicit.
+falkordb = ["falkordb>=1.0"]
+falkordb-embedded = ["falkordblite>=0.10"]
 prometheus = ["prometheus_client>=0.20"]
 opentelemetry = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25"]
 all = [

@@ -71,6 +71,7 @@ from activegraph.behaviors.base import Behavior, LLMBehavior, RelationBehavior
 from activegraph.behaviors.decorators import get_registry
 from activegraph.core.event import Event
 from activegraph.core.graph import Graph, evaluate_where as _evaluate_where
+from activegraph.core.graph_store import GraphStore
 from activegraph.core.ids import IDGen
 from activegraph.core.view import View
 from activegraph.frame import Frame
@@ -2253,6 +2254,7 @@ class Runtime:
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
         metrics: Optional[Metrics] = None,
+        graph_store: Optional[GraphStore] = None,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -2267,13 +2269,20 @@ class Runtime:
 
         v0.8: ``path`` accepts a URL (sqlite:///... or postgres://...)
         in addition to a bare SQLite path. Backward-compatible.
+
+        v1.1: ``graph_store`` selects where the materialized projection
+        lives while the log is replayed into it. Defaults to the in-memory
+        store; pass a :class:`~activegraph.core.graph_store.GraphStore`
+        (e.g. ``FalkorDBGraphStore``) to rebuild the current-state view in
+        an external graph database. The event log remains the source of
+        truth — this only changes where the projection is materialized.
         """
         chosen = run_id or _most_recent_run_id(path)
         if chosen is None:
             raise FileNotFoundError(f"no runs found in {path}")
 
         store = _open_sqlite_store(path, run_id=chosen)
-        graph = Graph(ids=IDGen(), run_id=chosen)
+        graph = Graph(ids=IDGen(), run_id=chosen, graph_store=graph_store)
         events = list(store.iter_events())
         for ev in events:
             graph._replay_event(ev)  # noqa: SLF001 — internal seam
@@ -2350,6 +2359,7 @@ class Runtime:
         tools: Optional[Iterable[Tool]] = None,
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
+        graph_store: Optional[GraphStore] = None,
     ) -> "Runtime":
         """Branch this run at `at_event` into an independent new run.
 
@@ -2357,6 +2367,14 @@ class Runtime:
         and including `at_event` into a fresh `run_id`, replays them into a
         new Graph, then returns a Runtime that operates on that Graph.
         Forks-of-forks work the same way (CONTRACT v0.5 #9).
+
+        v1.1: ``graph_store`` selects where the fork's materialized
+        projection lives while the copied log is replayed into it. Defaults
+        to the in-memory store; pass a
+        :class:`~activegraph.core.graph_store.GraphStore` (e.g.
+        ``FalkorDBGraphStore``) to rebuild the fork's current-state view in
+        an external graph database. The fork's event log remains the source
+        of truth — this only changes where the projection is materialized.
         """
         from activegraph.store.sqlite import SQLiteEventStore
 
@@ -2405,7 +2423,7 @@ class Runtime:
             created_at=_now_iso(),
         )
         fork_store = SQLiteEventStore(store.path, run_id=new_run_id)
-        fork_graph = Graph(ids=IDGen(), run_id=new_run_id)
+        fork_graph = Graph(ids=IDGen(), run_id=new_run_id, graph_store=graph_store)
         events = list(fork_store.iter_events())
         for ev in events:
             fork_graph._replay_event(ev)  # noqa: SLF001
