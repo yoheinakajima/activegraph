@@ -215,6 +215,20 @@ class Graph:
         # native variable-length path query). See GraphStore.neighborhood.
         return self._state.neighborhood(object_id, depth)
 
+    def match_chain(self, node_types, rels):
+        # Pushed down to the store: the default mirrors the matcher's
+        # structural chain walk; FalkorDB resolves the whole chain in one
+        # Cypher query. Node {prop: value} equality and WHERE stay in the
+        # matcher (Python). See GraphStore.match_chain.
+        return self._state.match_chain(node_types, rels)
+
+    def objects_in_types(self, types: list[str]) -> list[Object]:
+        # Pushed down to the store: OR-of-types in one query (FalkorDB uses
+        # ``type IN [...]``); the default single-pass scan preserves order.
+        # Used by the view builder for type-scoped views. See
+        # GraphStore.find_objects_in_types.
+        return self._state.find_objects_in_types(types)
+
     def objects(
         self,
         type: Optional[str] = None,
@@ -728,10 +742,19 @@ def apply_event(graph: Graph, event: Event) -> None:
 
     elif t == "object.removed":
         graph._state.remove_object(p["id"])
-        # cascade: drop relations touching it
-        for r in graph._state.all_relations():
-            if p["id"] in (r.source, r.target):
-                graph._state.remove_relation(r.id)
+        # cascade: drop relations touching it. Pushed down to two scoped
+        # lookups (out-edges + in-edges) instead of scanning every relation;
+        # on FalkorDB these are index-backed queries. Dedupe by id so a
+        # self-loop (source == target) is removed once.
+        touching = graph._state.find_relations(
+            source=p["id"]
+        ) + graph._state.find_relations(target=p["id"])
+        seen: set[str] = set()
+        for r in touching:
+            if r.id in seen:
+                continue
+            seen.add(r.id)
+            graph._state.remove_relation(r.id)
 
     elif t == "relation.created":
         r = p["relation"]

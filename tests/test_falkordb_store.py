@@ -314,3 +314,133 @@ def test_pattern_matching_parity_falkordb_vs_inmemory():
     finally:
         store.clear()
         store.close()
+
+
+# --- type-scoped read push-down parity -----------------------------------
+#
+# find_objects_in_types (OR-of-types), the view builder's include_types path,
+# and RelationBehavior matching all push a type filter into the store. These
+# build the *same* graph on both backends and assert identical results, so a
+# FalkorDB query can never silently drift from the in-memory definition.
+
+
+def _populate_mixed_graph(g) -> dict:
+    """Build a mixed-type graph on any ``Graph`` and return id maps. Both
+    backends start from an identically-seeded default ``IDGen`` so ids line
+    up and can be compared directly.
+    """
+    a = g.add_object("claim", {"text": "a"})
+    b = g.add_object("claim", {"text": "b"})
+    c = g.add_object("risk", {"text": "c"})
+    d = g.add_object("memo", {"text": "d"})
+    e = g.add_object("evidence", {"text": "e"})
+    g.add_relation(e.id, a.id, "supports")
+    g.add_relation(e.id, b.id, "supports")
+    g.add_relation(a.id, c.id, "raises")
+    return {"a": a.id, "b": b.id, "c": c.id, "d": d.id, "e": e.id}
+
+
+def test_find_objects_in_types_parity_falkordb_vs_inmemory():
+    from activegraph.core.graph import Graph
+    from activegraph.store.falkordb import FalkorDBGraphStore
+
+    store = FalkorDBGraphStore(graph_name="ag_types_parity")
+    store.clear()
+    try:
+        g_mem = Graph()
+        g_fdb = Graph(graph_store=store)
+        _populate_mixed_graph(g_mem)
+        _populate_mixed_graph(g_fdb)
+
+        type_sets = [
+            [],
+            ["claim"],
+            ["claim", "risk"],
+            ["risk", "claim", "nope"],
+            ["memo", "evidence"],
+            ["nope", "gone"],
+        ]
+        for types in type_sets:
+            mem = sorted(o.id for o in g_mem.objects_in_types(types))
+            fdb = sorted(o.id for o in g_fdb.objects_in_types(types))
+            assert fdb == mem, f"objects_in_types diverged for: {types}"
+    finally:
+        store.clear()
+        store.close()
+
+
+def test_view_builder_include_types_parity_falkordb_vs_inmemory():
+    from activegraph.behaviors.base import Behavior
+    from activegraph.core.event import Event
+    from activegraph.core.graph import Graph
+    from activegraph.runtime.view_builder import build_view
+    from activegraph.store.falkordb import FalkorDBGraphStore
+
+    store = FalkorDBGraphStore(graph_name="ag_view_parity")
+    store.clear()
+    try:
+        g_mem = Graph()
+        g_fdb = Graph(graph_store=store)
+        _populate_mixed_graph(g_mem)
+        _populate_mixed_graph(g_fdb)
+
+        event = Event(id="evt_1", type="object.created")
+        specs = [
+            {"include_types": ["claim"]},
+            {"include_types": ["claim", "risk"]},
+            {"include_types": ["nope"]},
+        ]
+        for spec in specs:
+            beh = Behavior(name="v", fn=lambda *a: None, view_spec=spec)
+            v_mem = build_view(beh, event, g_mem)
+            v_fdb = build_view(beh, event, g_fdb)
+            assert sorted(o.id for o in v_fdb.objects()) == sorted(
+                o.id for o in v_mem.objects()
+            ), f"view objects diverged for: {spec}"
+            assert sorted(r.id for r in v_fdb.relations()) == sorted(
+                r.id for r in v_mem.relations()
+            ), f"view relations diverged for: {spec}"
+    finally:
+        store.clear()
+        store.close()
+
+
+def test_relation_behavior_matching_parity_falkordb_vs_inmemory():
+    from activegraph.behaviors.base import RelationBehavior
+    from activegraph.core.event import Event
+    from activegraph.core.graph import Graph
+    from activegraph.runtime.registry import Registry
+    from activegraph.store.falkordb import FalkorDBGraphStore
+
+    store = FalkorDBGraphStore(graph_name="ag_relmatch_parity")
+    store.clear()
+    try:
+        g_mem = Graph()
+        g_fdb = Graph(graph_store=store)
+        ids_mem = _populate_mixed_graph(g_mem)
+        ids_fdb = _populate_mixed_graph(g_fdb)
+        assert ids_mem == ids_fdb  # ids line up across backends
+
+        rb = RelationBehavior(
+            name="r", fn=lambda *a: None, relation_type="supports", on=["claim.touched"]
+        )
+
+        def matched_ids(reg, event, g):
+            triples = reg.match(event, g)
+            return sorted(r.id for (_b, rels, _m) in triples for r in rels)
+
+        # An event that references claim "a" -> only the supports edge into "a".
+        event = Event(
+            id="evt_1", type="claim.touched", payload={"object": {"id": ids_mem["a"]}}
+        )
+        reg = Registry([rb])
+        assert matched_ids(reg, event, g_fdb) == matched_ids(reg, event, g_mem)
+
+        # An event referencing the shared source "e" -> both supports edges.
+        event2 = Event(
+            id="evt_2", type="claim.touched", payload={"object": {"id": ids_mem["e"]}}
+        )
+        assert matched_ids(reg, event2, g_fdb) == matched_ids(reg, event2, g_mem)
+    finally:
+        store.clear()
+        store.close()

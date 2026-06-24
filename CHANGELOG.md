@@ -33,27 +33,44 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   client) or `'activegraph[falkordb-embedded]'` (embedded engine). See the
   [Using the FalkorDB graph store](https://docs.activegraph.ai/guides/using-falkordb/)
   guide.
-- `GraphStore` query hooks (`find_objects`, `find_relations`,
-  `neighborhood`) that let backends evaluate structural queries close to the
-  data. `Graph.objects(type=...)`, `Graph.relations(...)`,
-  `Graph.get_relations(...)`, and `Graph.neighborhood(...)` delegate to these
-  hooks. The default implementations compute results in Python (identical to
+- `GraphStore` query hooks (`find_objects`, `find_objects_in_types`,
+  `find_relations`, `neighborhood`, `match_chain`) that let backends evaluate
+  structural queries close to the data. `Graph.objects(type=...)`,
+  `Graph.objects_in_types(...)`, `Graph.relations(...)`,
+  `Graph.get_relations(...)`, `Graph.neighborhood(...)`, and the pattern
+  matcher delegate to these hooks. The default implementations compute
+  results in Python (identical to
   before), while `FalkorDBGraphStore` overrides them with Cypher so type
-  filters, relation lookups, and neighborhood walks run inside the database
-  instead of scanning the whole projection. `where` predicates still evaluate
-  in Python since the structured payload is stored as JSON.
+  filters, relation lookups, neighborhood walks, and whole pattern chains run
+  inside the database instead of scanning the whole projection. `where`
+  predicates still evaluate in Python since the structured payload is stored
+  as JSON.
 
 ### Changed
 
-- Pattern matching now drives its chain traversal through the pushed-down
-  `Graph.objects(type=...)` / `Graph.relations(source=, target=, type=)`
-  hooks instead of scanning `all_objects()` / `all_relations()` on every
-  event. On `FalkorDBGraphStore` each candidate seed and relation hop becomes
-  a scoped Cypher query (index-backed) rather than dragging the entire
-  projection into Python per event; the default store reproduces the same
-  filtering, so match results and their order are unchanged. Node
-  `{prop: value}` equality and `WHERE` predicates continue to evaluate in
-  Python over the scoped candidate set.
+- Pattern matching now resolves the entire structural chain through the
+  pushed-down `Graph.match_chain(...)` hook instead of scanning
+  `all_objects()` / `all_relations()` on every event. On
+  `FalkorDBGraphStore` a whole pattern (node types + relation
+  types/directions) collapses into a **single** index-backed Cypher query
+  rather than one round-trip per hop per candidate; the default store
+  reproduces the same depth-first walk, so match results and their order are
+  unchanged. Semantics stay homomorphic (a node or relation may fill more
+  than one position). Node `{prop: value}` equality and `WHERE` predicates
+  continue to evaluate in Python over the resolved chains.
+- Cascade-deleting an object's relations (on `object.removed`) now uses two
+  scoped `find_relations` lookups (out-edges + in-edges) instead of scanning
+  every relation, so on `FalkorDBGraphStore` it is an index-backed query
+  rather than a full edge scan.
+- Matching `RelationBehavior`s now filters candidate edges via the pushed-down
+  `Graph.relations(type=...)` hook instead of scanning every relation on each
+  event; on `FalkorDBGraphStore` this is an index-backed lookup.
+- Building a behavior `View` with a type-scoped `include_types` spec (and no
+  `around` anchor) now pushes the type filter into the store via
+  `Graph.objects_in_types(...)` (a single `type IN [...]` query on
+  `FalkorDBGraphStore`) instead of materializing every object and filtering in
+  Python. The default store preserves the same single-pass order, so the
+  in-memory `View` is byte-for-byte unchanged.
 
 
 ## [v1.1.0] — 2026-06-10

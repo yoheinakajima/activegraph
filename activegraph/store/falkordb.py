@@ -68,7 +68,7 @@ import os
 from typing import Any, Optional
 
 from activegraph.core.graph import Object, Relation
-from activegraph.core.graph_store import GraphStore
+from activegraph.core.graph_store import ChainMatch, GraphStore
 from activegraph.core.patch import Patch
 
 
@@ -400,6 +400,29 @@ class FalkorDBGraphStore(GraphStore):
             for row in res.result_set
         ]
 
+    def find_objects_in_types(self, types: list[str]) -> list[Object]:
+        # OR-of-types pushed down via ``type IN $types``; the bound list keeps
+        # every caller value a $param. An empty list short-circuits (and would
+        # otherwise be an always-false IN). Order matches the Python default.
+        if not types:
+            return []
+        res = self._g.ro_query(
+            "MATCH (o:AGObject) "
+            "WHERE o.type IN $types "
+            "RETURN o.id, o.type, o.version, o.data, o.provenance",
+            params={"types": list(types)},
+        )
+        return [
+            Object(
+                id=row[0],
+                type=row[1],
+                data=json.loads(row[3]),
+                version=int(row[2]),
+                provenance=json.loads(row[4]),
+            )
+            for row in res.result_set
+        ]
+
     def find_relations(
         self,
         source: Optional[str] = None,
@@ -491,6 +514,94 @@ class FalkorDBGraphStore(GraphStore):
             for row in rel_res.result_set
         ]
         return (objects, relations)
+
+    def match_chain(
+        self,
+        node_types: list[Optional[str]],
+        rels: list[tuple[Optional[str], str]],
+    ) -> list[ChainMatch]:
+        # Resolve the whole linear chain in ONE Cypher query instead of the
+        # default's per-hop walk. FalkorDB does not enforce node/relationship
+        # uniqueness, so a single MATCH reproduces the matcher's homomorphic
+        # semantics (the same node/edge may fill multiple positions). Node and
+        # relation *types* are pushed into a WHERE ($t IS NULL -> any); every
+        # caller value stays a bound $param. Only the structural tokens are
+        # spliced: generated names (n0/r0...) and the arrow direction, which
+        # comes from the closed {"right","left"} set -> no injection surface.
+        n = len(node_types)
+        if n == 0:
+            return []
+
+        path = ["(n0:AGObject)"]
+        params: dict[str, Any] = {"t0": node_types[0]}
+        conds = ["($t0 IS NULL OR n0.type = $t0)"]
+        node_rets = ["n0.id", "n0.type", "n0.version", "n0.data", "n0.provenance"]
+        rel_rets: list[str] = []
+        for i, (rel_type, direction) in enumerate(rels):
+            left = "<-" if direction == "left" else "-"
+            right = "->" if direction == "right" else "-"
+            path.append(f"{left}[r{i}:AGRelation]{right}(n{i + 1}:AGObject)")
+            params[f"rt{i}"] = rel_type
+            params[f"t{i + 1}"] = node_types[i + 1]
+            conds.append(f"($rt{i} IS NULL OR r{i}.type = $rt{i})")
+            conds.append(f"($t{i + 1} IS NULL OR n{i + 1}.type = $t{i + 1})")
+            node_rets.extend(
+                [
+                    f"n{i + 1}.id",
+                    f"n{i + 1}.type",
+                    f"n{i + 1}.version",
+                    f"n{i + 1}.data",
+                    f"n{i + 1}.provenance",
+                ]
+            )
+            rel_rets.extend(
+                [
+                    f"r{i}.id",
+                    f"startNode(r{i}).id",
+                    f"endNode(r{i}).id",
+                    f"r{i}.type",
+                    f"r{i}.data",
+                    f"r{i}.provenance",
+                ]
+            )
+        cypher = (
+            "MATCH "
+            + "".join(path)
+            + " WHERE "
+            + " AND ".join(conds)
+            + " RETURN "
+            + ", ".join(node_rets + rel_rets)
+        )
+        res = self._g.ro_query(cypher, params=params)
+
+        node_cols = 5
+        rel_cols = 6
+        rel_base = n * node_cols
+        out: list[ChainMatch] = []
+        for row in res.result_set:
+            objects = [
+                Object(
+                    id=row[k * node_cols],
+                    type=row[k * node_cols + 1],
+                    version=int(row[k * node_cols + 2]),
+                    data=json.loads(row[k * node_cols + 3]),
+                    provenance=json.loads(row[k * node_cols + 4]),
+                )
+                for k in range(n)
+            ]
+            relations = [
+                Relation(
+                    id=row[rel_base + j * rel_cols],
+                    source=row[rel_base + j * rel_cols + 1],
+                    target=row[rel_base + j * rel_cols + 2],
+                    type=row[rel_base + j * rel_cols + 3],
+                    data=json.loads(row[rel_base + j * rel_cols + 4]),
+                    provenance=json.loads(row[rel_base + j * rel_cols + 5]),
+                )
+                for j in range(len(rels))
+            ]
+            out.append(ChainMatch(objects=objects, relations=relations))
+        return out
 
     # ---- patches ----
 

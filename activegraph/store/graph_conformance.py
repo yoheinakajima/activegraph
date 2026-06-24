@@ -218,6 +218,38 @@ class GraphStoreConformance(ABC):
         finally:
             self.cleanup()
 
+    def test_find_objects_in_types(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("o1", type_="memo"))
+            store.put_object(self._obj("o2", type_="note"))
+            store.put_object(self._obj("o3", type_="memo"))
+            store.put_object(self._obj("o4", type_="task"))
+
+            def ids(objs):
+                return sorted(o.id for o in objs)
+
+            # OR across the requested types.
+            assert ids(store.find_objects_in_types(["memo"])) == ["o1", "o3"]
+            assert ids(store.find_objects_in_types(["memo", "task"])) == [
+                "o1",
+                "o3",
+                "o4",
+            ]
+            # A type with no objects contributes nothing; order of the type
+            # list does not change membership.
+            assert ids(store.find_objects_in_types(["task", "memo", "nope"])) == [
+                "o1",
+                "o3",
+                "o4",
+            ]
+            # Empty request -> empty result (not "every object").
+            assert store.find_objects_in_types([]) == []
+            # Wholly unknown types -> empty.
+            assert store.find_objects_in_types(["nope", "gone"]) == []
+        finally:
+            self.cleanup()
+
     def test_find_relations(self) -> None:
         try:
             store = self.make_store()
@@ -321,3 +353,139 @@ class GraphStoreConformance(ABC):
             assert sorted(r.id for r in rels) == ["ab", "bc", "ca"]
         finally:
             self.cleanup()
+
+    # ---- match_chain (pushdown) ----
+
+    @staticmethod
+    def _chain_ids(chains):
+        """Normalize chains to a comparable, order-independent set of
+        ``(object_ids, relation_ids)`` tuples."""
+        return sorted(
+            (tuple(o.id for o in c.objects), tuple(r.id for r in c.relations))
+            for c in chains
+        )
+
+    def test_match_chain_single_node(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("o1", type_="memo"))
+            store.put_object(self._obj("o2", type_="memo"))
+            store.put_object(self._obj("o3", type_="note"))
+            # No hops: one chain per object, relations empty.
+            assert self._chain_ids(store.match_chain([None], [])) == [
+                (("o1",), ()),
+                (("o2",), ()),
+                (("o3",), ()),
+            ]
+            # Type-scoped seed.
+            assert self._chain_ids(store.match_chain(["memo"], [])) == [
+                (("o1",), ()),
+                (("o2",), ()),
+            ]
+        finally:
+            self.cleanup()
+
+    def test_match_chain_one_hop_directions(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("a", type_="memo"))
+            store.put_object(self._obj("b", type_="note"))
+            store.put_relation(self._rel("ab", "a", "b", type_="links"))
+
+            # Right hop a -[links]-> b.
+            assert self._chain_ids(
+                store.match_chain([None, None], [("links", "right")])
+            ) == [(("a", "b"), ("ab",))]
+            # Same edge seen from b via a left hop.
+            assert self._chain_ids(
+                store.match_chain([None, None], [("links", "left")])
+            ) == [(("b", "a"), ("ab",))]
+            # Node-type and rel-type filters compose.
+            assert self._chain_ids(
+                store.match_chain(["memo", "note"], [("links", "right")])
+            ) == [(("a", "b"), ("ab",))]
+            assert (
+                store.match_chain(["memo", "memo"], [("links", "right")]) == []
+            )
+            assert store.match_chain([None, None], [("cites", "right")]) == []
+        finally:
+            self.cleanup()
+
+    def test_match_chain_multi_hop(self) -> None:
+        try:
+            store = self.make_store()
+            for oid in ("a", "b", "c", "d"):
+                store.put_object(self._obj(oid))
+            store.put_relation(self._rel("ab", "a", "b", type_="links"))
+            store.put_relation(self._rel("bc", "b", "c", type_="links"))
+            store.put_relation(self._rel("cd", "c", "d", type_="cites"))
+
+            # a -links-> b -links-> c is the only two-hop all-links chain.
+            assert self._chain_ids(
+                store.match_chain(
+                    [None, None, None], [("links", "right"), ("links", "right")]
+                )
+            ) == [(("a", "b", "c"), ("ab", "bc"))]
+            # Mixed types along the chain.
+            assert self._chain_ids(
+                store.match_chain(
+                    [None, None, None], [("links", "right"), ("cites", "right")]
+                )
+            ) == [(("b", "c", "d"), ("bc", "cd"))]
+        finally:
+            self.cleanup()
+
+    def test_match_chain_homomorphic_self_loop(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("a"))
+            # Self-loop a -[r]-> a.
+            store.put_relation(self._rel("r", "a", "a", type_="links"))
+
+            # Homomorphic: the single self-loop fills both hops, binding every
+            # node position to "a" and reusing "r" twice. This pins that no
+            # backend silently switches to relationship-isomorphism.
+            assert self._chain_ids(
+                store.match_chain(
+                    [None, None, None], [("links", "right"), ("links", "right")]
+                )
+            ) == [(("a", "a", "a"), ("r", "r"))]
+        finally:
+            self.cleanup()
+
+    def test_match_chain_branching_and_cycles(self) -> None:
+        try:
+            store = self.make_store()
+            for oid in ("a", "b", "c"):
+                store.put_object(self._obj(oid))
+            # a fans out to b and c; b also points to c; c closes back to a.
+            store.put_relation(self._rel("ab", "a", "b", type_="links"))
+            store.put_relation(self._rel("ac", "a", "c", type_="links"))
+            store.put_relation(self._rel("bc", "b", "c", type_="links"))
+            store.put_relation(self._rel("ca", "c", "a", type_="links"))
+
+            # One hop out of a -> two chains (order-independent comparison).
+            assert self._chain_ids(
+                store.match_chain([None, None], [("links", "right")])
+            ) == [
+                (("a", "b"), ("ab",)),
+                (("a", "c"), ("ac",)),
+                (("b", "c"), ("bc",)),
+                (("c", "a"), ("ca",)),
+            ]
+            # Every two-hop links chain, including ones that revisit a node
+            # (a->c->a, c->a->c) — node reuse is allowed (homomorphic).
+            assert self._chain_ids(
+                store.match_chain(
+                    [None, None, None], [("links", "right"), ("links", "right")]
+                )
+            ) == [
+                (("a", "b", "c"), ("ab", "bc")),
+                (("a", "c", "a"), ("ac", "ca")),
+                (("b", "c", "a"), ("bc", "ca")),
+                (("c", "a", "b"), ("ca", "ab")),
+                (("c", "a", "c"), ("ca", "ac")),
+            ]
+        finally:
+            self.cleanup()
+

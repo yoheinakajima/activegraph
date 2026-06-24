@@ -246,18 +246,26 @@ A few deliberate choices:
   an object deletes its relations via `apply_event` in `core.graph`, so the
   behavior is identical across every `GraphStore`.
 - **Structural `Graph` queries push down to Cypher.** Type filters
-  (`graph.objects(type=...)`), relation lookups (`graph.relations(...)`,
-  `graph.get_relations(...)`), and neighborhood walks
-  (`graph.neighborhood(...)`) are translated into Cypher and evaluated
+  (`graph.objects(type=...)`, `graph.objects_in_types(...)`), relation lookups
+  (`graph.relations(...)`, `graph.get_relations(...)`), neighborhood walks
+  (`graph.neighborhood(...)`), and whole pattern chains
+  (`graph.match_chain(...)`, the engine behind behavior pattern matching)
+  are translated into Cypher and evaluated
   inside FalkorDB, so they fetch only the matching rows instead of scanning
-  the whole projection. The default `GraphStore` implementations compute the
+  the whole projection. A multi-hop pattern collapses into a single
+  index-backed query rather than one round-trip per hop. Relation-behavior
+  matching and type-scoped behavior views (`include_types`) ride the same
+  hooks. The default
+  `GraphStore` implementations compute the
   same results in Python, so query semantics stay identical across every
   backend.
 - **`where` predicates still run in Python.** `graph.objects(where=...)`
   pushes the *type* filter down but applies the `where` clause in Python
   over the returned objects, because the structured `data` payload is stored
-  as a JSON string rather than as native, indexable properties. Whole-graph
-  consumers (diffing, prompt building, pattern matching, the registry, CLI
+  as a JSON string rather than as native, indexable properties. Likewise a
+  pattern's node `{prop: value}` equality and `WHERE` clause are applied in
+  Python over the chains `match_chain` returns. Other whole-graph consumers
+  (diffing, prompt building, fork comparison, CLI
   status) still read the full projection via `all_objects()` /
   `all_relations()`. FalkorDB remains best for small-to-medium live
   projections and Cypher-side inspection.
@@ -267,7 +275,7 @@ string interpolation — object ids, types, and payloads cannot inject
 Cypher.
 
 To poke at a run's projection by hand:
-
+ 
 ```cypher
 // All objects of a given type.
 MATCH (o:AGObject {type: 'person'}) RETURN o.id, o.data

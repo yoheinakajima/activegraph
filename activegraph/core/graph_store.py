@@ -17,11 +17,12 @@ GraphStore is recoverable (replay the log); losing the EventStore is not.
 The interface is deliberately small: upsert/get/remove/enumerate for each
 of the three entity kinds, plus ``clear`` and ``close``. On top of that it
 exposes a few **optional query hooks** — :meth:`GraphStore.find_objects`,
-:meth:`GraphStore.find_relations`, and :meth:`GraphStore.neighborhood` —
-which default to a plain Python scan over ``all_objects`` / ``all_relations``
-(so the base class itself is the single source of truth for their
-semantics) but which a backend MAY override to push the filter/traversal
-down to the database. The rich ``where`` predicate language is *not* a hook:
+:meth:`GraphStore.find_objects_in_types`, :meth:`GraphStore.find_relations`,
+:meth:`GraphStore.neighborhood`, and :meth:`GraphStore.match_chain` — which
+default to a plain Python scan over ``all_objects`` / ``all_relations`` (so the
+base class itself is the single source of truth for their semantics) but which
+a backend MAY override to push the filter/traversal down to the database. The
+rich ``where`` predicate language is *not* a hook:
 it stays in :class:`~activegraph.core.graph.Graph`, evaluated in Python over
 whatever :meth:`find_objects` returns. That keeps the structural filters
 (which are trivial to mirror exactly) pushable, while the parts that are
@@ -31,11 +32,27 @@ hard to translate faithfully stay in one place.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from activegraph.core.graph import Object, Relation
     from activegraph.core.patch import Patch
+
+
+@dataclass(frozen=True)
+class ChainMatch:
+    """One structural match of a linear node→rel→node chain.
+
+    ``objects[i]`` is the object bound to node position ``i`` (length ==
+    number of node positions). ``relations[j]`` is the relation traversed
+    for hop ``j`` (length == ``len(objects) - 1``). Produced by
+    :meth:`GraphStore.match_chain`; the pattern matcher layers node
+    ``{prop: value}`` equality, variable-consistency, and ``WHERE`` on top.
+    """
+
+    objects: list["Object"]
+    relations: list["Relation"]
 
 
 class GraphStore(ABC):
@@ -117,6 +134,19 @@ class GraphStore(ABC):
             return self.all_objects()
         return [o for o in self.all_objects() if o.type == type]
 
+    def find_objects_in_types(self, types: list[str]) -> list["Object"]:
+        """Return objects whose ``type`` is any of ``types`` (OR), preserving
+        :meth:`all_objects` enumeration order. An empty ``types`` returns
+        ``[]``. Like :meth:`find_objects` this is type-equality only — the
+        ``where`` predicate stays with the caller. The default scans once;
+        a backend MAY push a ``type IN [...]`` filter into the database, but
+        MUST preserve the single-pass order so it matches this base class.
+        """
+        if not types:
+            return []
+        type_set = set(types)
+        return [o for o in self.all_objects() if o.type in type_set]
+
     def find_relations(
         self,
         source: Optional[str] = None,
@@ -170,6 +200,72 @@ class GraphStore(ABC):
             [o for o in objs if o is not None],
             [r for r in rels if r is not None],
         )
+
+    def match_chain(
+        self,
+        node_types: list[Optional[str]],
+        rels: list[tuple[Optional[str], str]],
+    ) -> list["ChainMatch"]:
+        """Enumerate every structural match of a linear node\u2192rel\u2192node chain.
+
+        ``node_types`` is one entry per node position (``None`` = any type);
+        ``rels`` is one ``(rel_type, direction)`` per hop, where ``direction``
+        is ``"right"`` (``(a)-[]->(b)``) or ``"left"`` (``(a)<-[]-(b)``) and
+        ``rel_type`` ``None`` means any. ``len(rels)`` must be
+        ``len(node_types) - 1``.
+
+        Only the *structural* filters \u2014 node types, relation types, and
+        directions \u2014 are applied here; node ``{prop: value}`` equality and
+        ``WHERE`` are layered on by the caller. Semantics are **homomorphic**:
+        a single object or relation may fill more than one position (matching
+        the pattern matcher and FalkorDB, neither of which enforces
+        node/relationship uniqueness). The default walks the chain
+        depth-first via :meth:`find_objects` / :meth:`find_relations`; a
+        backend MAY override to resolve the whole chain in one query, but MUST
+        return exactly what this default would (order aside).
+        """
+        if not node_types:
+            return []
+        results: list[ChainMatch] = []
+        for seed in self.find_objects(node_types[0]):
+            self._extend_chain_match(node_types, rels, [seed], [], results)
+        return results
+
+    def _extend_chain_match(
+        self,
+        node_types: list[Optional[str]],
+        rels: list[tuple[Optional[str], str]],
+        objs: list["Object"],
+        rel_chain: list["Relation"],
+        results: list["ChainMatch"],
+    ) -> None:
+        i = len(objs) - 1
+        if i == len(rels):
+            results.append(ChainMatch(objects=list(objs), relations=list(rel_chain)))
+            return
+        rel_type, direction = rels[i]
+        next_type = node_types[i + 1]
+        src = objs[-1]
+        if direction == "right":
+            for r in self.find_relations(source=src.id, type=rel_type):
+                neighbor = self.get_object(r.target)
+                if neighbor is None:
+                    continue
+                if next_type is not None and neighbor.type != next_type:
+                    continue
+                self._extend_chain_match(
+                    node_types, rels, objs + [neighbor], rel_chain + [r], results
+                )
+        else:  # "left" \u2014 (src)<-[:r]-(neighbor) means r.target == src.id
+            for r in self.find_relations(target=src.id, type=rel_type):
+                neighbor = self.get_object(r.source)
+                if neighbor is None:
+                    continue
+                if next_type is not None and neighbor.type != next_type:
+                    continue
+                self._extend_chain_match(
+                    node_types, rels, objs + [neighbor], rel_chain + [r], results
+                )
 
     # ---- lifecycle ----
 
