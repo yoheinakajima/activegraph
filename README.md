@@ -240,9 +240,12 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
 - Not a rules engine, exactly. Rules engines forward-chain over
   facts. This event-sources over a graph and supports LLM behaviors
   as first-class.
-- Not a production graph database. The default store is SQLite,
-  optionally Postgres. For a high-throughput graph backend, plug one
-  in behind the `EventStore` protocol.
+- Not a production graph database. The event log lives in SQLite
+  (default) or Postgres behind the `EventStore` protocol; the
+  materialized graph lives behind the `GraphStore` protocol —
+  in-memory by default, or [FalkorDB](https://docs.activegraph.ai/guides/using-falkordb/)
+  for a real, traversable graph backend. For a different
+  high-throughput store, plug one in behind either protocol.
 - Not magic. Bad behaviors produce bad graphs. The runtime makes the
   badness inspectable, not absent.
 
