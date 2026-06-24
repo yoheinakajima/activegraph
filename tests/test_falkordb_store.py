@@ -95,3 +95,152 @@ def test_graph_runs_on_falkordb_backend():
     finally:
         store.clear()
         store.close()
+
+
+# --- native-edge layout checks -------------------------------------------
+#
+# The conformance suite pins observable behaviour; these pin the *physical*
+# model: relations are native edges, dangling endpoints are bare :AGNode
+# placeholders, objects are promoted in place, and placeholders are
+# garbage-collected once nothing references them.
+
+
+def _make_store(name: str):
+    from activegraph.store.falkordb import FalkorDBGraphStore
+
+    store = FalkorDBGraphStore(graph_name=name)
+    store.clear()
+    return store
+
+
+def _count(store, cypher: str) -> int:
+    return store._g.ro_query(cypher).result_set[0][0]
+
+
+def test_relations_are_native_edges():
+    from activegraph.core.graph import Object, Relation
+
+    store = _make_store("ag_native_edges")
+    try:
+        store.put_object(Object(id="a", type="memo", data={}, version=1, provenance={}))
+        store.put_object(Object(id="b", type="memo", data={}, version=1, provenance={}))
+        store.put_relation(
+            Relation(id="r1", source="a", target="b", type="links", data={}, provenance={})
+        )
+
+        # One native AGRelation edge carrying the relation kind as a property;
+        # no AGRelation *nodes* exist.
+        assert _count(store, "MATCH ()-[r:AGRelation]->() RETURN count(r)") == 1
+        assert _count(store, "MATCH (n:AGRelation) RETURN count(n)") == 0
+        kind = store._g.ro_query(
+            "MATCH ()-[r:AGRelation {id: 'r1'}]->() RETURN r.type"
+        ).result_set[0][0]
+        assert kind == "links"
+        # Endpoints are materialized objects, not placeholders.
+        assert _count(store, "MATCH (n:AGNode) RETURN count(n)") == 2
+        assert _count(store, "MATCH (n:AGNode) WHERE NOT n:AGObject RETURN count(n)") == 0
+    finally:
+        store.clear()
+        store.close()
+
+
+def test_dangling_relation_creates_placeholders():
+    from activegraph.core.graph import Relation
+
+    store = _make_store("ag_placeholders")
+    try:
+        # Neither endpoint exists as an object yet.
+        store.put_relation(
+            Relation(id="r1", source="x", target="y", type="links", data={}, provenance={})
+        )
+        # Two placeholder :AGNode nodes (no :AGObject label), joined by the edge.
+        assert _count(store, "MATCH (n:AGNode) RETURN count(n)") == 2
+        assert _count(store, "MATCH (n:AGObject) RETURN count(n)") == 0
+        assert _count(store, "MATCH ()-[r:AGRelation]->() RETURN count(r)") == 1
+        # The relation still round-trips its source/target from the endpoints.
+        rel = store.get_relation("r1")
+        assert (rel.source, rel.target) == ("x", "y")
+        assert store.all_objects() == []
+    finally:
+        store.clear()
+        store.close()
+
+
+def test_put_object_promotes_placeholder_in_place():
+    from activegraph.core.graph import Object, Relation
+
+    store = _make_store("ag_promote")
+    try:
+        store.put_relation(
+            Relation(id="r1", source="x", target="y", type="links", data={}, provenance={})
+        )
+        # Promote the placeholder 'x' into a real object.
+        store.put_object(Object(id="x", type="memo", data={"v": 1}, version=1, provenance={}))
+
+        # Still exactly two nodes — 'x' was promoted, not duplicated.
+        assert _count(store, "MATCH (n:AGNode) RETURN count(n)") == 2
+        assert _count(store, "MATCH (n:AGNode {id: 'x'}) RETURN count(n)") == 1
+        assert store.get_object("x").data == {"v": 1}
+        # The edge still connects the (now materialized) 'x' to placeholder 'y'.
+        assert store.get_relation("r1").source == "x"
+        assert _count(
+            store, "MATCH (n:AGNode {id: 'y'}) WHERE NOT n:AGObject RETURN count(n)"
+        ) == 1
+    finally:
+        store.clear()
+        store.close()
+
+
+def test_remove_object_keeps_node_as_placeholder_while_referenced():
+    from activegraph.core.graph import Object, Relation
+
+    store = _make_store("ag_demote")
+    try:
+        store.put_object(Object(id="a", type="memo", data={}, version=1, provenance={}))
+        store.put_object(Object(id="b", type="memo", data={}, version=1, provenance={}))
+        store.put_relation(
+            Relation(id="r1", source="a", target="b", type="links", data={}, provenance={})
+        )
+
+        # Mirror the projector: remove the object *before* cascading relations.
+        store.remove_object("a")
+        # 'a' is demoted to a placeholder, not deleted, because the edge remains.
+        assert store.get_object("a") is None
+        assert _count(
+            store, "MATCH (n:AGNode {id: 'a'}) WHERE NOT n:AGObject RETURN count(n)"
+        ) == 1
+        # The relation is still enumerable (so the projector can cascade it).
+        assert store.get_relation("r1") is not None
+
+        # Now the cascade removes the relation, which GCs the orphan placeholder.
+        store.remove_relation("r1")
+        assert _count(store, "MATCH (n:AGNode {id: 'a'}) RETURN count(n)") == 0
+        # 'b' is a real object and survives even with no relations.
+        assert store.get_object("b") is not None
+    finally:
+        store.clear()
+        store.close()
+
+
+def test_remove_relation_only_gcs_orphan_endpoints():
+    from activegraph.core.graph import Relation
+
+    store = _make_store("ag_orphan_gc")
+    try:
+        # Shared placeholder 'b' across two dangling relations.
+        store.put_relation(
+            Relation(id="r1", source="a", target="b", type="links", data={}, provenance={})
+        )
+        store.put_relation(
+            Relation(id="r2", source="b", target="c", type="links", data={}, provenance={})
+        )
+        assert _count(store, "MATCH (n:AGNode) RETURN count(n)") == 3
+
+        store.remove_relation("r1")
+        # 'a' had no other edges -> GC'd. 'b' still anchors r2 -> kept.
+        assert _count(store, "MATCH (n:AGNode {id: 'a'}) RETURN count(n)") == 0
+        assert _count(store, "MATCH (n:AGNode {id: 'b'}) RETURN count(n)") == 1
+        assert {r.id for r in store.all_relations()} == {"r2"}
+    finally:
+        store.clear()
+        store.close()

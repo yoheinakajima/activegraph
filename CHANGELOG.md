@@ -22,7 +22,10 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   current-state view in a FalkorDB graph. `Graph(graph_store=...)`,
   `Runtime.load(..., graph_store=...)`, and `Runtime.fork(..., graph_store=...)`
   select where the projection is materialized; the event log remains the
-  source of truth. The store
+  source of truth. In FalkorDB, objects are `:AGNode:AGObject` nodes and
+  relations are **native `AGRelation` edges** between them, so the
+  projection is a real, traversable graph; dangling relations are supported
+  via bare `:AGNode` placeholder endpoints. The store
   connects to a running FalkorDB via `url=`/`host=` arguments or the
   `FALKORDB_URL` / `FALKORDB_HOST` (`_PORT` / `_USERNAME` / `_PASSWORD`)
   environment variables, falling back to the embedded `falkordblite`

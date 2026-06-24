@@ -22,22 +22,43 @@ Two connection modes, resolved in this order:
 
 Entity modeling
 ---------------
-Each entity kind is a labelled node keyed by ``id``:
+Objects and relations form a real graph; patches are standalone nodes.
 
-  - ``(:AGObject  {id, type, version, data, provenance})``
-  - ``(:AGRelation{id, source, target, type, data, provenance})``
-  - ``(:AGPatch   {id, doc})``
+  - Every endpoint is a node carrying the shared label ``:AGNode`` keyed by
+    ``id``. A materialized object additionally carries ``:AGObject`` plus its
+    ``type`` / ``version`` / ``data`` / ``provenance``::
+
+        (:AGNode:AGObject {id, type, version, data, provenance})
+
+  - Relations are **native edges** with a single fixed relationship type and
+    the relation's ``type`` carried as an edge property::
+
+        (s:AGNode)-[:AGRelation {id, type, data, provenance}]->(t:AGNode)
+
+  - Patches stay standalone nodes: ``(:AGPatch {id, doc})``.
+
+The shared ``:AGNode`` label is load-bearing, not cosmetic. ``put_relation``
+MERGEs its endpoints by ``id`` *before* creating the edge, so a relation may
+reference an object that does not exist yet — the endpoint is created as a
+bare **placeholder** (``:AGNode`` without ``:AGObject``). This preserves the
+in-memory store's dangling-relation semantics with true edges. A label-less
+node could not be indexed, so MERGE would full-scan on every relation write;
+a type-specific MERGE label would risk duplicate-identity nodes — hence the
+shared label. Placeholder-ness is *derived* (``:AGNode AND NOT :AGObject``),
+never stored as its own label, so there is a single source of truth and no
+label churn when an object is removed but still referenced.
 
 ``data`` / ``provenance`` (and the whole patch) are JSON-encoded into string
-properties because FalkorDB node properties are scalars. Relations are stored
-as nodes — not native edges — because this model permits dangling relations
-(a relation may reference objects that do not exist yet), matching the
-in-memory store's semantics exactly. Cascade-on-object-removal is handled by
-the projector in ``core.graph``, not by the database.
+properties because FalkorDB properties are scalars. ``source`` / ``target``
+are not stored — they fall out of the edge's endpoints. Cascade-on-object-
+removal is driven by the projector in ``core.graph``: ``remove_object``
+demotes the node to a placeholder (keeping its edges so the cascade can still
+enumerate the touching relations), then each ``remove_relation`` deletes its
+edge and cleans up any endpoint left as an orphaned placeholder.
 
-Security: every value crosses the Cypher boundary as a bound ``$param``,
-never via string interpolation, so object ids / types / payloads cannot
-inject Cypher.
+Security: relations use a fixed relationship type, so every value — ids,
+types, payloads — crosses the Cypher boundary as a bound ``$param``, never
+via string interpolation. Nothing can inject Cypher.
 """
 
 from __future__ import annotations
@@ -188,21 +209,34 @@ class FalkorDBGraphStore(GraphStore):
     # ---- schema ----
 
     def _ensure_indexes(self) -> None:
-        # Range/exact indexes on the id property make get/remove O(log n).
-        # CREATE INDEX raises if the index already exists; swallow that so
-        # re-opening an existing database is idempotent.
-        for label in ("AGObject", "AGRelation", "AGPatch"):
+        # Range/exact indexes make get/remove O(log n). CREATE INDEX raises if
+        # the index already exists; swallow that so re-opening an existing
+        # database is idempotent. Endpoints are merged/looked up by
+        # ``AGNode(id)``; objects additionally by ``AGObject(id)``; relations
+        # are native edges indexed by ``AGRelation(id)`` (lookup) and
+        # ``AGRelation(type)`` (kind filtering).
+        statements = (
+            "CREATE INDEX FOR (n:AGNode) ON (n.id)",
+            "CREATE INDEX FOR (n:AGObject) ON (n.id)",
+            "CREATE INDEX FOR ()-[r:AGRelation]->() ON (r.id)",
+            "CREATE INDEX FOR ()-[r:AGRelation]->() ON (r.type)",
+            "CREATE INDEX FOR (n:AGPatch) ON (n.id)",
+        )
+        for stmt in statements:
             try:
-                self._g.query(f"CREATE INDEX FOR (n:{label}) ON (n.id)")
+                self._g.query(stmt)
             except Exception:  # noqa: BLE001 — index-exists is the only expected case
                 pass
 
     # ---- objects ----
 
     def put_object(self, obj: Object) -> None:
+        # MERGE on the shared :AGNode label so a node previously created as a
+        # placeholder (by a dangling relation) is promoted in place; SET the
+        # :AGObject label + payload to materialize it.
         self._g.query(
-            "MERGE (o:AGObject {id: $id}) "
-            "SET o.type = $type, o.version = $version, "
+            "MERGE (o:AGNode {id: $id}) "
+            "SET o:AGObject, o.type = $type, o.version = $version, "
             "o.data = $data, o.provenance = $provenance",
             params={
                 "id": obj.id,
@@ -232,8 +266,22 @@ class FalkorDBGraphStore(GraphStore):
         )
 
     def remove_object(self, object_id: str) -> None:
+        # Demote the object to a bare :AGNode placeholder rather than deleting
+        # it outright: the projector removes the object first, then cascades
+        # over ``all_relations()`` to drop the touching relations, so the
+        # node's edges must survive long enough to be enumerated. Once the
+        # label + payload are stripped, delete the node only if it has no
+        # remaining edges (i.e. it was not referenced by any relation).
         self._g.query(
-            "MATCH (o:AGObject {id: $id}) DELETE o",
+            "MATCH (o:AGObject {id: $id}) "
+            "REMOVE o:AGObject "
+            "SET o.type = null, o.version = null, "
+            "o.data = null, o.provenance = null "
+            "WITH o "
+            "OPTIONAL MATCH (o)-[e]-() "
+            "WITH o, count(e) AS deg "
+            "WHERE deg = 0 "
+            "DELETE o",
             params={"id": object_id},
         )
 
@@ -256,10 +304,16 @@ class FalkorDBGraphStore(GraphStore):
     # ---- relations ----
 
     def put_relation(self, rel: Relation) -> None:
+        # MERGE both endpoints by id (creating placeholders if they are not
+        # yet materialized objects), then MERGE a native edge keyed by the
+        # relation id and SET its payload. The relationship type is the fixed
+        # literal ``AGRelation`` — the relation's own ``type`` is an edge
+        # property — so every caller value stays a bound $param.
         self._g.query(
-            "MERGE (r:AGRelation {id: $id}) "
-            "SET r.source = $source, r.target = $target, r.type = $type, "
-            "r.data = $data, r.provenance = $provenance",
+            "MERGE (s:AGNode {id: $source}) "
+            "MERGE (t:AGNode {id: $target}) "
+            "MERGE (s)-[r:AGRelation {id: $id}]->(t) "
+            "SET r.type = $type, r.data = $data, r.provenance = $provenance",
             params={
                 "id": rel.id,
                 "source": rel.source,
@@ -271,9 +325,10 @@ class FalkorDBGraphStore(GraphStore):
         )
 
     def get_relation(self, relation_id: str) -> Optional[Relation]:
+        # source / target are derived from the edge's endpoints, not stored.
         res = self._g.ro_query(
-            "MATCH (r:AGRelation {id: $id}) "
-            "RETURN r.source, r.target, r.type, r.data, r.provenance",
+            "MATCH (s)-[r:AGRelation {id: $id}]->(t) "
+            "RETURN s.id, t.id, r.type, r.data, r.provenance",
             params={"id": relation_id},
         )
         rows = res.result_set
@@ -290,15 +345,27 @@ class FalkorDBGraphStore(GraphStore):
         )
 
     def remove_relation(self, relation_id: str) -> None:
+        # Delete the edge, then garbage-collect either endpoint that is left
+        # as an orphaned placeholder (a :AGNode that is not an :AGObject and
+        # now has no remaining edges). Materialized objects and endpoints
+        # still referenced by other relations are preserved.
         self._g.query(
-            "MATCH (r:AGRelation {id: $id}) DELETE r",
+            "MATCH (s)-[r:AGRelation {id: $id}]->(t) "
+            "DELETE r "
+            "WITH [s, t] AS ends "
+            "UNWIND ends AS n "
+            "WITH DISTINCT n "
+            "OPTIONAL MATCH (n)-[e]-() "
+            "WITH n, count(e) AS deg "
+            "WHERE deg = 0 AND NOT n:AGObject "
+            "DELETE n",
             params={"id": relation_id},
         )
 
     def all_relations(self) -> list[Relation]:
         res = self._g.ro_query(
-            "MATCH (r:AGRelation) "
-            "RETURN r.id, r.source, r.target, r.type, r.data, r.provenance"
+            "MATCH (s)-[r:AGRelation]->(t) "
+            "RETURN r.id, s.id, t.id, r.type, r.data, r.provenance"
         )
         return [
             Relation(
@@ -343,8 +410,10 @@ class FalkorDBGraphStore(GraphStore):
     # ---- lifecycle ----
 
     def clear(self) -> None:
+        # DETACH DELETE so native AGRelation edges are removed with their
+        # endpoints; AGNode covers both materialized objects and placeholders.
         self._g.query(
-            "MATCH (n) WHERE n:AGObject OR n:AGRelation OR n:AGPatch DELETE n"
+            "MATCH (n) WHERE n:AGNode OR n:AGPatch DETACH DELETE n"
         )
 
     def close(self) -> None:

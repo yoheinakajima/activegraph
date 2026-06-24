@@ -209,30 +209,45 @@ current-state projection can be built in its own FalkorDB graph too.
 ## How entities are stored
 
 
-Each entity kind is a labelled node keyed by `id`, which means you can
-inspect and query the projection directly with Cypher:
+Objects and relations form a **real graph** — relations are native edges,
+so you can inspect and traverse the projection directly with Cypher and in
+the FalkorDB Browser:
 
-| Entity | Node |
+| Entity | Shape |
 |---|---|
-| Object | `(:AGObject {id, type, version, data, provenance})` |
-| Relation | `(:AGRelation {id, source, target, type, data, provenance})` |
+| Object | `(:AGNode:AGObject {id, type, version, data, provenance})` |
+| Relation | `(s:AGNode)-[:AGRelation {id, type, data, provenance}]->(t:AGNode)` |
 | Patch | `(:AGPatch {id, doc})` |
 
 A few deliberate choices:
 
-- **`data` / `provenance` are JSON-encoded strings.** FalkorDB node
-  properties are scalars, so structured payloads are serialized. The store
-  decodes them back into rich objects on read.
-- **Relations are nodes, not native edges.** The in-memory store allows a
-  relation to reference objects that do not exist yet (a dangling
-  relation). Native edges cannot dangle, so relations are modeled as nodes
-  to match those semantics exactly.
+- **Relations are native edges.** Every relation is an `AGRelation` edge
+  between two `AGNode` endpoints, so neighborhood walks and visualization
+  work natively. The relation's own kind (`links`, `cites`, …) is carried
+  as the edge's `type` *property* rather than the relationship type — the
+  relationship type is always the fixed literal `AGRelation`. That keeps
+  every value a bound `$param` (nothing user-supplied is ever interpolated
+  into Cypher), at the cost of filtering by `r.type` instead of by
+  relationship label.
+- **Dangling relations are supported via placeholders.** The in-memory
+  store allows a relation to reference objects that do not exist yet. Here,
+  `put_relation` creates each missing endpoint as a bare `:AGNode`
+  **placeholder** (an `:AGNode` *without* the `:AGObject` label). When the
+  object is later added, the same node is promoted in place; when a
+  relation is removed, any endpoint left as an orphaned placeholder is
+  garbage-collected. Placeholder-ness is derived (`:AGNode AND NOT
+  :AGObject`), never a stored flag.
+- **`source` / `target` are not stored.** They fall out of the edge's
+  endpoints, so the graph is the single source of truth for connectivity.
+- **`data` / `provenance` are JSON-encoded strings.** FalkorDB properties
+  are scalars, so structured payloads are serialized. The store decodes
+  them back into rich objects on read.
 - **Cascade-on-removal lives in the projector, not the database.** Removing
   an object deletes its relations via `apply_event` in `core.graph`, so the
   behavior is identical across every `GraphStore`.
 - **`Graph` queries read the whole projection.** Filters, neighborhood
   walks, and `where` evaluation run in Python over `all_objects()` /
-  `all_relations()`, so each call fetches and decodes every node from
+  `all_relations()`, so each call fetches and decodes every entity from
   FalkorDB rather than pushing the query down as Cypher. This keeps query
   semantics identical across every backend, but means FalkorDB is best for
   small-to-medium live projections and Cypher-side inspection — not for
@@ -248,8 +263,12 @@ To poke at a run's projection by hand:
 // All objects of a given type.
 MATCH (o:AGObject {type: 'person'}) RETURN o.id, o.data
 
-// A node and what it points at.
-MATCH (r:AGRelation {source: $id}) RETURN r.target, r.type
+// A node and what it points at, via the native edge.
+MATCH (s:AGNode {id: $id})-[r:AGRelation]->(t:AGNode)
+RETURN t.id, r.type
+
+// Filter relations by kind (the kind is an edge property).
+MATCH (s)-[r:AGRelation {type: 'cites'}]->(t) RETURN s.id, t.id
 ```
 
 ---
@@ -269,9 +288,9 @@ finally:
 ```
 
 If you passed your own `graph=` handle, the store does **not** close it —
-you own that lifecycle. `clear()` wipes only this graph's
-`AGObject`/`AGRelation`/`AGPatch` nodes, leaving anything else in the
-FalkorDB graph untouched.
+you own that lifecycle. `clear()` detaches and wipes only this graph's
+`AGNode` (objects + placeholders, with their `AGRelation` edges) and
+`AGPatch` nodes, leaving anything else in the FalkorDB graph untouched.
 
 ---
 
