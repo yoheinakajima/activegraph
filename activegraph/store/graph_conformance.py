@@ -199,3 +199,125 @@ class GraphStoreConformance(ABC):
             assert store.all_patches() == []
         finally:
             self.cleanup()
+
+    # ---- query hooks (pushdown) ----
+
+    def test_find_objects(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("o1", type_="memo"))
+            store.put_object(self._obj("o2", type_="memo"))
+            store.put_object(self._obj("o3", type_="note"))
+            # None -> every object.
+            assert sorted(o.id for o in store.find_objects()) == ["o1", "o2", "o3"]
+            # Type filter.
+            assert sorted(o.id for o in store.find_objects("memo")) == ["o1", "o2"]
+            assert [o.id for o in store.find_objects("note")] == ["o3"]
+            # Unknown type -> empty.
+            assert store.find_objects("nope") == []
+        finally:
+            self.cleanup()
+
+    def test_find_relations(self) -> None:
+        try:
+            store = self.make_store()
+            # Dangling endpoints on purpose: filters must not depend on the
+            # endpoints existing as objects.
+            store.put_relation(self._rel("r1", "a", "b", type_="links"))
+            store.put_relation(self._rel("r2", "a", "c", type_="cites"))
+            store.put_relation(self._rel("r3", "b", "a", type_="links"))
+
+            def ids(rels):
+                return sorted(r.id for r in rels)
+
+            # No filter -> all.
+            assert ids(store.find_relations()) == ["r1", "r2", "r3"]
+            # By source.
+            assert ids(store.find_relations(source="a")) == ["r1", "r2"]
+            # By target.
+            assert ids(store.find_relations(target="a")) == ["r3"]
+            # By type.
+            assert ids(store.find_relations(type="links")) == ["r1", "r3"]
+            # Combined AND.
+            assert ids(store.find_relations(source="a", type="links")) == ["r1"]
+            assert ids(store.find_relations(source="a", target="b")) == ["r1"]
+            # No match.
+            assert store.find_relations(source="z") == []
+        finally:
+            self.cleanup()
+
+    def test_neighborhood_not_an_object(self) -> None:
+        try:
+            store = self.make_store()
+            # Unknown start, and a start that exists only as a placeholder.
+            store.put_relation(self._rel("r1", "ghost", "other"))
+            assert store.neighborhood("missing") == ([], [])
+            assert store.neighborhood("ghost") == ([], [])
+        finally:
+            self.cleanup()
+
+    def test_neighborhood_depth_zero(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("o1"))
+            store.put_object(self._obj("o2"))
+            store.put_relation(self._rel("r1", "o1", "o2"))
+            objs, rels = store.neighborhood("o1", depth=0)
+            assert [o.id for o in objs] == ["o1"]
+            assert rels == []
+        finally:
+            self.cleanup()
+
+    def test_neighborhood_walks_through_placeholder(self) -> None:
+        try:
+            store = self.make_store()
+            # o1 -> p (placeholder) -> o2 ; plus a far object o3 two hops past o2.
+            store.put_object(self._obj("o1"))
+            store.put_object(self._obj("o2"))
+            store.put_object(self._obj("o3"))
+            store.put_relation(self._rel("r1", "o1", "p"))
+            store.put_relation(self._rel("r2", "p", "o2"))
+            store.put_relation(self._rel("r3", "o2", "o3"))
+
+            # depth 1: edges touching o1 -> r1; reachable objects exclude the
+            # placeholder p (not an object) but include o1.
+            objs, rels = store.neighborhood("o1", depth=1)
+            assert sorted(o.id for o in objs) == ["o1"]
+            assert sorted(r.id for r in rels) == ["r1"]
+
+            # depth 2: walk o1 -> p -> o2 ; edges touching the depth<=1 frontier
+            # are r1 and r2; o2 is now reachable (distance 2).
+            objs, rels = store.neighborhood("o1", depth=2)
+            assert sorted(o.id for o in objs) == ["o1", "o2"]
+            assert sorted(r.id for r in rels) == ["r1", "r2"]
+
+            # depth 3: reaches o3; r3 is now traversed too.
+            objs, rels = store.neighborhood("o1", depth=3)
+            assert sorted(o.id for o in objs) == ["o1", "o2", "o3"]
+            assert sorted(r.id for r in rels) == ["r1", "r2", "r3"]
+        finally:
+            self.cleanup()
+
+    def test_neighborhood_handles_cycle(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("a"))
+            store.put_object(self._obj("b"))
+            store.put_object(self._obj("c"))
+            # Cycle a -> b -> c -> a.
+            store.put_relation(self._rel("ab", "a", "b"))
+            store.put_relation(self._rel("bc", "b", "c"))
+            store.put_relation(self._rel("ca", "c", "a"))
+
+            objs, rels = store.neighborhood("a", depth=1)
+            # Undirected: a touches ab (a->b) and ca (c->a); b and c are real
+            # objects one hop away, so both appear. bc touches neither a-frontier
+            # node yet, so it is not collected at depth 1.
+            assert sorted(o.id for o in objs) == ["a", "b", "c"]
+            assert sorted(r.id for r in rels) == ["ab", "ca"]
+
+            objs, rels = store.neighborhood("a", depth=2)
+            assert sorted(o.id for o in objs) == ["a", "b", "c"]
+            assert sorted(r.id for r in rels) == ["ab", "bc", "ca"]
+        finally:
+            self.cleanup()

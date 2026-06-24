@@ -379,6 +379,119 @@ class FalkorDBGraphStore(GraphStore):
             for row in res.result_set
         ]
 
+    # ---- query hooks (pushdown) ----
+
+    def find_objects(self, type: Optional[str] = None) -> list[Object]:
+        # Type filter runs in the database; $type is NULL -> every object.
+        res = self._g.ro_query(
+            "MATCH (o:AGObject) "
+            "WHERE $type IS NULL OR o.type = $type "
+            "RETURN o.id, o.type, o.version, o.data, o.provenance",
+            params={"type": type},
+        )
+        return [
+            Object(
+                id=row[0],
+                type=row[1],
+                data=json.loads(row[3]),
+                version=int(row[2]),
+                provenance=json.loads(row[4]),
+            )
+            for row in res.result_set
+        ]
+
+    def find_relations(
+        self,
+        source: Optional[str] = None,
+        target: Optional[str] = None,
+        type: Optional[str] = None,
+    ) -> list[Relation]:
+        # AND filter pushed down; a NULL param leaves that slot unconstrained.
+        res = self._g.ro_query(
+            "MATCH (s)-[r:AGRelation]->(t) "
+            "WHERE ($source IS NULL OR s.id = $source) "
+            "AND ($target IS NULL OR t.id = $target) "
+            "AND ($type IS NULL OR r.type = $type) "
+            "RETURN r.id, s.id, t.id, r.type, r.data, r.provenance",
+            params={"source": source, "target": target, "type": type},
+        )
+        return [
+            Relation(
+                id=row[0],
+                source=row[1],
+                target=row[2],
+                type=row[3],
+                data=json.loads(row[4]),
+                provenance=json.loads(row[5]),
+            )
+            for row in res.result_set
+        ]
+
+    def neighborhood(
+        self, object_id: str, depth: int = 1
+    ) -> tuple[list[Object], list[Relation]]:
+        # Mirror the Python default exactly, but let FalkorDB do the walk via
+        # a native variable-length path over AGRelation edges.
+        start = self.get_object(object_id)
+        if start is None:
+            return ([], [])
+        if depth <= 0:
+            # range(0) in the default -> just the start object, no relations.
+            return ([start], [])
+        # The var-length upper bound must be a literal in the pattern, so we
+        # splice a validated int (our own value, never user text) -> no
+        # injection surface; everything else stays a bound $param.
+        hops = int(depth)
+
+        # Objects: AGObject nodes within `hops` undirected edges, start
+        # included. Intermediate placeholders are traversed but excluded from
+        # the result (the endpoint label filter keeps only objects), matching
+        # the default's "skip non-object endpoints" behavior.
+        obj_res = self._g.ro_query(
+            "MATCH (start:AGObject {id: $id}) "
+            f"OPTIONAL MATCH (start)-[:AGRelation*1..{hops}]-(m:AGObject) "
+            "WITH start, collect(DISTINCT m) AS ms "
+            "UNWIND (ms + [start]) AS x "
+            "WITH DISTINCT x "
+            "RETURN x.id, x.type, x.version, x.data, x.provenance",
+            params={"id": object_id},
+        )
+        objects = [
+            Object(
+                id=row[0],
+                type=row[1],
+                data=json.loads(row[3]),
+                version=int(row[2]),
+                provenance=json.loads(row[4]),
+            )
+            for row in obj_res.result_set
+        ]
+
+        # Relations: every AGRelation edge on a path of length <= hops from
+        # start. That is exactly the default's BFS edge set (an edge is
+        # collected iff its nearer endpoint is within hops-1 of start).
+        rel_res = self._g.ro_query(
+            "MATCH p=(start:AGObject {id: $id})"
+            f"-[:AGRelation*1..{hops}]-(m) "
+            "UNWIND relationships(p) AS r "
+            "WITH DISTINCT r "
+            "RETURN r.id, startNode(r).id, endNode(r).id, "
+            "r.type, r.data, r.provenance",
+            params={"id": object_id},
+        )
+        relations = [
+            Relation(
+                id=row[0],
+                source=row[1],
+                target=row[2],
+                type=row[3],
+                data=json.loads(row[4]),
+                provenance=json.loads(row[5]),
+            )
+            for row in rel_res.result_set
+        ]
+        return (objects, relations)
+
     # ---- patches ----
 
     def put_patch(self, patch: Patch) -> None:

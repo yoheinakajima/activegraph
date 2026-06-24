@@ -245,13 +245,22 @@ A few deliberate choices:
 - **Cascade-on-removal lives in the projector, not the database.** Removing
   an object deletes its relations via `apply_event` in `core.graph`, so the
   behavior is identical across every `GraphStore`.
-- **`Graph` queries read the whole projection.** Filters, neighborhood
-  walks, and `where` evaluation run in Python over `all_objects()` /
-  `all_relations()`, so each call fetches and decodes every entity from
-  FalkorDB rather than pushing the query down as Cypher. This keeps query
-  semantics identical across every backend, but means FalkorDB is best for
-  small-to-medium live projections and Cypher-side inspection — not for
-  pushing large traversals into the database.
+- **Structural `Graph` queries push down to Cypher.** Type filters
+  (`graph.objects(type=...)`), relation lookups (`graph.relations(...)`,
+  `graph.get_relations(...)`), and neighborhood walks
+  (`graph.neighborhood(...)`) are translated into Cypher and evaluated
+  inside FalkorDB, so they fetch only the matching rows instead of scanning
+  the whole projection. The default `GraphStore` implementations compute the
+  same results in Python, so query semantics stay identical across every
+  backend.
+- **`where` predicates still run in Python.** `graph.objects(where=...)`
+  pushes the *type* filter down but applies the `where` clause in Python
+  over the returned objects, because the structured `data` payload is stored
+  as a JSON string rather than as native, indexable properties. Whole-graph
+  consumers (diffing, prompt building, pattern matching, the registry, CLI
+  status) still read the full projection via `all_objects()` /
+  `all_relations()`. FalkorDB remains best for small-to-medium live
+  projections and Cypher-side inspection.
 
 Every value crosses the Cypher boundary as a bound `$param`, never via
 string interpolation — object ids, types, and payloads cannot inject

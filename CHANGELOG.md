@@ -33,6 +33,15 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   client) or `'activegraph[falkordb-embedded]'` (embedded engine). See the
   [Using the FalkorDB graph store](https://docs.activegraph.ai/guides/using-falkordb/)
   guide.
+- `GraphStore` query hooks (`find_objects`, `find_relations`,
+  `neighborhood`) that let backends evaluate structural queries close to the
+  data. `Graph.objects(type=...)`, `Graph.relations(...)`,
+  `Graph.get_relations(...)`, and `Graph.neighborhood(...)` delegate to these
+  hooks. The default implementations compute results in Python (identical to
+  before), while `FalkorDBGraphStore` overrides them with Cypher so type
+  filters, relation lookups, and neighborhood walks run inside the database
+  instead of scanning the whole projection. `where` predicates still evaluate
+  in Python since the structured payload is stored as JSON.
 
 ## [v1.1.0] — 2026-06-10
 

@@ -15,11 +15,17 @@ the queryable current-state view rebuilt by replaying that log. Losing a
 GraphStore is recoverable (replay the log); losing the EventStore is not.
 
 The interface is deliberately small: upsert/get/remove/enumerate for each
-of the three entity kinds, plus ``clear`` and ``close``. No queries beyond
-enumeration — filtering, neighborhood walks, and ``where`` evaluation stay
-in :class:`~activegraph.core.graph.Graph`, which composes them over
-``all_objects`` / ``all_relations``. That keeps every backend simple and
-keeps query semantics in exactly one place.
+of the three entity kinds, plus ``clear`` and ``close``. On top of that it
+exposes a few **optional query hooks** — :meth:`GraphStore.find_objects`,
+:meth:`GraphStore.find_relations`, and :meth:`GraphStore.neighborhood` —
+which default to a plain Python scan over ``all_objects`` / ``all_relations``
+(so the base class itself is the single source of truth for their
+semantics) but which a backend MAY override to push the filter/traversal
+down to the database. The rich ``where`` predicate language is *not* a hook:
+it stays in :class:`~activegraph.core.graph.Graph`, evaluated in Python over
+whatever :meth:`find_objects` returns. That keeps the structural filters
+(which are trivial to mirror exactly) pushable, while the parts that are
+hard to translate faithfully stay in one place.
 """
 
 from __future__ import annotations
@@ -91,6 +97,79 @@ class GraphStore(ABC):
     @abstractmethod
     def all_patches(self) -> list["Patch"]:
         """Return every patch. Order is unspecified."""
+
+    # ---- query hooks (optional pushdown) ----
+    #
+    # These have working Python defaults computed over all_objects /
+    # all_relations, so the base class is the canonical definition of their
+    # semantics. A backend MAY override them to push the work into the
+    # database; an override MUST return exactly what the default would (the
+    # GraphStoreConformance suite pins this). They use only Object / Relation
+    # attributes — never the ``where`` evaluator — so backends stay decoupled
+    # from query-language details and there is no import cycle with core.graph.
+
+    def find_objects(self, type: Optional[str] = None) -> list["Object"]:
+        """Return objects, optionally filtered to those whose ``type`` equals
+        ``type``. ``None`` means "every object". Type-equality only — the
+        ``where`` predicate is applied by the caller, not here.
+        """
+        if type is None:
+            return self.all_objects()
+        return [o for o in self.all_objects() if o.type == type]
+
+    def find_relations(
+        self,
+        source: Optional[str] = None,
+        target: Optional[str] = None,
+        type: Optional[str] = None,
+    ) -> list["Relation"]:
+        """Return relations matching every provided filter (AND). A ``None``
+        filter is unconstrained; passing none returns every relation.
+        """
+        out: list["Relation"] = []
+        for r in self.all_relations():
+            if source is not None and r.source != source:
+                continue
+            if target is not None and r.target != target:
+                continue
+            if type is not None and r.type != type:
+                continue
+            out.append(r)
+        return out
+
+    def neighborhood(
+        self, object_id: str, depth: int = 1
+    ) -> tuple[list["Object"], list["Relation"]]:
+        """Undirected breadth-first walk from ``object_id`` out to ``depth``
+        edges. Returns ``(objects, relations)`` where ``objects`` are the
+        reachable materialized objects (the start included; endpoints that
+        are not objects are skipped) and ``relations`` are every relation
+        traversed. Returns ``([], [])`` if ``object_id`` is not an object.
+        """
+        if self.get_object(object_id) is None:
+            return ([], [])
+        seen_objs = {object_id}
+        frontier = {object_id}
+        seen_rels: set[str] = set()
+        for _ in range(depth):
+            next_frontier: set[str] = set()
+            for r in self.all_relations():
+                if r.source in frontier or r.target in frontier:
+                    seen_rels.add(r.id)
+                    if r.source not in seen_objs:
+                        next_frontier.add(r.source)
+                    if r.target not in seen_objs:
+                        next_frontier.add(r.target)
+            seen_objs |= next_frontier
+            frontier = next_frontier
+            if not frontier:
+                break
+        objs = [self.get_object(i) for i in seen_objs]
+        rels = [self.get_relation(i) for i in seen_rels]
+        return (
+            [o for o in objs if o is not None],
+            [r for r in rels if r is not None],
+        )
 
     # ---- lifecycle ----
 

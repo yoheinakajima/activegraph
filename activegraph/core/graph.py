@@ -171,19 +171,25 @@ class Graph:
         type: Optional[str] = None,
         direction: str = "both",
     ) -> list[Relation]:
-        out: list[Relation] = []
-        for r in self._state.all_relations():
-            if type is not None and r.type != type:
-                continue
-            if object_id is not None:
-                if direction == "outgoing" and r.source != object_id:
-                    continue
-                if direction == "incoming" and r.target != object_id:
-                    continue
-                if direction == "both" and object_id not in (r.source, r.target):
-                    continue
-            out.append(r)
-        return out
+        # Pushed down to the store via find_relations (see graph_store.py).
+        # Decompose the (object_id, direction) axis into source/target slots:
+        # "outgoing"/"incoming" map to a single directional filter; "both"
+        # needs source-OR-target, which find_relations (AND-only) can't express,
+        # so we push the type filter and apply the membership test here. An
+        # unrecognized direction keeps the v0 quirk of ignoring object_id.
+        if object_id is None:
+            return self._state.find_relations(type=type)
+        if direction == "outgoing":
+            return self._state.find_relations(source=object_id, type=type)
+        if direction == "incoming":
+            return self._state.find_relations(target=object_id, type=type)
+        if direction == "both":
+            return [
+                r
+                for r in self._state.find_relations(type=type)
+                if object_id in (r.source, r.target)
+            ]
+        return self._state.find_relations(type=type)
 
     def relations(
         self,
@@ -201,42 +207,13 @@ class Graph:
         relation. ``Graph.get_relations(object_id=, type=, direction=)``
         stays as a backward-compatible alias.
         """
-        out: list[Relation] = []
-        for r in self._state.all_relations():
-            if source is not None and r.source != source:
-                continue
-            if target is not None and r.target != target:
-                continue
-            if type is not None and r.type != type:
-                continue
-            out.append(r)
-        return out
+        # Pushed down to the store (find_relations applies the same AND filter).
+        return self._state.find_relations(source=source, target=target, type=type)
 
     def neighborhood(self, object_id: str, depth: int = 1) -> tuple[list[Object], list[Relation]]:
-        if self._state.get_object(object_id) is None:
-            return ([], [])
-        seen_objs = {object_id}
-        frontier = {object_id}
-        seen_rels: set[str] = set()
-        for _ in range(depth):
-            next_frontier: set[str] = set()
-            for r in self._state.all_relations():
-                if r.source in frontier or r.target in frontier:
-                    seen_rels.add(r.id)
-                    if r.source not in seen_objs:
-                        next_frontier.add(r.source)
-                    if r.target not in seen_objs:
-                        next_frontier.add(r.target)
-            seen_objs |= next_frontier
-            frontier = next_frontier
-            if not frontier:
-                break
-        objs = [self._state.get_object(i) for i in seen_objs]
-        rels = [self._state.get_relation(i) for i in seen_rels]
-        return (
-            [o for o in objs if o is not None],
-            [r for r in rels if r is not None],
-        )
+        # Pushed down to the store (default is the same BFS; FalkorDB uses a
+        # native variable-length path query). See GraphStore.neighborhood.
+        return self._state.neighborhood(object_id, depth)
 
     def objects(
         self,
@@ -250,10 +227,10 @@ class Graph:
         and outside behaviors. `Graph.query(object_type=...)` is kept
         as a backward-compatible alias.
         """
+        # Type filter is pushed down to the store via find_objects; the
+        # ``where`` predicate is evaluated in Python over that subset.
         out: list[Object] = []
-        for o in self._state.all_objects():
-            if type is not None and o.type != type:
-                continue
+        for o in self._state.find_objects(type):
             if where and not _eval_where_on_object(where, o):
                 continue
             out.append(o)
@@ -273,7 +250,8 @@ class Graph:
         return self.objects(type=object_type, where=where)
 
     def has_object_of_type(self, type_: str) -> bool:
-        return any(o.type == type_ for o in self._state.all_objects())
+        # Pushed down via find_objects (scopes the scan to ``type_``).
+        return bool(self._state.find_objects(type_))
 
     # ---------- listener API (runtime hooks here) ----------
 
