@@ -767,9 +767,17 @@ class PatternMatcher:
 
 
 def _candidate_objects(graph, node_pat: NodePat):
-    """All objects that could fill `node_pat` ignoring relationships."""
+    """All objects that could fill `node_pat` ignoring relationships.
+
+    The node *type* filter is pushed down to the store via
+    ``graph.objects(type=...)`` (a single scoped query on backends like
+    FalkorDB instead of a full-projection scan). The node's equality
+    ``{prop: value}`` constraints live inside the JSON-encoded ``data``
+    blob, so they cannot be expressed as a native query and are applied
+    in Python here over the (already type-scoped) candidate set.
+    """
     out = []
-    for o in graph.all_objects():
+    for o in graph.objects(type=node_pat.type):
         if _node_matches(o, node_pat):
             out.append(o)
     return out
@@ -787,21 +795,27 @@ def _node_matches(obj, node_pat: NodePat) -> bool:
 def _follow_relation(graph, src, rel_pat: RelPat) -> Iterator[tuple[Any, Any]]:
     """Yield (relation, neighbor_object) for every edge of the right type
     in the right direction leaving src.
+
+    The (source/target, type) filter is pushed down to the store via
+    ``graph.relations(...)``, so a backend like FalkorDB answers each hop
+    with a scoped Cypher query rather than scanning every relation in the
+    projection. The default store reproduces the same filter in Python, so
+    match results (and their order) are identical across backends.
     """
-    for r in graph.all_relations():
-        if r.type != rel_pat.type:
-            continue
-        if rel_pat.direction == "right":
-            if r.source != src.id:
-                continue
+    if rel_pat.direction == "right":
+        # (src)-[:r]->(neighbor)
+        for r in graph.relations(source=src.id, type=rel_pat.type):
             neighbor = graph.get_object(r.target)
-        else:  # 'left' — (src)<-[:r]-(neighbor) means r.target == src.id
-            if r.target != src.id:
+            if neighbor is None:
                 continue
+            yield r, neighbor
+    else:  # 'left' — (src)<-[:r]-(neighbor) means r.target == src.id
+        for r in graph.relations(target=src.id, type=rel_pat.type):
             neighbor = graph.get_object(r.source)
-        if neighbor is None:
-            continue
-        yield r, neighbor
+            if neighbor is None:
+                continue
+            yield r, neighbor
+
 
 
 # ---------- WHERE evaluator -------------------------------------------------

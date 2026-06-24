@@ -244,3 +244,73 @@ def test_remove_relation_only_gcs_orphan_endpoints():
     finally:
         store.clear()
         store.close()
+
+
+# --- pattern-match push-down parity --------------------------------------
+#
+# Pattern matching drives its chain traversal through the pushed-down
+# Graph.objects(type=) / Graph.relations(source=, target=, type=) hooks, so on
+# FalkorDB each seed and hop is a scoped Cypher query rather than a full
+# projection scan. These build the *same* graph on the in-memory default and
+# on FalkorDB and assert the matcher returns identical bindings for a range of
+# patterns (node-type seed, both hop directions, multi-hop + node-property +
+# WHERE, and a NOT EXISTS sub-pattern that recurses through the same hooks).
+
+
+def _populate_pattern_graph(g) -> None:
+    """Build a small fixed graph on any ``Graph``. Both backends start from a
+    fresh, identically-seeded ``IDGen``, so object/relation ids line up and
+    bindings can be compared directly.
+    """
+    a = g.add_object("person", {"team": "x", "score": 1})
+    b = g.add_object("person", {"team": "y", "score": 9})
+    c = g.add_object("person", {"team": "z", "score": 3})
+    g.add_object("memo", {"text": "noise"})
+    g.add_relation(a.id, b.id, "knows")
+    g.add_relation(b.id, c.id, "knows")
+    g.add_relation(a.id, c.id, "dislikes")
+
+
+def _norm(matches) -> list:
+    """Order-independent, comparable representation of a match list."""
+    return sorted(tuple(sorted(m.bindings.items())) for m in matches)
+
+
+def test_pattern_matching_parity_falkordb_vs_inmemory():
+    from activegraph.core.graph import Graph
+    from activegraph.store.falkordb import FalkorDBGraphStore
+    from activegraph.runtime.patterns import parse
+
+    patterns = [
+        # Node-type seed -> pushed down via Graph.objects(type=).
+        "(p:person)",
+        # Node-type seed + equality property (property filter stays in Python).
+        "(p:person {team: 'x'})",
+        # One hop, right direction -> relations(source=, type=).
+        "(a:person)-[:knows]->(b:person)",
+        # One hop, left direction -> relations(target=, type=).
+        "(b:person)<-[:knows]-(a:person)",
+        # Multi-hop chain + node property + WHERE comparison.
+        "(a:person {team: 'x'})-[:knows]->(b:person)-[:knows]->(c:person) "
+        "WHERE c.score > 2",
+        # NOT EXISTS sub-pattern recurses through the same pushed-down hooks.
+        "(a:person)-[:knows]->(b:person) "
+        "WHERE NOT EXISTS { (b)-[:knows]->(c:person) }",
+    ]
+
+    store = FalkorDBGraphStore(graph_name="ag_pattern_parity")
+    store.clear()
+    try:
+        g_mem = Graph()
+        g_fdb = Graph(graph_store=store)
+        _populate_pattern_graph(g_mem)
+        _populate_pattern_graph(g_fdb)
+
+        for src in patterns:
+            matcher = parse(src).compile()
+            mem = _norm(matcher.matches(event=None, graph=g_mem))
+            fdb = _norm(matcher.matches(event=None, graph=g_fdb))
+            assert fdb == mem, f"pattern push-down diverged for: {src}"
+    finally:
+        store.clear()
+        store.close()

@@ -43,6 +43,19 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   instead of scanning the whole projection. `where` predicates still evaluate
   in Python since the structured payload is stored as JSON.
 
+### Changed
+
+- Pattern matching now drives its chain traversal through the pushed-down
+  `Graph.objects(type=...)` / `Graph.relations(source=, target=, type=)`
+  hooks instead of scanning `all_objects()` / `all_relations()` on every
+  event. On `FalkorDBGraphStore` each candidate seed and relation hop becomes
+  a scoped Cypher query (index-backed) rather than dragging the entire
+  projection into Python per event; the default store reproduces the same
+  filtering, so match results and their order are unchanged. Node
+  `{prop: value}` equality and `WHERE` predicates continue to evaluate in
+  Python over the scoped candidate set.
+
+
 ## [v1.1.0] — 2026-06-10
 
 ### Added
