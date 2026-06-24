@@ -290,6 +290,82 @@ MATCH (s)-[r:AGRelation {type: 'cites'}]->(t) RETURN s.id, t.id
 
 ---
 
+## Performance: where the seam pays off
+
+The two backends optimize for opposite things, and the trade-off only
+becomes visible as the graph grows. `InMemoryGraphStore` is heap-resident
+Python dicts: every read is a pointer chase with no serialization and no
+network hop. `FalkorDBGraphStore` pays a fixed round-trip-plus-JSON cost on
+every call, but the **pushed-down** reads run as index-backed Cypher inside
+the database, so their cost tracks the size of the **result**, not the size
+of the whole projection.
+
+The numbers below come from
+[`scripts/benchmark_falkordb.py`](https://github.com/yoheinakajima/activegraph/blob/main/scripts/benchmark_falkordb.py),
+which builds the same chained graph on both backends and times each path
+(best-of-5 for queries) at three sizes. They are **indicative and
+hardware-dependent** — a local FalkorDB container over loopback, one
+machine. Read the *ratios between rows*, not the absolute milliseconds.
+
+| Operation | Size (objects) | InMemory (ms) | FalkorDB (ms) |
+|---|---|---|---|
+| build (write) | small (200) | 2.96 | 231 |
+| full scan (`all_objects`) | small (200) | <0.01 | 1.91 |
+| type-scoped read | small (200) | <0.01 | 0.67 |
+| neighborhood depth=2 | small (200) | 0.01 | 1.05 |
+| 2-hop pattern match | small (200) | 0.87 | 3.03 |
+| cascade delete | small (200) | 0.02 | 3.14 |
+| build (write) | medium (2,000) | 30.8 | 2,067 |
+| full scan (`all_objects`) | medium (2,000) | 0.01 | 18.9 |
+| type-scoped read | medium (2,000) | 0.04 | 4.69 |
+| neighborhood depth=2 | medium (2,000) | 0.11 | 0.85 |
+| 2-hop pattern match | medium (2,000) | 80.4 | 27.1 |
+| cascade delete | medium (2,000) | 0.10 | 5.88 |
+| build (write) | large (20,000) | 273 | 26,595 |
+| full scan (`all_objects`) | large (20,000) | 0.05 | 97.3 |
+| type-scoped read | large (20,000) | 0.31 | 50.0 |
+| neighborhood depth=2 | large (20,000) | 1.07 | 0.94 |
+| 2-hop pattern match | large (20,000) | 8,920 | 300 |
+| cascade delete | large (20,000) | 0.98 | 40.3 |
+
+What the table is telling you:
+
+- **In-memory wins raw latency on small and medium graphs, and always wins
+  on writes.** With no serialization and no network, dict operations are
+  sub-millisecond. Every FalkorDB write is a round-trip, so building a large
+  projection edge-by-edge is the backend's worst case (the ~27 s build is
+  one-time setup cost, not query cost). If your projection fits comfortably
+  in memory and is short-lived, `InMemoryGraphStore` is simply faster.
+- **The pushed-down structural reads flip the comparison as the graph
+  grows.** A 2-hop pattern match over 20,000 objects collapses into a single
+  index-backed Cypher query (~300 ms) instead of the matcher's
+  whole-projection walk (~8.9 s) — roughly **30× faster**, and the gap widens
+  with size because FalkorDB's cost scales with matches, not nodes.
+  `neighborhood` is already on par at the large size (0.94 ms vs 1.07 ms)
+  for the same reason.
+- **The un-pushable paths stay proportional to graph size on both
+  backends.** A full `all_objects()` scan, and the Python-side consumers
+  that depend on it (diffing, prompt building, `where` predicates), pull the
+  whole projection across the wire and JSON-decode it, so FalkorDB is slower
+  there — that's the cost of keeping a large graph off the heap.
+
+The rule of thumb: reach for FalkorDB when the graph is **large and
+long-lived** and your hot path is **structural queries** (type filters,
+neighborhoods, pattern-driven behaviors) — exactly the paths that push down.
+Stay in memory when the projection is small, write-heavy, or disposable.
+
+!!! note "This is a latency win, not a token win"
+    These optimizations change *how the projection is queried*, not *what
+    the LLM sees*. Both backends produce a byte-for-byte identical `View`
+    for the same `view_spec`, so the serialized prompt — and its token
+    count — is the same either way. LLM token usage is bounded by **view
+    scoping** (`include_types`, `around` + `depth`), which decides what
+    lands in the prompt. The push-down just makes producing that scoped
+    slice cheap on a large graph, instead of pulling the whole projection
+    into Python to trim it down.
+
+---
+
 ## Lifecycle and cleanup
 
 When the store opened its own connection (server or embedded), `close()`
@@ -343,9 +419,9 @@ So FalkorDB is used where it pays off, and the CLI stays infrastructure-light.
 Use `FalkorDBGraphStore` when you want to:
 
 - **Query current state with Cypher** — dashboards or ad-hoc queries over
-  the live projection. Match `AGRelation` nodes by their `source` / `target`
-  properties; relations are nodes, not native edges, so native
-  edge-traversal algorithms don't apply directly.
+  the live projection. Relations are native `AGRelation` edges between
+  `AGNode` endpoints, so neighborhood walks and edge-traversal queries work
+  natively; filter a relation's kind on its `type` *property*.
 - **Share the projection across processes** — one writer plus several
   read-only inspectors hitting the same FalkorDB graph.
 - **Keep a large graph off the heap** — projections that don't fit
