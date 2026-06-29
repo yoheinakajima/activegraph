@@ -83,7 +83,9 @@ def _is_lifecycle(event: Event) -> bool:
 def _matching_relations(
     rb: RelationBehavior, event: Event, graph: Graph
 ) -> list[Relation]:
-    candidates = [r for r in graph.all_relations() if r.type == rb.relation_type]
+    # Push the relation-type filter down to the store (find_relations) instead
+    # of scanning every edge in Python; the reference/where checks stay here.
+    candidates = graph.relations(type=rb.relation_type)
     referenced = _collect_string_values(event.payload)
     out: list[Relation] = []
     for r in candidates:

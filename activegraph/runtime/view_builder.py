@@ -32,13 +32,18 @@ def build_view(
     if around_path:
         center_id = _resolve_event_path(around_path, event)
         objs, rels = graph.neighborhood(center_id, depth=depth) if center_id else ([], [])
+        if include_types:
+            type_set = set(include_types)
+            objs = [o for o in objs if o.type in type_set]
+    elif include_types:
+        # No anchor: push the type filter into the store (FalkorDB resolves it
+        # as ``type IN [...]`` instead of materializing every object). The
+        # default single-pass scan preserves the same order as a full scan.
+        objs = graph.objects_in_types(include_types)
+        rels = graph.all_relations()
     else:
         objs = graph.all_objects()
         rels = graph.all_relations()
-
-    if include_types:
-        type_set = set(include_types)
-        objs = [o for o in objs if o.type in type_set]
 
     return View(
         objects=objs,

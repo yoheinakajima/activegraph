@@ -209,48 +209,160 @@ current-state projection can be built in its own FalkorDB graph too.
 ## How entities are stored
 
 
-Each entity kind is a labelled node keyed by `id`, which means you can
-inspect and query the projection directly with Cypher:
+Objects and relations form a **real graph** — relations are native edges,
+so you can inspect and traverse the projection directly with Cypher and in
+the FalkorDB Browser:
 
-| Entity | Node |
+| Entity | Shape |
 |---|---|
-| Object | `(:AGObject {id, type, version, data, provenance})` |
-| Relation | `(:AGRelation {id, source, target, type, data, provenance})` |
+| Object | `(:AGNode:AGObject {id, type, version, data, provenance})` |
+| Relation | `(s:AGNode)-[:AGRelation {id, type, data, provenance}]->(t:AGNode)` |
 | Patch | `(:AGPatch {id, doc})` |
 
 A few deliberate choices:
 
-- **`data` / `provenance` are JSON-encoded strings.** FalkorDB node
-  properties are scalars, so structured payloads are serialized. The store
-  decodes them back into rich objects on read.
-- **Relations are nodes, not native edges.** The in-memory store allows a
-  relation to reference objects that do not exist yet (a dangling
-  relation). Native edges cannot dangle, so relations are modeled as nodes
-  to match those semantics exactly.
+- **Relations are native edges.** Every relation is an `AGRelation` edge
+  between two `AGNode` endpoints, so neighborhood walks and visualization
+  work natively. The relation's own kind (`links`, `cites`, …) is carried
+  as the edge's `type` *property* rather than the relationship type — the
+  relationship type is always the fixed literal `AGRelation`. That keeps
+  every value a bound `$param` (nothing user-supplied is ever interpolated
+  into Cypher), at the cost of filtering by `r.type` instead of by
+  relationship label.
+- **Dangling relations are supported via placeholders.** The in-memory
+  store allows a relation to reference objects that do not exist yet. Here,
+  `put_relation` creates each missing endpoint as a bare `:AGNode`
+  **placeholder** (an `:AGNode` *without* the `:AGObject` label). When the
+  object is later added, the same node is promoted in place; when a
+  relation is removed, any endpoint left as an orphaned placeholder is
+  garbage-collected. Placeholder-ness is derived (`:AGNode AND NOT
+  :AGObject`), never a stored flag.
+- **`source` / `target` are not stored.** They fall out of the edge's
+  endpoints, so the graph is the single source of truth for connectivity.
+- **`data` / `provenance` are JSON-encoded strings.** FalkorDB properties
+  are scalars, so structured payloads are serialized. The store decodes
+  them back into rich objects on read.
 - **Cascade-on-removal lives in the projector, not the database.** Removing
   an object deletes its relations via `apply_event` in `core.graph`, so the
   behavior is identical across every `GraphStore`.
-- **`Graph` queries read the whole projection.** Filters, neighborhood
-  walks, and `where` evaluation run in Python over `all_objects()` /
-  `all_relations()`, so each call fetches and decodes every node from
-  FalkorDB rather than pushing the query down as Cypher. This keeps query
-  semantics identical across every backend, but means FalkorDB is best for
-  small-to-medium live projections and Cypher-side inspection — not for
-  pushing large traversals into the database.
+- **Structural `Graph` queries push down to Cypher.** Type filters
+  (`graph.objects(type=...)`, `graph.objects_in_types(...)`), relation lookups
+  (`graph.relations(...)`, `graph.get_relations(...)`), neighborhood walks
+  (`graph.neighborhood(...)`), and whole pattern chains
+  (`graph.match_chain(...)`, the engine behind behavior pattern matching)
+  are translated into Cypher and evaluated
+  inside FalkorDB, so they fetch only the matching rows instead of scanning
+  the whole projection. A multi-hop pattern collapses into a single
+  index-backed query rather than one round-trip per hop. Relation-behavior
+  matching and type-scoped behavior views (`include_types`) ride the same
+  hooks. The default
+  `GraphStore` implementations compute the
+  same results in Python, so query semantics stay identical across every
+  backend.
+- **`where` predicates still run in Python.** `graph.objects(where=...)`
+  pushes the *type* filter down but applies the `where` clause in Python
+  over the returned objects, because the structured `data` payload is stored
+  as a JSON string rather than as native, indexable properties. Likewise a
+  pattern's node `{prop: value}` equality and `WHERE` clause are applied in
+  Python over the chains `match_chain` returns. Other whole-graph consumers
+  (diffing, prompt building, fork comparison, CLI
+  status) still read the full projection via `all_objects()` /
+  `all_relations()`. FalkorDB remains best for small-to-medium live
+  projections and Cypher-side inspection.
 
 Every value crosses the Cypher boundary as a bound `$param`, never via
 string interpolation — object ids, types, and payloads cannot inject
 Cypher.
 
 To poke at a run's projection by hand:
-
+ 
 ```cypher
 // All objects of a given type.
 MATCH (o:AGObject {type: 'person'}) RETURN o.id, o.data
 
-// A node and what it points at.
-MATCH (r:AGRelation {source: $id}) RETURN r.target, r.type
+// A node and what it points at, via the native edge.
+MATCH (s:AGNode {id: $id})-[r:AGRelation]->(t:AGNode)
+RETURN t.id, r.type
+
+// Filter relations by kind (the kind is an edge property).
+MATCH (s)-[r:AGRelation {type: 'cites'}]->(t) RETURN s.id, t.id
 ```
+
+---
+
+## Performance: where the seam pays off
+
+The two backends optimize for opposite things, and the trade-off only
+becomes visible as the graph grows. `InMemoryGraphStore` is heap-resident
+Python dicts: every read is a pointer chase with no serialization and no
+network hop. `FalkorDBGraphStore` pays a fixed round-trip-plus-JSON cost on
+every call, but the **pushed-down** reads run as index-backed Cypher inside
+the database, so their cost tracks the size of the **result**, not the size
+of the whole projection.
+
+The numbers below come from
+[`scripts/benchmark_falkordb.py`](https://github.com/yoheinakajima/activegraph/blob/main/scripts/benchmark_falkordb.py),
+which builds the same chained graph on both backends and times each path
+(best-of-5 for queries) at three sizes. They are **indicative and
+hardware-dependent** — a local FalkorDB container over loopback, one
+machine. Read the *ratios between rows*, not the absolute milliseconds.
+
+| Operation | Size (objects) | InMemory (ms) | FalkorDB (ms) |
+|---|---|---|---|
+| build (write) | small (200) | 2.96 | 231 |
+| full scan (`all_objects`) | small (200) | <0.01 | 1.91 |
+| type-scoped read | small (200) | <0.01 | 0.67 |
+| neighborhood depth=2 | small (200) | 0.01 | 1.05 |
+| 2-hop pattern match | small (200) | 0.87 | 3.03 |
+| cascade delete | small (200) | 0.02 | 3.14 |
+| build (write) | medium (2,000) | 30.8 | 2,067 |
+| full scan (`all_objects`) | medium (2,000) | 0.01 | 18.9 |
+| type-scoped read | medium (2,000) | 0.04 | 4.69 |
+| neighborhood depth=2 | medium (2,000) | 0.11 | 0.85 |
+| 2-hop pattern match | medium (2,000) | 80.4 | 27.1 |
+| cascade delete | medium (2,000) | 0.10 | 5.88 |
+| build (write) | large (20,000) | 273 | 26,595 |
+| full scan (`all_objects`) | large (20,000) | 0.05 | 97.3 |
+| type-scoped read | large (20,000) | 0.31 | 50.0 |
+| neighborhood depth=2 | large (20,000) | 1.07 | 0.94 |
+| 2-hop pattern match | large (20,000) | 8,920 | 300 |
+| cascade delete | large (20,000) | 0.98 | 40.3 |
+
+What the table is telling you:
+
+- **In-memory wins raw latency on small and medium graphs, and always wins
+  on writes.** With no serialization and no network, dict operations are
+  sub-millisecond. Every FalkorDB write is a round-trip, so building a large
+  projection edge-by-edge is the backend's worst case (the ~27 s build is
+  one-time setup cost, not query cost). If your projection fits comfortably
+  in memory and is short-lived, `InMemoryGraphStore` is simply faster.
+- **The pushed-down structural reads flip the comparison as the graph
+  grows.** A 2-hop pattern match over 20,000 objects collapses into a single
+  index-backed Cypher query (~300 ms) instead of the matcher's
+  whole-projection walk (~8.9 s) — roughly **30× faster**, and the gap widens
+  with size because FalkorDB's cost scales with matches, not nodes.
+  `neighborhood` is already on par at the large size (0.94 ms vs 1.07 ms)
+  for the same reason.
+- **The un-pushable paths stay proportional to graph size on both
+  backends.** A full `all_objects()` scan, and the Python-side consumers
+  that depend on it (diffing, prompt building, `where` predicates), pull the
+  whole projection across the wire and JSON-decode it, so FalkorDB is slower
+  there — that's the cost of keeping a large graph off the heap.
+
+The rule of thumb: reach for FalkorDB when the graph is **large and
+long-lived** and your hot path is **structural queries** (type filters,
+neighborhoods, pattern-driven behaviors) — exactly the paths that push down.
+Stay in memory when the projection is small, write-heavy, or disposable.
+
+!!! note "This is a latency win, not a token win"
+    These optimizations change *how the projection is queried*, not *what
+    the LLM sees*. Both backends produce a byte-for-byte identical `View`
+    for the same `view_spec`, so the serialized prompt — and its token
+    count — is the same either way. LLM token usage is bounded by **view
+    scoping** (`include_types`, `around` + `depth`), which decides what
+    lands in the prompt. The push-down just makes producing that scoped
+    slice cheap on a large graph, instead of pulling the whole projection
+    into Python to trim it down.
 
 ---
 
@@ -269,9 +381,9 @@ finally:
 ```
 
 If you passed your own `graph=` handle, the store does **not** close it —
-you own that lifecycle. `clear()` wipes only this graph's
-`AGObject`/`AGRelation`/`AGPatch` nodes, leaving anything else in the
-FalkorDB graph untouched.
+you own that lifecycle. `clear()` detaches and wipes only this graph's
+`AGNode` (objects + placeholders, with their `AGRelation` edges) and
+`AGPatch` nodes, leaving anything else in the FalkorDB graph untouched.
 
 ---
 
@@ -307,9 +419,9 @@ So FalkorDB is used where it pays off, and the CLI stays infrastructure-light.
 Use `FalkorDBGraphStore` when you want to:
 
 - **Query current state with Cypher** — dashboards or ad-hoc queries over
-  the live projection. Match `AGRelation` nodes by their `source` / `target`
-  properties; relations are nodes, not native edges, so native
-  edge-traversal algorithms don't apply directly.
+  the live projection. Relations are native `AGRelation` edges between
+  `AGNode` endpoints, so neighborhood walks and edge-traversal queries work
+  natively; filter a relation's kind on its `type` *property*.
 - **Share the projection across processes** — one writer plus several
   read-only inspectors hitting the same FalkorDB graph.
 - **Keep a large graph off the heap** — projections that don't fit

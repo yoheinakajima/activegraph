@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
 
 from activegraph.errors import DOCS_BASE_URL, PatternError
 
@@ -721,58 +721,50 @@ class PatternMatcher:
     def _enumerate_matches(self, match_clause: MatchClause, graph):
         if not match_clause.nodes:
             return
-        # Linear-chain match: enumerate bindings for nodes[0], then for
-        # each subsequent node by following rels[i].
-        candidates_0 = _candidate_objects(graph, match_clause.nodes[0])
-        for obj0 in candidates_0:
-            bindings: dict[str, str] = {}
-            if match_clause.nodes[0].var:
-                bindings[match_clause.nodes[0].var] = obj0.id
-            yield from self._extend_chain(
-                match_clause, graph, bindings, obj_chain=[obj0]
-            )
-
-    def _extend_chain(self, match_clause, graph, bindings, obj_chain):
-        i = len(obj_chain) - 1
-        # Done extending? Apply WHERE.
-        if i == len(match_clause.rels):
-            # Filter by WHERE.
+        # Resolve the whole structural chain in one push-down call: node types
+        # + relation types/directions go to the store (a single Cypher query
+        # on FalkorDB; the in-memory default reproduces the same depth-first
+        # walk). What stays in Python is exactly what can't be pushed down:
+        # node {prop: value} equality (it lives in the JSON data blob),
+        # variable-consistency, and WHERE.
+        node_types = [n.type for n in match_clause.nodes]
+        rels = [(r.type, r.direction) for r in match_clause.rels]
+        for chain in graph.match_chain(node_types, rels):
+            objs = chain.objects
+            if not all(
+                _node_matches(o, np)
+                for o, np in zip(objs, match_clause.nodes)
+            ):
+                continue
+            bindings = _bind_chain(match_clause, objs, chain.relations)
+            if bindings is None:
+                continue  # a variable would bind two different ids
             if self.pattern.where is None or _eval_where(
                 self.pattern.where, bindings, graph
             ):
                 yield Match(bindings=dict(bindings))
-            return
-        rel_pat = match_clause.rels[i]
-        next_node_pat = match_clause.nodes[i + 1]
-        src = obj_chain[-1]
-        for rel, neighbor in _follow_relation(graph, src, rel_pat):
-            if not _node_matches(neighbor, next_node_pat):
-                continue
-            # Forbid binding the same var to two different objects.
-            new_bindings = dict(bindings)
-            if rel_pat.var:
-                if rel_pat.var in new_bindings and new_bindings[rel_pat.var] != rel.id:
-                    continue
-                new_bindings[rel_pat.var] = rel.id
-            if next_node_pat.var:
-                if (
-                    next_node_pat.var in new_bindings
-                    and new_bindings[next_node_pat.var] != neighbor.id
-                ):
-                    continue
-                new_bindings[next_node_pat.var] = neighbor.id
-            yield from self._extend_chain(
-                match_clause, graph, new_bindings, obj_chain + [neighbor]
-            )
 
 
-def _candidate_objects(graph, node_pat: NodePat):
-    """All objects that could fill `node_pat` ignoring relationships."""
-    out = []
-    for o in graph.all_objects():
-        if _node_matches(o, node_pat):
-            out.append(o)
-    return out
+def _bind_chain(match_clause, objs, rels) -> Optional[dict[str, str]]:
+    """Build the binding dict for one structural chain, enforcing that a
+    repeated variable resolves to a single id. Returns ``None`` on conflict
+    (the chain reuses an object/relation under a variable already bound to a
+    different id, e.g. ``(a)-[:r]->(a)`` over two distinct objects).
+    """
+    bindings: dict[str, str] = {}
+    for node_pat, obj in zip(match_clause.nodes, objs):
+        if node_pat.var:
+            existing = bindings.get(node_pat.var)
+            if existing is not None and existing != obj.id:
+                return None
+            bindings[node_pat.var] = obj.id
+    for rel_pat, rel in zip(match_clause.rels, rels):
+        if rel_pat.var:
+            existing = bindings.get(rel_pat.var)
+            if existing is not None and existing != rel.id:
+                return None
+            bindings[rel_pat.var] = rel.id
+    return bindings
 
 
 def _node_matches(obj, node_pat: NodePat) -> bool:
@@ -782,26 +774,6 @@ def _node_matches(obj, node_pat: NodePat) -> bool:
         if obj.data.get(k) != v:
             return False
     return True
-
-
-def _follow_relation(graph, src, rel_pat: RelPat) -> Iterator[tuple[Any, Any]]:
-    """Yield (relation, neighbor_object) for every edge of the right type
-    in the right direction leaving src.
-    """
-    for r in graph.all_relations():
-        if r.type != rel_pat.type:
-            continue
-        if rel_pat.direction == "right":
-            if r.source != src.id:
-                continue
-            neighbor = graph.get_object(r.target)
-        else:  # 'left' — (src)<-[:r]-(neighbor) means r.target == src.id
-            if r.target != src.id:
-                continue
-            neighbor = graph.get_object(r.source)
-        if neighbor is None:
-            continue
-        yield r, neighbor
 
 
 # ---------- WHERE evaluator -------------------------------------------------
