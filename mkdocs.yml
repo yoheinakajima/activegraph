@@ -49,6 +49,16 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+# Build hooks run after every plugin. on_post_build mirrors the
+# generated llms.txt to /llms.md so agents that probe well-known
+# markdown root paths (the cold-discovery path — GitHub Pages cannot
+# do Accept-header content negotiation) get real markdown. docs/
+# also carries a static robots.txt (copied verbatim by mkdocs)
+# pointing crawlers at the sitemap and the llms files. Gated by
+# tests/test_llms_txt.py alongside the llms.txt checks.
+hooks:
+  - scripts/mkdocs_hooks.py
+
 plugins:
   - search
   - llmstxt:

@@ -45,6 +45,16 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   inside the database instead of scanning the whole projection. `where`
   predicates still evaluate in Python since the structured payload is stored
   as JSON.
+- Agent-discovery files at the doc-site root: `/llms.md`, a markdown
+  mirror of `/llms.txt` produced by a post-build hook
+  (`scripts/mkdocs_hooks.py`) for AI agents that probe well-known `.md`
+  root paths on a static host that cannot do Accept-header content
+  negotiation, and `/robots.txt` with the canonical `sitemap.xml`
+  pointer (copied verbatim from `docs/robots.txt`). Both are gated by
+  `tests/test_llms_txt.py` in the docs workflow. PyPI metadata now
+  carries `Documentation`, `Repository`, `Changelog`, and `Issues`
+  project URLs so the package is verifiable as the official
+  distribution for docs.activegraph.ai.
 
 ### Changed
 

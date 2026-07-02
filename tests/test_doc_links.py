@@ -72,13 +72,15 @@ _DOCS_URL_RE = re.compile(
 # rather than by source-tree presence.
 #
 # `/llms.txt` and `/llms-full.txt` (CONTRACT v1.0.5 #1) are emitted by
-# the `mkdocs-llmstxt` plugin during `mkdocs build`; their existence
-# and well-formedness are verified by `tests/test_llms_txt.py`. Any
-# URL added here must have a paired build-time test asserting the
-# file lands at the site root.
+# the `mkdocs-llmstxt` plugin during `mkdocs build`; `/llms.md` is the
+# markdown mirror of `/llms.txt` copied by the post-build hook in
+# `scripts/mkdocs_hooks.py`. Their existence and well-formedness are
+# verified by `tests/test_llms_txt.py`. Any URL added here must have a
+# paired build-time test asserting the file lands at the site root.
 _BUILD_GENERATED_URLS = frozenset({
     "/llms.txt",
     "/llms-full.txt",
+    "/llms.md",
 })
 
 

@@ -1,0 +1,11 @@
+# docs.activegraph.ai — public documentation; everything may be crawled.
+#
+# Machine-readable entry points for AI agents:
+#   /llms.txt       structured markdown index of every page (llmstxt.org)
+#   /llms-full.txt  the full documentation corpus as one markdown file
+#   /llms.md        markdown mirror of /llms.txt for agents probing .md paths
+
+User-agent: *
+Allow: /
+
+Sitemap: https://docs.activegraph.ai/sitemap.xml
