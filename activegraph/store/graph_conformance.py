@@ -1,4 +1,4 @@
-"""GraphStore conformance suite. CONTRACT v1.1.
+"""GraphStore conformance suite. CONTRACT v1.2 #5.
 
 A reusable, pytest-collectable base class that exercises any
 :class:`~activegraph.core.graph_store.GraphStore` implementation against the

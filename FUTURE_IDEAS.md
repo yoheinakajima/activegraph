@@ -1,62 +1,69 @@
 # Active Graph future ideas
 
-These are valid candidates, but they should not block v1.1 unless the
-maintainer explicitly promotes them into `ROADMAP.md`. Each item stays
-visible here with a one-line reason it is future / deferred rather than
-part of the current v1.1 blocker set.
+These are valid candidates, but they should not block the current
+roadmap cycle (`ROADMAP.md`, v1.3) unless the maintainer explicitly
+promotes them. Each item stays visible here with a one-line reason it
+is deferred **and a revisit trigger** — the condition under which the
+deferral expires and the item must be re-reviewed. The v1.3 scoping
+pass (2026-07-03) found that several v1.1-era deferrals had expired
+without anyone noticing because the file recorded reasons but not
+triggers; the trigger column prevents that recurrence. Promoted in
+that pass (now in `ROADMAP.md`): native structured-output mode,
+type-completeness ratchet, docstring-completeness ratchet,
+`CODE_OF_CONDUCT.md` plus contact channel, contribution-policy
+relaxation.
 
-- **Native structured-output mode.** Deferred because v1.1 first needs
-  to ship provider tool-shape parity without also changing structured
-  output semantics; native JSON schema modes can follow in a separate
-  provider-focused pass.
-- **Dict-form `output_schema` support.** Deferred because the current
-  schema surface should stay narrow while v1.1 focuses on documented
-  drift gates and provider parity.
+- **Dict-form `output_schema` support.** Deferred because the schema
+  surface should stay narrow while native structured-output mode
+  (ROADMAP Phase 2) settles. *Revisit when: native mode ships.*
 - **`on_failure` callback.** Deferred because callback semantics could
   complicate the locked events-not-exceptions failure model and need a
-  separate design pass.
+  separate design pass. *Revisit when: a user presents a failure-routing
+  need the event log can't serve.*
 - **Fire-once aggregation triggers.** Deferred because aggregation
-  trigger semantics are runtime behavior, not a prerequisite for the
-  v1.1 cleanup path.
-- **Full Pack* error migration sweep.** Deferred because the complete
-  sweep is larger than the current scoped v1.1 slices and needs careful
-  per-site recovery prose.
+  trigger semantics are runtime behavior with no current demand signal.
+  *Revisit when: an issue asks for it with a concrete use case.*
+- **Full Pack\* error migration sweep.** Deferred because the complete
+  sweep is larger than any current roadmap slice and needs careful
+  per-site recovery prose. *Revisit when: a roadmap cycle has spare
+  MUST capacity, or a Pack\* error confuses a real user.*
 - **DB error wrappers.** Deferred because useful wrappers require
   real-world driver-failure experience rather than invented recovery
-  guidance.
-- **Type-completeness ratchet.** Deferred because it is a quality ratchet
-  that can land after the drift-gate foundation is in place.
-- **Docstring-completeness ratchet.** Deferred because it is an ongoing
-  API documentation quality bar, not a blocker for the first v1.1
-  reconciliation and implementation slices.
+  guidance. *Revisit when: driver-failure reports arrive (the FalkorDB
+  backend widens this surface).*
 - **`Runtime.load` auto-provider ergonomics.** Deferred because it is
   convenience behavior with migration implications and is not required
-  for the current v1.1 roadmap.
-- **Fork cache pre-population symmetry.** Deferred because Phase 4 keeps
-  the fork scope centered on `fork --set`; cache symmetry can follow as
-  a separate fork-ergonomics improvement.
+  by the current roadmap. *Revisit when: a second user-test flags it
+  (first was v1.0-rc1 B2).*
+- **Fork cache pre-population symmetry.** Deferred because fork scope
+  stays centered on `fork --set`; cache symmetry can follow as a
+  separate fork-ergonomics improvement. *Revisit when: fork ergonomics
+  get a dedicated slice.*
 - **Content negotiation for docs host.** Deferred because it requires
-  docs-host infrastructure beyond static GitHub Pages and should not
-  block v1.1 code/documentation cleanup. The static-host substitute
-  (the `/llms.md` mirror at the site root) already ships.
+  docs-host infrastructure beyond static GitHub Pages; the static-host
+  substitute (the `/llms.md` mirror at the site root) already ships.
+  *Revisit when: the docs host moves off GitHub Pages.*
 - **MCP surface for the docs site.** Deferred because an MCP endpoint
   (or a `/.well-known/mcp` server card pointing at one) needs a hosted
   server beyond static GitHub Pages; `/llms.txt`, `/llms-full.txt`, and
   `/llms.md` are the static agent-ingestion surface until then.
+  *Revisit when: the docs host moves off GitHub Pages, or a hosted
+  Active Graph service ships.*
 - **Hosted-API agent-readiness metadata.** Deferred because OpenAPI
   specs, OAuth discovery documents, webhooks, and sandbox environments
   describe a hosted API that Active Graph does not have — it is a
-  pip-installable library. Publishing that metadata for a nonexistent
-  API would mislead agents; revisit only if a hosted Active Graph
-  service ever ships.
+  pip-installable library, and publishing that metadata for a
+  nonexistent API would mislead agents. *Revisit when: a hosted Active
+  Graph service ships.*
 - **Editorial doc-readability pass.** Deferred because it is open-ended
-  editorial polish, while v1.1 needs bounded mergeable slices.
-- **CLA / DCO decision.** Deferred because Apache 2.0's implicit grant is
-  sufficient for the current contribution volume unless legal or scale
-  pressure changes.
-- **`CODE_OF_CONDUCT.md` plus contact channel.** Deferred because the
-  reporting document should not ship before a real contact channel is
-  chosen and staffed.
-- **Contribution-policy relaxation.** Deferred because the current
-  issues-first posture can be revisited after observing actual v1.0.x
-  contribution patterns.
+  editorial polish, and roadmap cycles need bounded mergeable slices.
+  *Revisit when: user-test findings cluster on doc comprehension.*
+- **CLA / DCO decision.** Deferred because Apache 2.0's implicit grant
+  is sufficient for the current contribution volume. *Revisit when:
+  legal or scale pressure changes — e.g. a corporate contributor asks
+  for one.*
+- **Additional graph backends (Neo4j, Postgres-graph).** Deferred
+  because backends are contribution-shaped, not roadmap-shaped;
+  `GraphStoreConformance` (CONTRACT v1.2 #5) is the extension contract
+  waiting for them. *Revisit when: one arrives inbound — follow the
+  v1.2 merge-then-lock pattern.*

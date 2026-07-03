@@ -224,6 +224,25 @@ def _doc_url_for_reason(reason: str) -> str:
 
 
 class Runtime:
+    """Drives behaviors over an event-sourced :class:`~activegraph.core.graph.Graph`.
+
+    The runtime owns the dispatch loop: an entry point emits an event
+    (``run_goal``, or any mutation on the graph), matching behaviors
+    fire against a runtime-built read-only
+    :class:`~activegraph.core.view.View` each, and whatever they
+    propose lands back in the log as more events,
+    until the graph goes idle or the :class:`~activegraph.runtime.budget.Budget`
+    ends the run. Construction wires the run-level choices: behaviors
+    and tools (defaulting to the decorator registries), persistence
+    (``persist_to=`` / ``store=``), the LLM provider with its retry
+    and replay caches, policy, frame, budget, and metrics. Failures
+    inside behaviors become ``behavior.failed`` events, not
+    exceptions (CONTRACT v1.0 #4b) — read them from :attr:`errors`;
+    exceptions surface only at construction and entry points.
+    :meth:`Runtime.load` rebuilds a recorded run from its log;
+    :meth:`Runtime.fork` branches one from any historical event.
+    """
+
     def __init__(
         self,
         graph: Graph,
@@ -2270,7 +2289,7 @@ class Runtime:
         v0.8: ``path`` accepts a URL (sqlite:///... or postgres://...)
         in addition to a bare SQLite path. Backward-compatible.
 
-        v1.1: ``graph_store`` selects where the materialized projection
+        v1.2: ``graph_store`` selects where the materialized projection
         lives while the log is replayed into it. Defaults to the in-memory
         store; pass a :class:`~activegraph.core.graph_store.GraphStore`
         (e.g. ``FalkorDBGraphStore``) to rebuild the current-state view in
@@ -2368,7 +2387,7 @@ class Runtime:
         new Graph, then returns a Runtime that operates on that Graph.
         Forks-of-forks work the same way (CONTRACT v0.5 #9).
 
-        v1.1: ``graph_store`` selects where the fork's materialized
+        v1.2: ``graph_store`` selects where the fork's materialized
         projection lives while the copied log is replayed into it. Defaults
         to the in-memory store; pass a
         :class:`~activegraph.core.graph_store.GraphStore` (e.g.

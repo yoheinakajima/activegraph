@@ -1,0 +1,73 @@
+# Run the test suite. CONTRACT v1.2 #6.
+#
+# Every other gate (docs, docstrings, types, wheel-completeness,
+# deploy-verification) checks a specific adoption surface; this one
+# checks the framework itself. Before v1.2 the suite ran only by
+# convention — locally, by whoever was driving — and the FalkorDB
+# arc (PRs #39/#46) merged with no automated test execution. This
+# workflow closes that gap.
+#
+# Scope:
+#   - `pytest -m "not slow"` — the slow-marked gates keep their
+#     dedicated workflows (wheel-completeness, deploy-verification),
+#     which run them opt-in by name.
+#   - Python 3.11 and 3.12, the two versions the package declares.
+#     The 3.12 leg additionally installs `falkordb-embedded`
+#     (falkordblite requires 3.12+) so the FalkorDB conformance and
+#     store tests execute rather than skip.
+#   - A Postgres service container provides
+#     ACTIVEGRAPH_TEST_POSTGRES_URL so the Postgres EventStore
+#     conformance tests execute rather than skip.
+#
+# The goal is zero optional-dependency skips across the matrix:
+# every non-slow test in the repository executes on at least one leg.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "activegraph/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/tests.yml"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: activegraph_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACTIVEGRAPH_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/activegraph_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package with test extras
+        run: pip install -e ".[dev]"
+      - name: Install falkordb-embedded (3.12+ only)
+        if: matrix.python-version != '3.11'
+        run: pip install -e ".[falkordb-embedded]"
+      - name: Run pytest
+        run: pytest -m "not slow" -q

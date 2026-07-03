@@ -26,34 +26,12 @@
 # the bottom of this file. Individual Ring 1 gaps are v1.1 burndown
 # targets, not gate exemptions.
 #
-# Current baseline (v1.0-rc1 #4/5):
-#   - Ring 0: 92/100 not-missing (92.0%); 8 exemptions below.
-#   - Ring 0: 57/100 fully-documented (57.0%); wave 2 closes the gap.
-#   - Ring 1: 97/114 not-missing (85.1%); above gate threshold.
-
-[[exemptions]]
-symbol = "activegraph.Budget"
-reason = "missing entirely; v1.1 follow-on per COVERAGE_REPORT.md"
-
-[[exemptions]]
-symbol = "activegraph.InMemoryEventStore"
-reason = "missing entirely; v1.1 follow-on per COVERAGE_REPORT.md"
-
-[[exemptions]]
-symbol = "activegraph.Runtime"
-reason = "missing entirely; v1.1 follow-on per COVERAGE_REPORT.md"
-
-[[exemptions]]
-symbol = "activegraph.View"
-reason = "missing entirely; v1.1 follow-on per COVERAGE_REPORT.md"
-
-[[exemptions]]
-symbol = "activegraph.clear_tool_registry"
-reason = "missing entirely; v1.1 follow-on per COVERAGE_REPORT.md"
-
-[[exemptions]]
-symbol = "activegraph.get_tool_registry"
-reason = "missing entirely; v1.1 follow-on per COVERAGE_REPORT.md"
+# Wave 1 closed (ROADMAP v1.3 Phase 1, 2026-07-03): every Ring 0
+# symbol has a docstring and this list is empty — the gate now fails
+# on ANY new Ring 0 gap. Wave 2 (upgrade remaining one-liners to
+# full) is tracked in ROADMAP.md; regenerate the audit with
+# `python scripts/audit_docstrings.py` to see current Ring 0
+# fully-documented coverage.
 
 [ring1]
 # Threshold gate. The audit reports current Ring 1 not-missing

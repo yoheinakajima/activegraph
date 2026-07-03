@@ -14,6 +14,17 @@ from activegraph.core.graph import Object, Relation, evaluate_where
 
 
 class View:
+    """Read-only scoped slice of the graph, handed to behaviors as ``ctx.view``.
+
+    Behaviors never query the live graph: they declare what they want
+    via decorator metadata (``view=`` specs like ``include_types`` or
+    ``around``) and the runtime builds the View before invocation
+    (CONTRACT #11). A View is a point-in-time snapshot — filter it
+    with :meth:`objects` / :meth:`relations` / :meth:`events`, but
+    nothing done to it mutates the graph; mutations go through the
+    context's propose/patch surface and land as events.
+    """
+
     def __init__(
         self,
         objects: list[Object],

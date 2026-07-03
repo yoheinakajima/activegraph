@@ -1,10 +1,10 @@
-## Document map pointer (v1.1 cleanup path)
+## Document map pointer
 
 See [`CONTRACT-INDEX.md`](CONTRACT-INDEX.md) for the current map of
 contract, changelog, roadmap, future-ideas, and audit documents.
 `CONTRACT.md` remains the source of truth for locked decisions and
-historical archeology. Future v1.1 implementation scoping lives in
-[`ROADMAP.md`](ROADMAP.md), not inline inside `CONTRACT.md`.
+historical archeology. Implementation scoping for the current cycle
+lives in [`ROADMAP.md`](ROADMAP.md), not inline inside `CONTRACT.md`.
 
 ---
 
@@ -6847,3 +6847,177 @@ Restated here for `v1.1-plan.md`'s backlog:
    could enumerate the codes the way v1.0.5.post2 #1 enumerates
    the event types. v1.1 owns the call between "expand
    failure-model.md" and "new reference page."
+
+# v1.2 — GraphStore seam and FalkorDB backend (community-contributed arc, locked retroactively)
+
+**Provenance note.** This section is a *retroactive* lock. The code
+landed first — issues #38, #41, #43, #45 and PRs #39 and #46,
+authored by an external contributor (dudizimber) between 2026-06-23
+and 2026-06-29, plus the maintainer-side docs clarification in
+PR #40 — and this amendment was written afterward, during v1.2.0
+release preparation. That inverts the
+amendment-in-the-same-commit discipline (HANDOFF.md), deliberately:
+an inbound contribution arc moves at the contributor's pace, and
+merging good external work mattered more than queueing it behind
+contract prose. The debt is paid here: every architectural decision
+the arc introduced is locked below, and the release does not ship
+before this section exists. If a future inbound arc lands the same
+way, repeat this pattern — merge, then lock before release.
+
+## v1.2 #1. The materialized projection is pluggable behind a `GraphStore` seam
+
+The graph state (objects / relations / patches) has always been a
+projection of the event log (CONTRACT #2). v1.2 makes *where that
+projection materializes* a pluggable choice, parallel to the
+existing `EventStore` seam for the log itself.
+
+- `GraphStore` is an ABC at `activegraph/core/graph_store.py`:
+  upsert/get/remove/enumerate for the three entity kinds, plus
+  `clear` and `close`. Deliberately small.
+- `InMemoryGraphStore` is the default and is byte-for-byte the
+  pre-seam behavior. No user action, no migration.
+- The projector (`apply_event`) remains the **only writer**. The
+  seam changes where writes land, never who writes.
+- The event log remains the source of truth. A `GraphStore` is a
+  **disposable projection**: wiping it loses nothing — replaying
+  the log rebuilds it. Durability and audit continue to come from
+  the `EventStore`. Losing a GraphStore is recoverable; losing the
+  EventStore is not. This asymmetry is the seam's core invariant.
+- Wiring is library-level only: `Graph(graph_store=...)`,
+  `Runtime.load(..., graph_store=...)`,
+  `Runtime.fork(..., graph_store=...)`.
+- **No CLI flag** — deliberate. The CLI's read commands operate on
+  the log and stay infrastructure-light; the projection backend is
+  a programmatic choice. Revisiting this requires a new amendment.
+- Public surface: `GraphStore`, `InMemoryGraphStore`, and
+  `FalkorDBGraphStore` are exported in `activegraph.__all__`.
+
+## v1.2 #2. `FalkorDBGraphStore` connection model and extras
+
+`FalkorDBGraphStore` (`activegraph/store/falkordb.py`) backs the
+projection with a FalkorDB graph.
+
+- Connection precedence: explicit `url=`/`host=` arguments →
+  `FALKORDB_URL` / `FALKORDB_HOST` (with optional `FALKORDB_PORT` /
+  `FALKORDB_USERNAME` / `FALKORDB_PASSWORD`) environment variables →
+  the embedded `falkordblite` engine as the zero-config fallback.
+- Two extras: `activegraph[falkordb]` (server client) and
+  `activegraph[falkordb-embedded]` (embedded engine; requires
+  Python 3.12+ per falkordblite). Both are kept **out of**
+  `[all]` and `[dev]` so opting into a graph database is always
+  explicit.
+- All Cypher values are bound `$params` — no string interpolation
+  anywhere in the write or read paths. This is load-bearing for
+  v1.2 #3's fixed-relationship-type decision.
+
+## v1.2 #3. Relations are native edges; dangling endpoints are derived placeholders
+
+The first FalkorDB implementation (PR #39) stored relations as
+standalone `AGRelation` *nodes* to preserve dangling-relation
+semantics. Issue #41 showed that modeling defeats the point of a
+graph database (no native traversal, disconnected Browser view);
+PR #46 landed the remodel. Locked shape:
+
+- A relation is a native edge with the **single fixed relationship
+  type `AGRelation`**; the relation's kind rides in the `type` edge
+  property (with `id` / `data` / `provenance`). The fixed literal
+  keeps every value a bound `$param` — relation kinds never enter
+  query text. Traversal by kind is a property filter:
+  `MATCH (s)-[r:AGRelation {type: $t}]->(t)`.
+- Every endpoint node carries the shared structural label
+  `:AGNode`; real objects additionally carry `:AGObject`. The
+  shared label is required for correctness and performance (it is
+  the per-label index that backs endpoint `MERGE`s), not cosmetics.
+- **Placeholder state is derived, not labeled.** A dangling
+  endpoint is exactly `:AGNode AND NOT :AGObject`. There is no
+  `:AGPlaceholder` label; object removal on a still-referenced node
+  demotes it back to a placeholder with no label bookkeeping.
+- `source` / `target` are not stored properties — they fall out of
+  the edge's endpoints.
+- **No data migration, by construction.** The store is a disposable
+  projection (v1.2 #1); a layout change re-replays the log into the
+  new shape.
+
+## v1.2 #4. Query hooks: Python defaults are the semantic source of truth
+
+Issues #43/#45 (PR #46) added optional query hooks to `GraphStore`:
+`find_objects`, `find_objects_in_types`, `find_relations`,
+`neighborhood`, `match_chain` (returning `ChainMatch`). The locked
+contract:
+
+- The **base-class Python defaults define the semantics**. A
+  backend MAY override a hook to push work into the database, but
+  results MUST be identical to what the default would return.
+  Ordering is part of the contract exactly where the hook's
+  docstring says so: `find_objects_in_types` MUST preserve the
+  single-pass `all_objects` order; `match_chain` MUST return the
+  same matches but its enumeration order is explicitly excluded
+  ("order aside"). `GraphStoreConformance` is the executable form
+  of this rule.
+- The rich `where` predicate language and node `{prop: value}`
+  equality are **deliberately not hooks**: the structured payload
+  is stored as a JSON blob, so faithful translation isn't possible;
+  they evaluate in Python over the pushed-down candidate set. The
+  split rule: structural filters (trivially mirrorable) push down;
+  anything hard to translate faithfully stays in one place.
+- Consequence on FalkorDB: cost scales with **result size**, not
+  graph size — a whole pattern chain collapses into one
+  index-backed Cypher query. Native `where` push-down (property
+  flattening / dual-write) is named follow-on work, not part of
+  this lock.
+
+## v1.2 #5. Every third-party backend passes `GraphStoreConformance`
+
+`activegraph/store/graph_conformance.py` ships a pytest-collectable
+ABC that exercises the full `GraphStore` contract — round-trips,
+removal cascades, the v1.2 #4 hook semantics, placeholder
+promotion/demotion, cycle-safe neighborhood walks. `InMemoryGraphStore`
+and `FalkorDBGraphStore` both inherit it. The rule for any future
+backend (Neo4j and Postgres-graph are the anticipated candidates,
+per the v0.5 #19 out-of-scope list): subclass the conformance
+suite in `tests/`, green before merge. The suite is the extension
+contract; prose in `docs/` describes it but never overrides it.
+
+## v1.2 deliberately does NOT touch
+
+- **No `EventStore` changes.** The log seam is untouched; the two
+  seams stay parallel and independent.
+- **No CLI surface.** See v1.2 #1's no-CLI-flag decision.
+- **No `where` push-down.** Named follow-on (v1.2 #4); requires a
+  property-flattening design pass first.
+- **No change to the in-memory default.** Every run that doesn't
+  pass `graph_store=` behaves byte-for-byte as before the seam.
+- **No new event types, reason codes, or error classes** beyond
+  `MissingOptionalDependency` reuse for the two extras.
+
+## v1.2 #6. The test suite is a CI gate
+
+Surfaced during v1.2.0 release preparation: none of the six existing
+workflows ran `pytest` over `tests/` broadly. The gates covered docs
+builds, docstring coverage, mypy on the clean allowlist, wheel
+completeness, and doc-site reachability — every adoption surface
+except the framework itself. The ~700-test suite ran only by
+convention (locally, by whoever was driving), and the v1.2 FalkorDB
+arc merged with no automated test execution. That contradicts the
+repository's own gate philosophy (HANDOFF.md: "assuming spec equals
+impl without verification" is a named failure pattern) and is closed
+here.
+
+`.github/workflows/tests.yml`:
+
+- `pytest -m "not slow"` on push to main, pull requests, and manual
+  dispatch. Slow-marked tests keep their dedicated opt-in-by-name
+  workflows (wheel-completeness, deploy-verification); this gate
+  never duplicates them.
+- Matrix over Python 3.11 and 3.12 — the two versions the package
+  classifiers declare. The 3.12 leg additionally installs
+  `falkordb-embedded` (falkordblite requires 3.12+), so the
+  FalkorDB store and `GraphStoreConformance` tests (v1.2 #5)
+  execute rather than skip.
+- A Postgres 16 service container provides
+  `ACTIVEGRAPH_TEST_POSTGRES_URL`, so the Postgres `EventStore`
+  conformance tests (CONTRACT v0.8 #20) execute rather than skip.
+- The invariant the gate protects: **every non-slow test in the
+  repository executes on at least one matrix leg.** A new
+  optional-dependency skip that no leg exercises is a gate
+  regression, not a neutral skip.

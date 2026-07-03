@@ -21,10 +21,26 @@ _TOOL_REGISTRY: list[Tool] = []
 
 
 def clear_tool_registry() -> None:
+    """Empty the global ``@tool`` registry. Test-isolation helper.
+
+    Decoration pushes into a module-level list that persists for the
+    life of the process, so tests that register tools clear it
+    between cases (mirroring the ``@behavior`` registry's isolation
+    pattern). Runtimes constructed *before* the clear keep working —
+    the registry is snapshotted at runtime construction, not read
+    per-dispatch.
+    """
     _TOOL_REGISTRY.clear()
 
 
 def get_tool_registry() -> list[Tool]:
+    """Return a copy of the global ``@tool`` registry, in registration order.
+
+    This is the list a new ``Runtime`` snapshots when ``tools=[...]``
+    is not passed. It is a copy: mutating the returned list neither
+    registers nor unregisters anything — use the ``@tool`` decorator
+    to add and :func:`clear_tool_registry` to reset.
+    """
     return list(_TOOL_REGISTRY)
 
 
