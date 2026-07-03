@@ -224,6 +224,25 @@ def _doc_url_for_reason(reason: str) -> str:
 
 
 class Runtime:
+    """Drives behaviors over an event-sourced :class:`~activegraph.core.graph.Graph`.
+
+    The runtime owns the dispatch loop: an entry point emits an event
+    (``run_goal``, or any mutation on the graph), matching behaviors
+    fire against a runtime-built read-only
+    :class:`~activegraph.core.view.View` each, and whatever they
+    propose lands back in the log as more events,
+    until the graph goes idle or the :class:`~activegraph.runtime.budget.Budget`
+    ends the run. Construction wires the run-level choices: behaviors
+    and tools (defaulting to the decorator registries), persistence
+    (``persist_to=`` / ``store=``), the LLM provider with its retry
+    and replay caches, policy, frame, budget, and metrics. Failures
+    inside behaviors become ``behavior.failed`` events, not
+    exceptions (CONTRACT v1.0 #4b) — read them from :attr:`errors`;
+    exceptions surface only at construction and entry points.
+    :meth:`Runtime.load` rebuilds a recorded run from its log;
+    :meth:`Runtime.fork` branches one from any historical event.
+    """
+
     def __init__(
         self,
         graph: Graph,

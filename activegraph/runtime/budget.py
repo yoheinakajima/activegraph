@@ -35,6 +35,19 @@ def _as_decimal(v: Any) -> Decimal:
 
 
 class Budget:
+    """Hard limits on a run. Budgets end runs gracefully; they don't raise.
+
+    Construct with a dict over the ``KNOWN_LIMITS`` dimensions
+    (``max_events``, ``max_behavior_calls``, ``max_llm_calls``,
+    ``max_tool_calls``, ``max_patches``, ``max_depth``,
+    ``max_seconds``, ``max_cost_usd``); any omitted dimension is
+    unlimited. When a limit is hit the runtime stops dispatching and
+    emits ``runtime.budget_exhausted`` — the log records which
+    dimension ended the run. ``max_cost_usd`` accumulates in
+    ``Decimal`` so per-call sub-cent costs don't drift across
+    thousands of LLM calls (CONTRACT v0.6 #9).
+    """
+
     def __init__(self, limits: Optional[dict[str, Any]] = None) -> None:
         self.limits: dict[str, float] = {}
         self.cost_limit: Optional[Decimal] = None

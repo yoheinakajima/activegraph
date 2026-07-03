@@ -41,6 +41,16 @@ def _event_not_found(event_id: str, *, run_id: str, where: str) -> EventNotFound
 
 
 class InMemoryEventStore:
+    """Volatile, list-backed event store. CONTRACT v0.5 #2.
+
+    The reference implementation of the ``EventStore`` protocol:
+    append-only, id-addressed, iteration in append order. Everything
+    lives in process memory and nothing survives the interpreter —
+    exactly right for tests and ephemeral runs, and exactly wrong for
+    anything that must be resumed, forked, or audited later; use
+    ``SQLiteEventStore`` or ``PostgresEventStore`` for those.
+    """
+
     def __init__(self, run_id: str = "run_mem") -> None:
         self.run_id = run_id
         self._events: list[Event] = []

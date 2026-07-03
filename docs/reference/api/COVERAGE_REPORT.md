@@ -14,8 +14,9 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [ ] `AmbiguousToolError` — **one-line**
 - [x] `ApprovalNotFoundError`
 - [ ] `Behavior` — **one-line**
+- [x] `BehaviorFailure`
 - [x] `BehaviorNotFoundError`
-- [ ] `Budget` — **missing**
+- [x] `Budget`
 - [ ] `Clock` — **one-line**
 - [ ] `ConfigurationError` — **one-line**
 - [x] `CorruptedEventPayloadError`
@@ -29,11 +30,14 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `EventNotFoundError`
 - [ ] `EventStore` — **one-line**
 - [x] `ExecutionError`
+- [x] `FalkorDBGraphStore`
 - [ ] `Frame` — **one-line**
 - [ ] `FrozenClock` — **one-line**
 - [ ] `Graph` — **one-line**
+- [x] `GraphStore`
 - [ ] `IDGen` — **one-line**
-- [ ] `InMemoryEventStore` — **missing**
+- [x] `InMemoryEventStore`
+- [x] `InMemoryGraphStore`
 - [x] `IncompatibleRuntimeState`
 - [x] `InternalEvaluatorError`
 - [x] `InvalidActivateAfter`
@@ -54,6 +58,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `NonSerializableEventError`
 - [ ] `Object` — **one-line**
 - [x] `ObjectType`
+- [x] `OpenTelemetryMetrics`
 - [x] `Pack`
 - [x] `PackConflictError`
 - [x] `PackError`
@@ -77,10 +82,10 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `ReplayDivergenceError`
 - [x] `ReplayError`
 - [ ] `RunRecord` — **one-line**
-- [ ] `Runtime` — **missing**
+- [x] `Runtime`
 - [x] `RuntimeContextRequiredError`
 - [ ] `RuntimeStatus` — **one-line**
-- [ ] `SQLiteEventStore` — **one-line**
+- [x] `SQLiteEventStore`
 - [x] `SchemaVersionMismatch`
 - [ ] `StorageError` — **one-line**
 - [ ] `TickingClock` — **one-line**
@@ -90,21 +95,22 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `ToolNotFoundError`
 - [x] `UnknownToolError`
 - [x] `UnsupportedPatternError`
-- [ ] `View` — **missing**
+- [x] `View`
 - [x] `behavior`
 - [ ] `clear_discovery_cache` — **one-line**
-- [ ] `clear_registry` — **missing**
-- [ ] `clear_tool_registry` — **missing**
+- [x] `clear_registry`
+- [x] `clear_tool_registry`
 - [x] `configure_logging`
 - [x] `discover`
-- [ ] `get_registry` — **missing**
-- [ ] `get_tool_registry` — **missing**
+- [ ] `get_registry` — **one-line**
+- [x] `get_tool_registry`
 - [x] `llm_behavior`
 - [ ] `load_by_name` — **one-line**
 - [x] `load_prompts_from_dir`
 - [x] `migrate`
 - [x] `open_store`
 - [ ] `parse_store_url` — **one-line**
+- [x] `register`
 - [x] `relation_behavior`
 - [x] `tool`
 
@@ -124,10 +130,19 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `run_fixture_mode`
 - [x] `run_interactive_mode`
 
+### `activegraph.cli.renderers`
+
+- [x] `company_name_for_memo` — **one-line**
+- [x] `print_memo_section` — **one-line**
+
 ### `activegraph.core.graph`
 
 - [x] `apply_event`
 - [x] `evaluate_where`
+
+### `activegraph.core.graph_store`
+
+- [x] `ChainMatch`
 
 ### `activegraph.errors`
 
@@ -142,6 +157,14 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `CachedEntry` — **one-line**
 - [ ] `LLMCache` — **missing**
 
+### `activegraph.llm.openai`
+
+- [x] `OpenAIProvider`
+
+### `activegraph.llm.parsing`
+
+- [x] `parse_structured_response`
+
 ### `activegraph.llm.prompt`
 
 - [x] `AssembledPrompt`
@@ -149,6 +172,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `build_instruction`
 - [x] `build_system_prompt`
 - [ ] `build_user_message` — **missing**
+- [x] `example_instance_from_schema`
 - [x] `schema_to_json`
 - [x] `serialize_view`
 
@@ -245,6 +269,12 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `normalize_pack_name`
 - [x] `scaffold_pack`
 
+### `activegraph.runtime._live`
+
+- [x] `live_runtimes`
+- [x] `track_runtime` — **one-line**
+- [x] `validate_behavior_against_live_runtimes`
+
 ### `activegraph.runtime.behavior_graph`
 
 - [ ] `BehaviorGraph` — **missing**
@@ -298,6 +328,10 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 ### `activegraph.store.conformance`
 
 - [x] `EventStoreConformance`
+
+### `activegraph.store.graph_conformance`
+
+- [x] `GraphStoreConformance`
 
 ### `activegraph.store.postgres`
 
@@ -353,24 +387,13 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### Ring 0 — public surface (target 100%)
 
-- **57/100 fully documented (57.0%)** — gap to 100% full: **43 symbols**
-- **92/100 not-missing (92.0%)** — gap to 100% not-missing: **8 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
-
-Ring 0 missing-entirely (gate exemptions):
-
-- `activegraph.Budget`
-- `activegraph.InMemoryEventStore`
-- `activegraph.Runtime`
-- `activegraph.View`
-- `activegraph.clear_registry`
-- `activegraph.clear_tool_registry`
-- `activegraph.get_registry`
-- `activegraph.get_tool_registry`
+- **71/106 fully documented (67.0%)** — gap to 100% full: **35 symbols**
+- **106/106 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)
 
-- **56/114 fully documented (49.1%)** — v1.1 burndown target is 100% full
-- **97/114 not-missing (85.1%)** — gate threshold is 80% not-missing
+- **63/124 fully documented (50.8%)** — v1.1 burndown target is 100% full
+- **107/124 not-missing (86.3%)** — gate threshold is 80% not-missing
 
 Ring 1 is **above** the 80% gate threshold. The gate enforces the threshold; individual missing-Ring-1 symbols are v1.1 burndown items, not gate exemptions.
 
