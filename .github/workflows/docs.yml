@@ -21,6 +21,7 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "scripts/mkdocs_hooks.py"
       - ".github/workflows/docs.yml"
   pull_request:
   workflow_dispatch:

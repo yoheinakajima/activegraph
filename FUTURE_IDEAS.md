@@ -37,7 +37,18 @@ part of the current v1.1 blocker set.
   a separate fork-ergonomics improvement.
 - **Content negotiation for docs host.** Deferred because it requires
   docs-host infrastructure beyond static GitHub Pages and should not
-  block v1.1 code/documentation cleanup.
+  block v1.1 code/documentation cleanup. The static-host substitute
+  (the `/llms.md` mirror at the site root) already ships.
+- **MCP surface for the docs site.** Deferred because an MCP endpoint
+  (or a `/.well-known/mcp` server card pointing at one) needs a hosted
+  server beyond static GitHub Pages; `/llms.txt`, `/llms-full.txt`, and
+  `/llms.md` are the static agent-ingestion surface until then.
+- **Hosted-API agent-readiness metadata.** Deferred because OpenAPI
+  specs, OAuth discovery documents, webhooks, and sandbox environments
+  describe a hosted API that Active Graph does not have — it is a
+  pip-installable library. Publishing that metadata for a nonexistent
+  API would mislead agents; revisit only if a hosted Active Graph
+  service ever ships.
 - **Editorial doc-readability pass.** Deferred because it is open-ended
   editorial polish, while v1.1 needs bounded mergeable slices.
 - **CLA / DCO decision.** Deferred because Apache 2.0's implicit grant is

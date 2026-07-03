@@ -47,6 +47,20 @@ visit it directly; the error message that fired tells you which page.
 - **[Cookbook](cookbook/common-patterns.md)** — recurring patterns
   with copy-pasteable code.
 
+## Machine-readable docs
+
+AI agents and coding assistants can skip the HTML entirely:
+
+- **[/llms.txt](https://docs.activegraph.ai/llms.txt)** — structured
+  markdown index of every page, following the
+  [llms.txt convention](https://llmstxt.org/).
+- **[/llms-full.txt](https://docs.activegraph.ai/llms-full.txt)** — the
+  full documentation corpus concatenated into one markdown file
+  (~100K tokens), sized for large-context ingestion.
+- **[/llms.md](https://docs.activegraph.ai/llms.md)** — markdown mirror
+  of `llms.txt`, served with `Content-Type: text/markdown` for agents
+  that probe `.md` root paths.
+
 ## Source and issues
 
 - [GitHub repository](https://github.com/yoheinakajima/activegraph)
