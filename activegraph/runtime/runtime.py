@@ -2270,7 +2270,7 @@ class Runtime:
         v0.8: ``path`` accepts a URL (sqlite:///... or postgres://...)
         in addition to a bare SQLite path. Backward-compatible.
 
-        v1.1: ``graph_store`` selects where the materialized projection
+        v1.2: ``graph_store`` selects where the materialized projection
         lives while the log is replayed into it. Defaults to the in-memory
         store; pass a :class:`~activegraph.core.graph_store.GraphStore`
         (e.g. ``FalkorDBGraphStore``) to rebuild the current-state view in
@@ -2368,7 +2368,7 @@ class Runtime:
         new Graph, then returns a Runtime that operates on that Graph.
         Forks-of-forks work the same way (CONTRACT v0.5 #9).
 
-        v1.1: ``graph_store`` selects where the fork's materialized
+        v1.2: ``graph_store`` selects where the fork's materialized
         projection lives while the copied log is replayed into it. Defaults
         to the in-memory store; pass a
         :class:`~activegraph.core.graph_store.GraphStore` (e.g.

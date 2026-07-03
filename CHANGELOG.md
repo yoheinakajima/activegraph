@@ -13,7 +13,15 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased]
+## [v1.2.0] — 2026-07-03
+
+The GraphStore release: the materialized graph projection becomes a
+pluggable seam with a FalkorDB backend, contributed by
+[@dudizimber](https://github.com/dudizimber) (issues #38, #41, #43,
+#45; PRs #39, #46). The architectural decisions are locked in
+[CONTRACT.md § v1.2](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
+(#1–#6), including the provenance note recording that the lock was
+written retroactively during release preparation.
 
 ### Added
 
@@ -71,6 +79,39 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   `FalkorDBGraphStore`) instead of materializing every object and filtering in
   Python. The default store preserves the same single-pass order, so the
   in-memory `View` is byte-for-byte unchanged.
+
+### Tests
+
+- The test suite is now a CI gate (`.github/workflows/tests.yml`,
+  CONTRACT v1.2 #6): `pytest -m "not slow"` runs on every push to
+  main and every pull request, on a Python 3.11 + 3.12 matrix. The
+  3.12 leg installs `falkordb-embedded` so the FalkorDB store and
+  `GraphStoreConformance` tests execute, and a Postgres 16 service
+  container runs the Postgres `EventStore` conformance tests. Every
+  non-slow test now executes on at least one matrix leg; previously
+  no workflow ran the suite at all.
+- `GraphStoreConformance` (`activegraph/store/graph_conformance.py`)
+  is the pytest-collectable extension contract for graph-store
+  backends; `InMemoryGraphStore` and `FalkorDBGraphStore` both
+  inherit it (CONTRACT v1.2 #5).
+
+### Migration notes
+
+- No store schema migration is required. Runs that do not pass
+  `graph_store=` behave byte-for-byte as before; `InMemoryGraphStore`
+  remains the default.
+- The FalkorDB backend is opt-in via the new `activegraph[falkordb]`
+  (server client) or `activegraph[falkordb-embedded]` (embedded
+  engine, Python 3.12+) extras. Neither is included in `[all]` or
+  `[dev]`.
+- The FalkorDB projection layout changed between the pre-release
+  relations-as-nodes shape (PR #39) and the released native-edge
+  shape (PR #46). No migration tooling exists or is needed: the
+  projection is disposable — point `Runtime.load(...,
+  graph_store=...)` at the event log and it rematerializes in the
+  new layout.
+- Event consumers are unaffected: v1.2.0 adds no new event types,
+  reason codes, or error classes.
 
 
 ## [v1.1.0] — 2026-06-10

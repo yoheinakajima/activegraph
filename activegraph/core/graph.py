@@ -113,7 +113,7 @@ class Graph:
         self.run_id: str = run_id or self.ids.run()
 
         # projected state — touched ONLY by apply_event (CONTRACT v0.5 #15).
-        # v1.1: the projection lives behind a GraphStore so it can be kept
+        # v1.2: the projection lives behind a GraphStore so it can be kept
         # in process memory (the default) or pushed into an external graph
         # database. `self._state` is the materialized current-state view; it
         # is NOT the durable event log (that is `self._store`, an EventStore).

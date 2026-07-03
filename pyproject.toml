@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "activegraph"
-version = "1.1.0"
+version = "1.2.0"
 description = "An event-sourced reactive graph runtime for long-running, auditable, agentic systems."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,7 +38,7 @@ anthropic = ["anthropic>=0.40", "pydantic>=2"]
 openai = ["openai>=1.0", "tiktoken>=0.7", "pydantic>=2"]
 sqlite = []     # SQLite is stdlib — no extra deps needed for the v0.5 store
 postgres = ["psycopg[binary]>=3.1,<4"]
-# v1.1: FalkorDBGraphStore backs the materialized graph state with FalkorDB.
+# v1.2: FalkorDBGraphStore backs the materialized graph state with FalkorDB.
 # Two modes: `falkordb` is the server client (connect to a running FalkorDB
 # via FALKORDB_URL / FALKORDB_HOST env vars or explicit args);
 # `falkordb-embedded` is the zero-config self-managed engine (falkordblite,

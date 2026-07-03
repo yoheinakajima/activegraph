@@ -3,10 +3,10 @@
 CONTRACT context: graph state (objects / relations / patches) is a
 *projection* of the event log (CONTRACT #2). The GraphStore is where that
 projection lives. The projector ``apply_event`` is still the only writer;
-as of v1.1 it writes *through* a GraphStore instead of mutating dicts
+as of v1.2 it writes *through* a GraphStore instead of mutating dicts
 directly. This makes the current-state view pluggable: keep it in process
 memory (:class:`InMemoryGraphStore`, the default — byte-for-byte identical
-to the pre-v1.1 behavior) or push it into an external graph database
+to the pre-v1.2 behavior) or push it into an external graph database
 (``FalkorDBGraphStore`` in ``activegraph.store.falkordb``).
 
 A GraphStore is NOT an EventStore. The :class:`~activegraph.store.base.EventStore`

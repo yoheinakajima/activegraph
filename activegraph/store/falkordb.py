@@ -1,4 +1,4 @@
-"""FalkorDB-backed GraphStore. CONTRACT v1.1.
+"""FalkorDB-backed GraphStore. CONTRACT v1.2 #2/#3.
 
 Stores the materialized graph projection — objects, relations, and patches —
 in a FalkorDB graph instead of process memory. This is a
