@@ -6989,3 +6989,35 @@ contract; prose in `docs/` describes it but never overrides it.
   pass `graph_store=` behaves byte-for-byte as before the seam.
 - **No new event types, reason codes, or error classes** beyond
   `MissingOptionalDependency` reuse for the two extras.
+
+## v1.2 #6. The test suite is a CI gate
+
+Surfaced during v1.2.0 release preparation: none of the six existing
+workflows ran `pytest` over `tests/` broadly. The gates covered docs
+builds, docstring coverage, mypy on the clean allowlist, wheel
+completeness, and doc-site reachability — every adoption surface
+except the framework itself. The ~700-test suite ran only by
+convention (locally, by whoever was driving), and the v1.2 FalkorDB
+arc merged with no automated test execution. That contradicts the
+repository's own gate philosophy (HANDOFF.md: "assuming spec equals
+impl without verification" is a named failure pattern) and is closed
+here.
+
+`.github/workflows/tests.yml`:
+
+- `pytest -m "not slow"` on push to main, pull requests, and manual
+  dispatch. Slow-marked tests keep their dedicated opt-in-by-name
+  workflows (wheel-completeness, deploy-verification); this gate
+  never duplicates them.
+- Matrix over Python 3.11 and 3.12 — the two versions the package
+  classifiers declare. The 3.12 leg additionally installs
+  `falkordb-embedded` (falkordblite requires 3.12+), so the
+  FalkorDB store and `GraphStoreConformance` tests (v1.2 #5)
+  execute rather than skip.
+- A Postgres 16 service container provides
+  `ACTIVEGRAPH_TEST_POSTGRES_URL`, so the Postgres `EventStore`
+  conformance tests (CONTRACT v0.8 #20) execute rather than skip.
+- The invariant the gate protects: **every non-slow test in the
+  repository executes on at least one matrix leg.** A new
+  optional-dependency skip that no leg exercises is a gate
+  regression, not a neutral skip.
