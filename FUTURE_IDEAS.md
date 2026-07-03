@@ -40,8 +40,21 @@ relaxation.
   separate fork-ergonomics improvement. *Revisit when: fork ergonomics
   get a dedicated slice.*
 - **Content negotiation for docs host.** Deferred because it requires
-  docs-host infrastructure beyond static GitHub Pages. *Revisit when:
-  the docs host moves off GitHub Pages.*
+  docs-host infrastructure beyond static GitHub Pages; the static-host
+  substitute (the `/llms.md` mirror at the site root) already ships.
+  *Revisit when: the docs host moves off GitHub Pages.*
+- **MCP surface for the docs site.** Deferred because an MCP endpoint
+  (or a `/.well-known/mcp` server card pointing at one) needs a hosted
+  server beyond static GitHub Pages; `/llms.txt`, `/llms-full.txt`, and
+  `/llms.md` are the static agent-ingestion surface until then.
+  *Revisit when: the docs host moves off GitHub Pages, or a hosted
+  Active Graph service ships.*
+- **Hosted-API agent-readiness metadata.** Deferred because OpenAPI
+  specs, OAuth discovery documents, webhooks, and sandbox environments
+  describe a hosted API that Active Graph does not have — it is a
+  pip-installable library, and publishing that metadata for a
+  nonexistent API would mislead agents. *Revisit when: a hosted Active
+  Graph service ships.*
 - **Editorial doc-readability pass.** Deferred because it is open-ended
   editorial polish, and roadmap cycles need bounded mergeable slices.
   *Revisit when: user-test findings cluster on doc comprehension.*

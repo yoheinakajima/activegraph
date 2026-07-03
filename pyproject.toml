@@ -99,8 +99,16 @@ activegraph = "activegraph.cli.main:main"
 [project.entry-points."activegraph.packs"]
 diligence = "activegraph.packs.diligence:pack"
 
+# PyPI project links. `Documentation` pointing at the product domain
+# is how tooling (and AI agents) verify this package is the official
+# one for docs.activegraph.ai — keep it in sync with `site_url` in
+# mkdocs.yml.
 [project.urls]
 Homepage = "https://github.com/yoheinakajima/activegraph"
+Documentation = "https://docs.activegraph.ai/"
+Repository = "https://github.com/yoheinakajima/activegraph"
+Changelog = "https://docs.activegraph.ai/about/changelog/"
+Issues = "https://github.com/yoheinakajima/activegraph/issues"
 
 [tool.setuptools.packages.find]
 include = ["activegraph*"]

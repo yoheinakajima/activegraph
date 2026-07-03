@@ -4,7 +4,10 @@ Builds the mkdocs site into a temp directory and asserts that
 ``site/llms.txt`` and ``site/llms-full.txt`` exist after the build,
 are well-formed (H1, blockquote summary, at least one H2 section),
 and reference the nav-anchor pages named in CONTRACT v1.0.5 #1's
-contract claim. The "content coverage" assertion is the boundary
+contract claim. The same build also gates the other agent-discovery
+files at the site root: the ``llms.md`` markdown mirror (produced by
+``scripts/mkdocs_hooks.py``) and ``robots.txt`` (copied verbatim from
+``docs/robots.txt``). The "content coverage" assertion is the boundary
 guard against the failure mode where the build succeeds but emits
 an llms.txt that contains only the H1 — file existence alone is
 not sufficient.
@@ -181,4 +184,49 @@ def test_llms_full_txt_well_formed(built_site: Path) -> None:
         "llms-full.txt does not contain the quickstart body marker; "
         "the file may be the index-only output instead of the "
         "concatenated full content."
+    )
+
+
+@pytest.mark.slow
+def test_llms_md_mirrors_llms_txt(built_site: Path) -> None:
+    """Contract: ``/llms.md`` is a byte-for-byte mirror of ``/llms.txt``.
+
+    The mirror is the cold-discovery path for AI agents that probe
+    well-known markdown root paths (``/llms.md``, ``/agents.md``, ...)
+    instead of reading llms.txt first — GitHub Pages serves ``.md``
+    as ``text/markdown`` but cannot answer Accept-header negotiation
+    on the homepage. Asserting byte equality (not just existence)
+    catches the failure mode where the hook copies a stale or empty
+    file.
+    """
+    llms_md = built_site / "llms.md"
+    assert llms_md.is_file(), (
+        f"site/llms.md missing after mkdocs build (expected at {llms_md}). "
+        "Check the `hooks:` block in mkdocs.yml and scripts/mkdocs_hooks.py."
+    )
+    assert llms_md.read_bytes() == (built_site / "llms.txt").read_bytes(), (
+        "site/llms.md diverges from site/llms.txt; the post-build hook "
+        "should produce an exact mirror."
+    )
+
+
+@pytest.mark.slow
+def test_robots_txt_present_and_points_at_sitemap(built_site: Path) -> None:
+    """Contract: ``/robots.txt`` ships at the site root with a Sitemap line.
+
+    ``docs/robots.txt`` is a non-markdown file, so mkdocs copies it
+    verbatim. The Sitemap directive must carry the absolute canonical
+    URL — crawlers ignore relative sitemap references.
+    """
+    robots = built_site / "robots.txt"
+    assert robots.is_file(), (
+        f"site/robots.txt missing after mkdocs build (expected at {robots}). "
+        "Check that docs/robots.txt exists — mkdocs copies it verbatim."
+    )
+    content = robots.read_text(encoding="utf-8")
+    assert "User-agent: *" in content, (
+        "robots.txt does not declare a wildcard User-agent block"
+    )
+    assert "Sitemap: https://docs.activegraph.ai/sitemap.xml" in content, (
+        "robots.txt does not point at the canonical sitemap URL"
     )
