@@ -251,15 +251,23 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
 
 ## Status
 
-**v1.0 (stable)** (2026-05). The first-time-user gate per
-[CONTRACT v1.0 #C4](CONTRACT.md#v10-c4-v10-ships-as-v10-rc1-first-time-user-gate-is-owned-externally)
-ran through three rcs; v1.0 final ships rc3 plus a tutorial-step-7
-output fix and a README "Concepts at a glance" index. See
-[CHANGELOG.md](CHANGELOG.md) for the full v0 → v1.0 history and
-per-version migration notes.
+**v1.2.0 (stable)** (2026-07). v1.0 shipped in May 2026 after a
+three-rc external user-test gate per
+[CONTRACT v1.0 #C4](CONTRACT.md#v10-c4-v10-ships-as-v10-rc1-first-time-user-gate-is-owned-externally);
+v1.1.0 and v1.2.0 followed. See [CHANGELOG.md](CHANGELOG.md) for the
+full v0 → v1.2 history and per-version migration notes.
 
 Major shipped milestones:
 
+- **v1.2** — the `GraphStore` seam: the materialized projection
+  becomes pluggable, with `FalkorDBGraphStore` (native edges, Cypher
+  query push-down) as the first external backend, contributed by
+  [@dudizimber](https://github.com/dudizimber); the test suite
+  becomes a CI gate.
+- **v1.1** — bounded LLM retries for transient provider failures,
+  `inspect --memo` / `inspect --search`, `fork --set`, OpenAI
+  tool-shape parity, `OpenTelemetryMetrics`, and the
+  spec-vs-impl drift gates.
 - **v1.0** — error hierarchy rewrite with per-error reference
   pages, doc site at [docs.activegraph.ai](https://docs.activegraph.ai/),
   `activegraph quickstart` command, mypy `--strict` and docstring
@@ -280,8 +288,9 @@ Major shipped milestones:
   patches with optimistic concurrency, views, frames, policies,
   budgets, the trace.
 
-Roadmap items planned for v1.1 are tracked in
-[CONTRACT.md § v1.1](CONTRACT.md).
+Roadmap items for the current cycle are tracked in
+[ROADMAP.md](ROADMAP.md); unscheduled candidates live in
+[FUTURE_IDEAS.md](FUTURE_IDEAS.md).
 
 ## License
 

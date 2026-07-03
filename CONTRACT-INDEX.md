@@ -23,13 +23,15 @@ adding new planning notes.
   post-v1.0.3 contract review and is useful for provenance, source
   amendments, and original priority notes.
 - **[`ROADMAP.md`](ROADMAP.md) — current scoped roadmap.** This is the
-  current v1.1 scoping document. It translates the backlog into
-  mergeable phases and marks each item as MUST, SHOULD, or DEFERRED for
-  v1.1 planning.
-- **[`FUTURE_IDEAS.md`](FUTURE_IDEAS.md) — valid but unscheduled ideas
-  and post-v1.1 candidates.** This keeps useful candidates visible
-  without letting them block v1.1 unless the maintainer explicitly
-  promotes them back into `ROADMAP.md`.
+  scoping document for the current cycle (v1.3 as of 2026-07-03; the
+  closed v1.1 roadmap is archived at the bottom of the same file). It
+  translates the backlog into mergeable phases and marks each item as
+  MUST, SHOULD, or DEFERRED.
+- **[`FUTURE_IDEAS.md`](FUTURE_IDEAS.md) — valid but unscheduled
+  ideas.** This keeps useful candidates visible without letting them
+  block the current cycle unless the maintainer explicitly promotes
+  them into `ROADMAP.md`. Each entry carries a revisit trigger — the
+  condition under which its deferral expires.
 - **[`CONTRACT-review-findings.md`](CONTRACT-review-findings.md) —
   archival audit record.** This is the post-v1.0.3 review artifact: an
   audit trail of findings, consistency checks, and candidates surfaced
@@ -42,9 +44,10 @@ adding new planning notes.
    `CONTRACT.md` through the normal amendment process.
 2. If the item is a shipped user-facing change or migration note,
    document it in `CHANGELOG.md`.
-3. If the item is proposed for v1.1 implementation, classify it in
-   `ROADMAP.md` with a phase and a MUST / SHOULD / DEFERRED marker.
-4. If the item is valid but should not block v1.1, add it to
-   `FUTURE_IDEAS.md` with a one-line reason it is deferred.
+3. If the item is proposed for the current roadmap cycle, classify it
+   in `ROADMAP.md` with a phase and a MUST / SHOULD / DEFERRED marker.
+4. If the item is valid but should not block the current cycle, add it
+   to `FUTURE_IDEAS.md` with a one-line reason it is deferred and a
+   revisit trigger.
 5. Do not add new v1.1 planning items only to `v1.1-plan.md`; that file
    is the original backlog source.

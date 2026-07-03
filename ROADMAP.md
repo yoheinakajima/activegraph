@@ -1,21 +1,174 @@
-# Active Graph v1.1 roadmap
+# Active Graph v1.3 roadmap
 
-`ROADMAP.md` is the current scoping document for proposed v1.1 work.
-`v1.1-plan.md` remains the original consolidated backlog from the
-post-v1.0.3 review; use it for provenance and older priority notes, not
-as the live roadmap. `FUTURE_IDEAS.md` holds valid candidates that do
-not block v1.1 unless the maintainer later promotes them here.
+`ROADMAP.md` is the current scoping document for proposed v1.3 work.
+The closed v1.1 roadmap is archived at the bottom of this file for
+provenance; `v1.1-plan.md` remains the original post-v1.0.3 backlog.
+`FUTURE_IDEAS.md` holds valid candidates that do not block v1.3
+unless the maintainer promotes them here.
 
-This roadmap is organized as mergeable slices. Each item is marked:
+This roadmap was written during v1.2.0 release preparation
+(2026-07-03). v1.2 itself was not roadmapped in advance: the
+GraphStore/FalkorDB arc arrived as an inbound contribution and was
+locked retroactively in CONTRACT v1.2 #1–#6 (see the provenance note
+there). This document restores the plan-first cadence for the next
+cycle and reconciles every `FUTURE_IDEAS.md` deferral whose stated
+rationale has expired.
 
-- **MUST** — required for the scoped v1.1 cleanup path.
-- **SHOULD** — intended for v1.1 if it stays small and does not block a
-  release-quality MUST item.
-- **DEFERRED** — recognized during v1.1 scoping, but intentionally not a
-  v1.1 blocker in this pass.
+Each item is marked:
 
-Status for the v1.1 readiness branch: Phases 0-7 are shipped or
-intentionally deferred as marked below.
+- **MUST** — required for the scoped v1.3 path.
+- **SHOULD** — intended for v1.3 if it stays small and does not block
+  a release-quality MUST item.
+- **DEFERRED** — recognized during v1.3 scoping, but intentionally not
+  a v1.3 blocker in this pass.
+
+## Phase 0 — v1.2.0 release follow-through (maintainer-owned operations)
+
+Items that close out v1.2.0. None are code; all need the maintainer.
+
+- **MUST: Tag and publish v1.2.0.** Per `docs/about/publishing.md`
+  and CONTRACT v1.0 #C8, PyPI publishing is externally owned: merge
+  the release branch, push the `v1.2.0` tag, let `publish.yml` run.
+  Answers issue #47.
+- **MUST: Flip the `tests` workflow to a required status check.**
+  CONTRACT v1.2 #6 shipped the gate; a gate that isn't required is
+  advisory. The same flip is still pending for wheel-completeness
+  (v1.1 #8) and deploy-verification (v1.1 #9) — do all three in one
+  settings pass.
+- **MUST: Fix the license line on activegraph.ai.** The website says
+  MIT; the repository locked Apache 2.0 in CONTRACT v1.0.5.post1 #1.
+  The site is the stale artifact (issue #36). Repo-side, the LICENSE
+  file, NOTICE, and `test_license.py` gate are already consistent.
+
+## Phase 1 — Quality ratchets (CONTRACT v1.1 #3 / #4, promoted from FUTURE)
+
+Both deferrals said "after the drift-gate foundation is in place."
+The foundation shipped in v1.1.0; the deferral rationale has expired.
+
+- **MUST: Docstring Wave 1.** Close the 6 remaining Ring 0 exemptions
+  in `docstring_gaps.toml` (`Budget`, `InMemoryEventStore`, `Runtime`,
+  `View`, `clear_tool_registry`, `get_tool_registry`) — these are the
+  most-imported symbols in the framework and the exemption list was
+  designed to reach empty. End state: zero `[[exemptions]]` entries.
+- **SHOULD: Type-completeness burndown.** Close the 16 dirty modules
+  in `docs/reference/api/TYPE_REPORT.md` using
+  `converge_clean_set()` in `scripts/audit_types.py`, module by
+  module, ratcheting `pyproject.toml`'s strict list forward. Mergeable
+  in small batches; each batch is independently shippable.
+- **SHOULD: Docstring Wave 2.** Upgrade Ring 0 one-liners to full
+  docstrings per `COVERAGE_REPORT.md` (57/100 fully-documented at
+  baseline). Follows Wave 1; same audit tooling.
+- **DEFERRED: Ring 1 burndown past the 80% threshold gate.** Quality
+  bar, not a blocker; revisit after Waves 1–2.
+
+## Phase 2 — Native structured-output mode (promoted from FUTURE)
+
+The deferral said "after provider tool-shape parity lands." Parity
+shipped in v1.1.0 (OpenAI tool translation, parity tests); the
+rationale has expired. Same design-first discipline as v1.1's
+`fork --set`:
+
+- **MUST before implementation: lock the provider matrix.** Decide
+  which native modes are in scope (Anthropic structured outputs,
+  OpenAI `response_format` JSON schema) and what happens on providers
+  without one (fall back to the current prompt-embedded schema path,
+  loudly or silently).
+- **MUST before implementation: lock replay/fixture semantics.**
+  Native-mode responses must round-trip through recorded fixtures and
+  strict replay identically to prompt-mode responses, or the
+  divergence must be a documented reason code.
+- **SHOULD: Implement behind `@llm_behavior`, not a new decorator.**
+  The schema surface stays `output_schema=`; native mode is a
+  provider capability, not a user-facing mode switch, unless the
+  design pass concludes otherwise.
+- **DEFERRED: Dict-form `output_schema`.** Stays in
+  `FUTURE_IDEAS.md`; the schema surface stays narrow until native
+  mode settles.
+
+## Phase 3 — Graph-store follow-ons (named in CONTRACT v1.2 #4)
+
+- **SHOULD, design-first: `where` push-down.** Named follow-on work
+  from the v1.2 arc: evaluating `where` predicates inside the
+  database requires flattening (or dual-writing) the JSON `data`
+  payload into indexable properties. The design pass must answer:
+  which subset of the predicate language translates faithfully, what
+  the conformance suite asserts, and whether flattening is opt-in
+  per-type. No implementation before those answers — this is the
+  v1.2 #4 split rule (only trivially-mirrorable filters push down)
+  being deliberately revisited, so it needs its own amendment.
+- **DEFERRED: Additional graph backends (Neo4j, Postgres-graph).**
+  CONTRACT v1.2 #5 already defines the extension contract
+  (`GraphStoreConformance`); new backends are contribution-shaped,
+  not roadmap-shaped. If one arrives inbound, follow the v1.2
+  merge-then-lock pattern.
+- **DEFERRED: Fork cache pre-population symmetry.** Unchanged from
+  the v1.1 deferral; no new evidence it blocks anyone.
+
+## Phase 4 — Community surface (promoted from FUTURE; maintainer decisions)
+
+The deferral said "after observing actual v1.0.x contribution
+patterns." The patterns arrived: an external contributor shipped the
+v1.2 arc end-to-end (issues #38/#41/#43/#45 → PRs #39/#46), and
+adopters are filing product-grade issues (#36). The rationale has
+expired; the decisions are the maintainer's.
+
+- **SHOULD: Decide the contact channel, then ship
+  `CODE_OF_CONDUCT.md`.** The v1.1 ordering rule stands: the
+  reporting document does not ship before a real, staffed contact
+  channel is chosen.
+- **SHOULD: Revisit the issues-first contribution policy.** The v1.2
+  arc followed issue-first discipline and produced excellent results
+  — the policy demonstrably works for large contributions. The open
+  question is whether trivial-fix PRs (typos, doc nits) still need an
+  issue. Decide and update `CONTRIBUTING.md` either way.
+- **DEFERRED: CLA / DCO.** Apache 2.0's implicit grant remains
+  sufficient at current volume.
+
+## Phase 5 — Observability follow-on
+
+- **DEFERRED, design-first: OTel trace export.** Issue #23's open
+  question 3, explicitly scoped out when `OpenTelemetryMetrics`
+  shipped in v1.1.0: map the event log to OTel spans (one span per
+  behavior invocation, `behavior.failed` as a span event,
+  `llm.requested`/`llm.responded` as nested spans). Materially bigger
+  than a metrics backend — it is a tracing surface. Promote to SHOULD
+  only with a design doc that answers span-identity and
+  replay-determinism questions.
+
+## FUTURE_IDEAS reconciliation
+
+Every `FUTURE_IDEAS.md` item was re-reviewed during this scoping
+pass:
+
+| Candidate | Disposition |
+| --- | --- |
+| Native structured-output mode | Promoted — Phase 2 (rationale expired: tool parity shipped) |
+| Type-completeness ratchet | Promoted — Phase 1 SHOULD (rationale expired: gates in place) |
+| Docstring-completeness ratchet | Promoted — Phase 1 MUST (Wave 1) / SHOULD (Wave 2) |
+| CODE_OF_CONDUCT + contact channel | Promoted — Phase 4 SHOULD (rationale expired: patterns observed) |
+| Contribution-policy relaxation | Promoted — Phase 4 SHOULD (same) |
+| Fork cache pre-population symmetry | Stays FUTURE (restated Phase 3 DEFERRED) |
+| Dict-form `output_schema` | Stays FUTURE (restated Phase 2 DEFERRED) |
+| `on_failure` callback | Stays FUTURE — still needs its own failure-model design pass |
+| Fire-once aggregation triggers | Stays FUTURE — runtime behavior, no current demand signal |
+| Full Pack* error migration sweep | Stays FUTURE — larger than any v1.3 slice |
+| DB error wrappers | Stays FUTURE — still waiting on real driver-failure experience |
+| `Runtime.load` auto-provider ergonomics | Stays FUTURE — migration implications unchanged |
+| Content negotiation for docs host | Stays FUTURE — infrastructure beyond GitHub Pages |
+| Editorial doc-readability pass | Stays FUTURE — open-ended, unbounded |
+| CLA / DCO decision | Stays FUTURE (restated Phase 4 DEFERRED) |
+
+New FUTURE entries surfaced by this pass: `where` push-down design
+(Phase 3 tracks it as design-first SHOULD, so it lives here, not in
+FUTURE_IDEAS), OTel trace export (Phase 5 DEFERRED).
+
+---
+
+# Archived: v1.1 roadmap (closed with the v1.1.0 release, 2026-06-10)
+
+Preserved for provenance. Every phase below shipped or was
+intentionally deferred as marked; the closure record is
+`CHANGELOG.md` § v1.1.0 and CONTRACT Phase 5–7 outcomes.
 
 ## Phase 0 — Contract/planning split and backlog reconciliation
 
