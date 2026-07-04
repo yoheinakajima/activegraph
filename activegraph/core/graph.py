@@ -41,6 +41,16 @@ if TYPE_CHECKING:
 
 @dataclass
 class Object:
+    """A typed node in the materialized graph projection.
+
+    ``data`` is the structured payload (schema-validated on
+    ``add_object`` when a loaded pack owns the type); ``version``
+    increments once per applied patch (CONTRACT #4); ``provenance``
+    records the events that created and last touched it. A handle is
+    for reading — mutations go through the graph's event surface
+    (``patch_object`` / patches), never by assigning to fields.
+    """
+
     id: str
     type: str
     data: dict[str, Any]
@@ -59,6 +69,16 @@ class Object:
 
 @dataclass
 class Relation:
+    """A typed edge between two object ids in the graph projection.
+
+    ``source`` and ``target`` hold object ids — dangling endpoints
+    (ids with no object yet) are legal and queryable, so relations
+    can arrive before the things they connect. ``type`` is the
+    relation kind used by matching and traversal. Created via
+    ``add_relation`` events; like ``Object``, a projection of the
+    log, not a hand-mutated record.
+    """
+
     id: str
     source: str
     target: str
@@ -101,7 +121,17 @@ _MISSING = object()
 
 
 class Graph:
-    """Event-sourced graph. The log is truth; objects/relations are projection."""
+    """Event-sourced graph. The log is truth; objects/relations are projection.
+
+    The only mutator is :meth:`emit`: every add/patch/remove sugar
+    method builds an event, appends it to the log, projects it into
+    the materialized state (a pluggable :class:`GraphStore`,
+    CONTRACT v1.2 #1), persists it when an ``EventStore`` is
+    attached, and notifies listeners. Read surfaces (``objects``,
+    ``relations``, ``neighborhood``, ``match_chain``) delegate to
+    the projection's query hooks. Wiping the projection loses
+    nothing — replaying the log rebuilds it.
+    """
 
     def __init__(
         self,

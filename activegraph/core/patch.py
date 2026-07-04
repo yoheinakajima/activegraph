@@ -19,6 +19,17 @@ PATCH_OPS = {"create", "update", "replace", "remove"}
 
 @dataclass
 class Patch:
+    """A proposed single-target mutation. CONTRACT #4 and #12.
+
+    ``op`` (``create | update | replace | remove``) targets exactly
+    one object; ``expected_version`` makes application an optimistic
+    concurrency check against the object's current version; ``status``
+    walks ``proposed -> applied`` or ``proposed -> rejected`` and an
+    object is never mutated except by an applied patch's event.
+    ``rationale`` and ``evidence`` carry the audit trail that approval
+    flows read.
+    """
+
     id: str
     target: str
     op: str

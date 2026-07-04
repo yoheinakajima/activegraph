@@ -38,6 +38,18 @@ def _llm_behavior_fn_placeholder(
 
 @dataclass
 class Behavior:
+    """Metadata plus the callable for an event-driven behavior.
+
+    A Behavior is data, not magic: ``on`` (event types), ``where``
+    (payload filter), ``pattern`` (Cypher-subset subscription),
+    ``activate_after`` (event-count delay), and ``view_spec`` (what
+    the runtime builds into ``ctx.view``) describe *when* it fires;
+    the 3-arg ``fn`` — invoked as ``fn(event, graph, ctx)`` — is
+    *what* runs. Instances come from ``@behavior`` or a pack; the
+    runtime introspects the metadata to match events, and nothing
+    here executes on its own.
+    """
+
     name: str
     fn: Callable[..., None]
     on: list[str] = field(default_factory=list)
@@ -60,6 +72,16 @@ class Behavior:
 
 @dataclass
 class RelationBehavior:
+    """A behavior that fires once per matching relation edge.
+
+    Same metadata surface as :class:`Behavior` plus
+    ``relation_type``: when a triggering event touches a relation of
+    that type, the 4-arg ``fn`` runs as
+    ``fn(relation, event, graph, ctx)`` — once per (event, relation)
+    pair. Deliberately not a subclass of ``Behavior``; the runtime
+    dispatches the two kinds separately.
+    """
+
     name: str
     fn: Callable[..., None]
     relation_type: str

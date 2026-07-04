@@ -13,11 +13,11 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `AmbiguousBehaviorError`
 - [ ] `AmbiguousToolError` — **one-line**
 - [x] `ApprovalNotFoundError`
-- [ ] `Behavior` — **one-line**
+- [x] `Behavior`
 - [x] `BehaviorFailure`
 - [x] `BehaviorNotFoundError`
 - [x] `Budget`
-- [ ] `Clock` — **one-line**
+- [x] `Clock`
 - [ ] `ConfigurationError` — **one-line**
 - [x] `CorruptedEventPayloadError`
 - [ ] `Diff` — **one-line**
@@ -26,16 +26,16 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [ ] `DivergentRelation` — **one-line**
 - [x] `DuplicateEventError`
 - [ ] `EmptySettings` — **one-line**
-- [ ] `Event` — **one-line**
+- [x] `Event`
 - [x] `EventNotFoundError`
 - [ ] `EventStore` — **one-line**
 - [x] `ExecutionError`
 - [x] `FalkorDBGraphStore`
-- [ ] `Frame` — **one-line**
-- [ ] `FrozenClock` — **one-line**
-- [ ] `Graph` — **one-line**
+- [x] `Frame`
+- [x] `FrozenClock`
+- [x] `Graph`
 - [x] `GraphStore`
-- [ ] `IDGen` — **one-line**
+- [x] `IDGen`
 - [x] `InMemoryEventStore`
 - [x] `InMemoryGraphStore`
 - [x] `IncompatibleRuntimeState`
@@ -56,7 +56,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `MissingToolError`
 - [x] `NoOpMetrics`
 - [x] `NonSerializableEventError`
-- [ ] `Object` — **one-line**
+- [x] `Object`
 - [x] `ObjectType`
 - [x] `OpenTelemetryMetrics`
 - [x] `Pack`
@@ -70,14 +70,14 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [ ] `PackSettingsMissingError` — **one-line**
 - [x] `PackValidationError`
 - [x] `PackVersionConflictError`
-- [ ] `Patch` — **one-line**
+- [x] `Patch`
 - [ ] `PatternError` — **one-line**
 - [x] `PendingApproval`
-- [ ] `Policy` — **one-line**
+- [x] `Policy`
 - [x] `PrometheusMetrics`
 - [x] `RegistrationError`
-- [ ] `Relation` — **one-line**
-- [ ] `RelationBehavior` — **one-line**
+- [x] `Relation`
+- [x] `RelationBehavior`
 - [x] `RelationType`
 - [x] `ReplayDivergenceError`
 - [x] `ReplayError`
@@ -88,7 +88,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `SQLiteEventStore`
 - [x] `SchemaVersionMismatch`
 - [ ] `StorageError` — **one-line**
-- [ ] `TickingClock` — **one-line**
+- [x] `TickingClock`
 - [ ] `Tool` — **one-line**
 - [ ] `ToolContext` — **one-line**
 - [x] `ToolError`
@@ -387,7 +387,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### Ring 0 — public surface (target 100%)
 
-- **71/106 fully documented (67.0%)** — gap to 100% full: **35 symbols**
+- **84/106 fully documented (79.2%)** — gap to 100% full: **22 symbols**
 - **106/106 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)
