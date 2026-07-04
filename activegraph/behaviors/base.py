@@ -142,6 +142,7 @@ class LLMBehavior(Behavior):
         graph: "Graph",
         *,
         frame: Optional["Frame"] = None,
+        structured_output_mode: str = "prompt",
     ) -> "AssembledPrompt":
         """Assemble the prompt that would be sent for this event.
 
@@ -188,4 +189,5 @@ class LLMBehavior(Behavior):
             top_p=self.top_p,
             deterministic=self.deterministic,
             prompt_template=self.prompt_template,
+            structured_output_mode=structured_output_mode,
         )

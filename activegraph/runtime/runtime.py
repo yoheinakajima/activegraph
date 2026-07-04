@@ -274,6 +274,10 @@ class Runtime:
         tool_invoker: Any = None,  # defaults to DirectToolInvoker()
         # v0.8: observability
         metrics: Optional[Metrics] = None,
+        # CONTRACT v1.3 #1 #2: opt-in native structured output. Default
+        # False for the v1.3 cycle - native mode changes prompt hashes,
+        # so flipping it must be a deliberate, cache-invalidating act.
+        native_structured_output: bool = False,
     ) -> None:
         self.graph = graph
         self.frame = frame
@@ -283,6 +287,12 @@ class Runtime:
         self.replay_strict = replay_strict
         # CONTRACT v0.6 #3: provider is set once at construction.
         self.llm_provider: Optional[LLMProvider] = llm_provider
+        # CONTRACT v1.3 #1: the opt-in lever plus the per-behavior
+        # resolved modes ("native" | "prompt"), filled by
+        # _ensure_registry. Runtime-local on purpose: behaviors are
+        # shared objects and the mode depends on this runtime's flag.
+        self.native_structured_output: bool = bool(native_structured_output)
+        self._structured_output_modes: dict[str, str] = {}
         self.replay_llm_cache: bool = replay_llm_cache
         # Cache is content-keyed by prompt hash. May be pre-populated
         # (load/fork with replay_llm_cache=True) or lazily filled.
@@ -493,6 +503,35 @@ class Runtime:
 
     # ---------- public entry points ----------
 
+    def _resolve_structured_output_mode(self, b: LLMBehavior) -> str:
+        """Resolve "native" or "prompt" for one behavior. CONTRACT v1.3 #1.
+
+        Native requires all four: the runtime opt-in flag, the
+        provider's getattr-guarded capability claim for the resolved
+        model, and the schema passing the offline subset pre-flight.
+        Fallback is silent-but-audited (v1.3 #1 #4): the resolved mode
+        rides every llm.requested payload, and a schema outside the
+        subset logs one debug line here at registration.
+        """
+        if not self.native_structured_output or b.model is None:
+            return "prompt"
+        supports = getattr(
+            self.llm_provider, "supports_native_structured_output", None
+        )
+        if supports is None or not supports(b.model):
+            return "prompt"
+        from activegraph.llm.native import native_schema_compatible
+        from activegraph.llm.prompt import schema_to_json
+
+        if not native_schema_compatible(schema_to_json(b.output_schema)):
+            self._log.debug(
+                "structured-output schema outside the native subset; "
+                "behavior %s stays on the prompt-embedded path",
+                b.name,
+            )
+            return "prompt"
+        return "native"
+
     def _ensure_registry(self) -> None:
         source = (
             self._explicit_behaviors
@@ -518,6 +557,14 @@ class Runtime:
             # behaviors that didn't pin one, and validate explicit model
             # names against cross-provider mismatches.
             _resolve_and_validate_llm_models(source, self.llm_provider)
+            # CONTRACT v1.3 #1 #1: resolve the structured-output mode per
+            # behavior - a pure function of (flag, capability, model,
+            # schema pre-flight); no network, no clock.
+            for b in source:
+                if isinstance(b, LLMBehavior) and b.output_schema is not None:
+                    self._structured_output_modes[b.name] = (
+                        self._resolve_structured_output_mode(b)
+                    )
         self.registry = Registry(source)
 
         # v0.7: assemble the tool registry. Explicit tools= override the
@@ -883,8 +930,14 @@ class Runtime:
         tool_request_event_ids: list[str] = []
 
         # ---- 1. Assemble base prompt -------------------------------------
+        so_mode = self._structured_output_modes.get(b.name, "prompt")
         try:
-            prompt = b.build_prompt(event, self.graph, frame=self.frame)
+            prompt = b.build_prompt(
+                event,
+                self.graph,
+                frame=self.frame,
+                structured_output_mode=so_mode,
+            )
         except Exception as e:  # pragma: no cover — defensive
             self._emit_behavior_failed(
                 b.name,
@@ -999,6 +1052,11 @@ class Runtime:
                     # volatile-field stripping ran (always true in v0.7).
                     "prompt_normalized": True,
                 }
+                if b.output_schema is not None:
+                    # CONTRACT v1.3 #1 #4: fallback is silent-but-audited;
+                    # the resolved mode rides every structured-output
+                    # request event.
+                    requested_payload["structured_output_mode"] = so_mode
                 if attempt_index > 0:
                     requested_payload["attempt_index"] = attempt_index
                     requested_payload["max_attempts"] = max_attempts
@@ -1057,6 +1115,15 @@ class Runtime:
 
                 try:
                     call_t0 = _monotonic()
+                    # CONTRACT v1.3 #1 #3: the kwarg is passed only when
+                    # native resolved, so prompt-mode calls stay
+                    # byte-identical to pre-v1.3 (providers that never
+                    # claim the capability never see the parameter).
+                    native_kwargs: dict[str, Any] = (
+                        {"structured_output_mode": "native"}
+                        if so_mode == "native"
+                        else {}
+                    )
                     turn_response = cast(LLMProvider, self.llm_provider).complete(
                         system=prompt.system,
                         messages=running_messages,
@@ -1067,6 +1134,7 @@ class Runtime:
                         output_schema=b.output_schema,
                         timeout_seconds=b.timeout_seconds,
                         tools=tool_defs,
+                        **native_kwargs,
                     )
                 except LLMBehaviorError as e:
                     latency = _monotonic() - call_t0
@@ -2280,6 +2348,7 @@ class Runtime:
         replay_reinvoke_deterministic: bool = False,
         metrics: Optional[Metrics] = None,
         graph_store: Optional[GraphStore] = None,
+        native_structured_output: bool = False,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -2342,6 +2411,7 @@ class Runtime:
             tool_cache=tcache,
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
             metrics=metrics,
+            native_structured_output=native_structured_output,
         )
         # Make sure the run row exists (older files might predate it; in v0.5
         # they shouldn't, but be defensive).
@@ -2366,6 +2436,7 @@ class Runtime:
                 budget,
                 seed,
                 llm_provider=llm_provider,
+                native_structured_output=native_structured_output,
             )
 
         return rt
@@ -2506,6 +2577,9 @@ class Runtime:
             replay_tool_cache=replay_tool_cache,
             tool_cache=tcache,
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
+            # CONTRACT v1.3 #1: forks inherit the parent's mode posture
+            # so pre-populated caches stay reachable.
+            native_structured_output=self.native_structured_output,
         )
         # CONTRACT v0.5 diff #8 (extended to fork in v0.6): events whose
         # behaviors never started get re-queued. For a fork at an early
@@ -2622,6 +2696,11 @@ def _hash_turn_prompt(
         "deterministic": bool(prompt.deterministic),
         "tools": list(tool_defs) if tool_defs else None,
     }
+    # CONTRACT v1.3 #1 #7: mode is part of prompt identity; the field is
+    # emitted only when native so every pre-v1.3 hash stays
+    # byte-identical.
+    if getattr(prompt, "structured_output_mode", "prompt") == "native":
+        payload["structured_output_mode"] = "native"
     canonical = _json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -2768,6 +2847,7 @@ def _verify_replay(
     seed: int,
     *,
     llm_provider: Optional[LLMProvider] = None,
+    native_structured_output: bool = False,
 ) -> None:
     """Replay the run from scratch — fresh Graph, behaviors fire — and
     compare the resulting event stream to the recorded log.
@@ -2814,6 +2894,7 @@ def _verify_replay(
         replay_llm_cache=True,
         llm_cache=cache,
         replay_strict=True,
+        native_structured_output=native_structured_output,
     )
     # Install the expected-hash queue. _invoke_llm pops one per LLM call
     # and raises ReplayDivergenceError if the live hash differs.

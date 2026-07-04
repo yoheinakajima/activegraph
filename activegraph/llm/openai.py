@@ -89,6 +89,19 @@ class OpenAIProvider(LLMProvider):
     # default-model shape (cheapest sensible default; override for prod).
     default_model: str = "gpt-4o-mini"
 
+    # Model families with structured-output (response_format
+    # json_schema, strict) support (CONTRACT v1.3 #1 #3). Table-driven
+    # like the pricing table; override via the
+    # `native_structured_output_models=` constructor kwarg. The o1-era
+    # preview/mini models are deliberately absent.
+    _NATIVE_STRUCTURED_OUTPUT_PREFIXES: tuple[str, ...] = (
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-5",
+        "o3",
+        "o4",
+    )
+
     # v1.0.2 #1: the model-name prefixes this provider recognizes.
     # `gpt-` covers the GPT-3.5 / GPT-4 / GPT-4o families; the
     # `o1-` / `o3-` / `o4-` prefixes cover the reasoning-model line
@@ -103,10 +116,16 @@ class OpenAIProvider(LLMProvider):
         api_key_env: str = "OPENAI_API_KEY",
         client: Any = None,
         pricing: Optional[Mapping[str, Mapping[str, str]]] = None,
+        native_structured_output_models: Optional[tuple[str, ...]] = None,
     ) -> None:
         self._api_key_env = api_key_env
         self._client_override = client
         self._pricing: dict[str, dict[str, str]] = dict(pricing or _DEFAULT_PRICING)
+        self._native_prefixes: tuple[str, ...] = (
+            native_structured_output_models
+            if native_structured_output_models is not None
+            else self._NATIVE_STRUCTURED_OUTPUT_PREFIXES
+        )
         self._client_cached: Any = None
         # One-time debug-level log when count_tokens falls back to the
         # char/4 heuristic. Per-instance flag so a long-running runtime
@@ -151,6 +170,7 @@ class OpenAIProvider(LLMProvider):
         output_schema: Optional[type],
         timeout_seconds: float,
         tools: Optional[list[dict[str, Any]]] = None,
+        structured_output_mode: str = "prompt",
     ) -> LLMResponse:
         client = self._client()
         openai_messages: list[dict[str, Any]] = []
@@ -170,6 +190,23 @@ class OpenAIProvider(LLMProvider):
             kwargs["top_p"] = float(top_p)
         if tools:
             kwargs["tools"] = [_tool_definition_to_openai(t) for t in tools]
+        if structured_output_mode == "native" and output_schema is not None:
+            # CONTRACT v1.3 #1 #3: Chat Completions structured outputs.
+            # The runtime passes native mode only after the capability +
+            # schema pre-flight resolved it.
+            from activegraph.llm.native import inject_additional_properties_false
+            from activegraph.llm.prompt import schema_to_json
+
+            schema_json = schema_to_json(output_schema)
+            assert schema_json is not None  # output_schema is not None
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": getattr(output_schema, "__name__", "OutputSchema"),
+                    "schema": inject_additional_properties_false(schema_json),
+                    "strict": True,
+                },
+            }
 
         t0 = time.monotonic()
         try:
@@ -275,6 +312,16 @@ class OpenAIProvider(LLMProvider):
         ``o4-*``). v1.0.2 #1.
         """
         return any(name.startswith(p) for p in self._RECOGNIZED_PREFIXES)
+
+    def supports_native_structured_output(self, model: str) -> bool:
+        """True when ``model`` belongs to a family with structured-output
+        support. CONTRACT v1.3 #1 #3.
+
+        Prefix lookup against the model-family table (constructor-
+        overridable, the pricing-table pattern). Consulted by the
+        runtime — getattr-guarded — before resolving native mode.
+        """
+        return model.startswith(self._native_prefixes)
 
     def _heuristic_count(self, system: str, messages: list[LLMMessage]) -> int:
         if not self._heuristic_warned:

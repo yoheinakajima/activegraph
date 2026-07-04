@@ -63,6 +63,7 @@ class LLMProvider(Protocol):
         output_schema: Optional[type],
         timeout_seconds: float,
         tools: Optional[list[dict[str, Any]]] = None,
+        structured_output_mode: str = "prompt",
     ) -> LLMResponse:
         ...
 
@@ -82,6 +83,21 @@ class LLMProvider(Protocol):
         messages: list[LLMMessage],
         model: str,
     ) -> int:
+        ...
+
+    def supports_native_structured_output(self, model: str) -> bool:
+        """True when the provider can enforce ``output_schema`` natively
+        for ``model`` (constrained decoding). CONTRACT v1.3 #1.
+
+        Additive like ``default_model`` / ``recognizes_model``: the
+        runtime guards the lookup with ``getattr(...)``, so custom
+        providers that pre-date v1.3 keep working and simply resolve to
+        the prompt-embedded path. When this returns True for the
+        resolved model (and the schema passes the offline pre-flight),
+        the runtime calls ``complete()`` with
+        ``structured_output_mode="native"``; prompt-mode calls omit the
+        parameter entirely, staying byte-identical to pre-v1.3 calls.
+        """
         ...
 
     def recognizes_model(self, name: str) -> bool:

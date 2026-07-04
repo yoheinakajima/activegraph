@@ -61,6 +61,24 @@ def _pricing_for(model: str, pricing: Mapping[str, Mapping[str, str]]) -> tuple[
     return Decimal(str(entry["input"])), Decimal(str(entry["output"]))
 
 
+# Model families with GA structured-output support on the Claude API
+# (CONTRACT v1.3 #1 #3). Table-driven like the pricing table; override
+# via the `native_structured_output_models=` constructor kwarg to track
+# the docs over time. Claude 4.0-era families are deliberately absent.
+_NATIVE_STRUCTURED_OUTPUT_PREFIXES: tuple[str, ...] = (
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-opus-4-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+)
+
+
 class AnthropicProvider(LLMProvider):
     # v1.0.2 #1: provider-aware default model. @llm_behavior(model=None)
     # resolves to this string at registration time.
@@ -72,10 +90,16 @@ class AnthropicProvider(LLMProvider):
         api_key_env: str = "ANTHROPIC_API_KEY",
         client: Any = None,
         pricing: Optional[Mapping[str, Mapping[str, str]]] = None,
+        native_structured_output_models: Optional[tuple[str, ...]] = None,
     ) -> None:
         self._api_key_env = api_key_env
         self._client_override = client
         self._pricing: dict[str, dict[str, str]] = dict(pricing or _DEFAULT_PRICING)
+        self._native_prefixes: tuple[str, ...] = (
+            native_structured_output_models
+            if native_structured_output_models is not None
+            else _NATIVE_STRUCTURED_OUTPUT_PREFIXES
+        )
         self._client_cached: Any = None
 
     # ---- client lazy-load ----
@@ -116,6 +140,7 @@ class AnthropicProvider(LLMProvider):
         output_schema: Optional[type],
         timeout_seconds: float,
         tools: Optional[list[dict[str, Any]]] = None,
+        structured_output_mode: str = "prompt",
     ) -> LLMResponse:
         client = self._client()
         kwargs: dict[str, Any] = {
@@ -133,6 +158,21 @@ class AnthropicProvider(LLMProvider):
             # Anthropic's tools shape: {"name", "description", "input_schema"}.
             # Our Tool.to_definition() already emits this shape.
             kwargs["tools"] = list(tools)
+        if structured_output_mode == "native" and output_schema is not None:
+            # CONTRACT v1.3 #1 #3: GA structured outputs. The runtime
+            # passes native mode only after the capability + schema
+            # pre-flight resolved it, so this shape is always valid here.
+            from activegraph.llm.native import inject_additional_properties_false
+            from activegraph.llm.prompt import schema_to_json
+
+            schema_json = schema_to_json(output_schema)
+            assert schema_json is not None  # output_schema is not None
+            kwargs["output_config"] = {
+                "format": {
+                    "type": "json_schema",
+                    "schema": inject_additional_properties_false(schema_json),
+                }
+            }
 
         t0 = time.monotonic()
         try:
@@ -212,6 +252,17 @@ class AnthropicProvider(LLMProvider):
     def recognizes_model(self, name: str) -> bool:
         """True for the ``claude-*`` model family. v1.0.2 #1."""
         return name.startswith("claude-")
+
+    def supports_native_structured_output(self, model: str) -> bool:
+        """True when ``model`` belongs to a family with GA structured
+        outputs. CONTRACT v1.3 #1 #3.
+
+        Prefix lookup against the model-family table (constructor-
+        overridable, the pricing-table pattern). The runtime consults
+        this — getattr-guarded, so its absence on a custom provider
+        just means prompt mode — before resolving native mode.
+        """
+        return model.startswith(self._native_prefixes)
 
 
 # ---- helpers ---------------------------------------------------------------
