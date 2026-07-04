@@ -53,7 +53,7 @@ def tool(
     cost_per_call: Any = Decimal("0"),
     timeout_seconds: float = 30.0,
     deterministic: bool = False,
-) -> Callable[[Callable], Tool]:
+) -> Callable[[Callable[..., Any]], Tool]:
     """Register a function as a Tool.
 
     The decorated function's signature is
@@ -69,7 +69,7 @@ def tool(
         str(cost_per_call)
     )
 
-    def wrap(fn: Callable) -> Tool:
+    def wrap(fn: Callable[..., Any]) -> Tool:
         t = Tool(
             name=name or fn.__name__,
             fn=fn,

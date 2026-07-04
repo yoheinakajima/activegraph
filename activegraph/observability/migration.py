@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Optional
 
 from activegraph.core.event import Event
-from activegraph.store.base import RunRecord
+from activegraph.store.base import EventStore, RunRecord
 from activegraph.store.errors import CorruptedEventPayloadError
 from activegraph.store.serde import decode_event
 from activegraph.store.url import parse_store_url
@@ -124,19 +124,21 @@ class _StoreFacade:
             return SQLiteEventStore.list_runs(self.target)
         from activegraph.store.postgres import PostgresEventStore
 
-        return PostgresEventStore.list_runs(self.target)
+        runs: list[RunRecord] = PostgresEventStore.list_runs(self.target)
+        return runs
 
-    def open_run(self, run_id: str):
+    def open_run(self, run_id: str) -> EventStore:
         if self.kind == "sqlite":
             from activegraph.store.sqlite import SQLiteEventStore
 
             return SQLiteEventStore(self.target, run_id=run_id)
         from activegraph.store.postgres import PostgresEventStore
 
-        return PostgresEventStore(self.target, run_id=run_id)
+        store: EventStore = PostgresEventStore(self.target, run_id=run_id)
+        return store
 
     def write_run_transactionally(
-        self, rec: RunRecord, events: list
+        self, rec: RunRecord, events: list[Event]
     ) -> int:
         """Insert run row + events in one transaction.
 
@@ -297,7 +299,7 @@ def _iter_postgres_skip_corrupted(
 # ---- driver-specific transactional writers ------------------------------
 
 
-def _write_run_sqlite(path: str, rec: RunRecord, events: list) -> int:
+def _write_run_sqlite(path: str, rec: RunRecord, events: list[Event]) -> int:
     """Single-transaction SQLite write with INSERT OR IGNORE for idempotency."""
     import sqlite3
 
@@ -347,7 +349,7 @@ def _write_run_sqlite(path: str, rec: RunRecord, events: list) -> int:
     return n
 
 
-def _write_run_postgres(url: str, rec: RunRecord, events: list) -> int:
+def _write_run_postgres(url: str, rec: RunRecord, events: list[Event]) -> int:
     """Single-transaction Postgres write with ON CONFLICT DO NOTHING."""
     import json
 

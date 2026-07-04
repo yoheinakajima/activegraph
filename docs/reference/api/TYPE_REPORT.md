@@ -9,20 +9,20 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ## Summary
 
 - Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **31 / 41 (75.6%)**
-- Dirty (one or more findings): **10** (gap to 100% target: 10 modules)
+- Clean (mypy --strict passes): **35 / 41 (85.4%)**
+- Dirty (one or more findings): **6** (gap to 100% target: 6 modules)
 
 ### Error categories (across dirty modules)
 
-- ``type-arg`` — 42 occurrence(s)
-- ``no-untyped-def`` — 26 occurrence(s)
+- ``type-arg`` — 37 occurrence(s)
+- ``no-untyped-def`` — 25 occurrence(s)
 - ``union-attr`` — 8 occurrence(s)
-- ``no-any-return`` — 6 occurrence(s)
-- ``unused-ignore`` — 5 occurrence(s)
+- ``no-any-return`` — 5 occurrence(s)
 - ``return-value`` — 4 occurrence(s)
-- ``misc`` — 3 occurrence(s)
+- ``unused-ignore`` — 3 occurrence(s)
 - ``attr-defined`` — 3 occurrence(s)
 - ``no-untyped-call`` — 2 occurrence(s)
+- ``misc`` — 2 occurrence(s)
 - ``arg-type`` — 2 occurrence(s)
 
 ## Clean modules (mypy --strict passes)
@@ -38,9 +38,11 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.llm.errors``
 - [x] ``activegraph.observability.logging``
 - [x] ``activegraph.observability.metrics``
+- [x] ``activegraph.observability.migration``
 - [x] ``activegraph.observability.otel``
 - [x] ``activegraph.observability.prometheus``
 - [x] ``activegraph.observability.status``
+- [x] ``activegraph.packs.diligence.settings``
 - [x] ``activegraph.policy``
 - [x] ``activegraph.runtime.budget``
 - [x] ``activegraph.runtime.config_errors``
@@ -51,12 +53,14 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.runtime.scheduler``
 - [x] ``activegraph.store.base``
 - [x] ``activegraph.store.errors``
+- [x] ``activegraph.store.falkordb``
 - [x] ``activegraph.store.memory``
 - [x] ``activegraph.store.serde``
 - [x] ``activegraph.store.sqlite``
 - [x] ``activegraph.store.url``
 - [x] ``activegraph.tools.base``
 - [x] ``activegraph.tools.context``
+- [x] ``activegraph.tools.decorators``
 - [x] ``activegraph.tools.errors``
 
 ## Dirty modules
@@ -73,17 +77,9 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 - [ ] 11 error(s); categories: ``return-value`` (4), ``no-untyped-def`` (3), ``union-attr`` (2), ``unused-ignore`` (1), ``no-untyped-call`` (1)
 
-### ``activegraph.observability.migration``
-
-- [ ] 5 error(s); categories: ``type-arg`` (3), ``no-any-return`` (1), ``no-untyped-def`` (1)
-
 ### ``activegraph.packs``
 
 - [ ] 19 error(s); categories: ``type-arg`` (16), ``misc`` (1), ``unused-ignore`` (1), ``arg-type`` (1)
-
-### ``activegraph.packs.diligence.settings``
-
-- [ ] 1 error(s); categories: ``misc`` (1)
 
 ### ``activegraph.runtime.patterns``
 
@@ -92,12 +88,4 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ### ``activegraph.runtime.runtime``
 
 - [ ] 40 error(s); categories: ``type-arg`` (13), ``no-untyped-def`` (11), ``union-attr`` (6), ``no-any-return`` (4), ``attr-defined`` (3), ``unused-ignore`` (1), ``misc`` (1), ``arg-type`` (1)
-
-### ``activegraph.store.falkordb``
-
-- [ ] 2 error(s); categories: ``unused-ignore`` (2)
-
-### ``activegraph.tools.decorators``
-
-- [ ] 2 error(s); categories: ``type-arg`` (2)
 
