@@ -193,7 +193,10 @@ class ToolNotFoundError(RegistrationError, LookupError):
 class AmbiguousToolError(RegistrationError, ValueError):
     """A short tool name resolves to more than one loaded pack.
 
-    Symmetric with :class:`AmbiguousBehaviorError`. CONTRACT v0.9 #9.
+    Raised by ``runtime.get_tool("name")`` when two loaded packs both
+    contribute a tool with that short name — the canonical
+    ``pack.name`` form always works and is the fix. Symmetric with
+    :class:`AmbiguousBehaviorError`. CONTRACT v0.9 #9.
     """
 
     _doc_slug = "ambiguous-tool-error"

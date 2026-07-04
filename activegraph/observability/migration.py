@@ -32,6 +32,15 @@ from activegraph.store.url import parse_store_url
 
 @dataclass(frozen=True)
 class MigrationRunReport:
+    """Outcome of migrating one run between stores.
+
+    ``status`` is ``ok`` (copied), ``skipped`` (already present at the
+    destination), or ``failed`` (with ``error`` set);
+    ``events_migrated`` counts rows written this invocation, so a
+    rerun after a partial failure reports only the delta.
+    ``skipped_events`` lists ids dropped under ``--skip-corrupted``.
+    """
+
     run_id: str
     status: str  # "ok" | "skipped" | "failed"
     events_migrated: int
@@ -43,6 +52,14 @@ class MigrationRunReport:
 
 @dataclass(frozen=True)
 class MigrationReport:
+    """Aggregate result of a store-to-store migration.
+
+    One :class:`MigrationRunReport` per run found at the source;
+    ``ok`` is True when nothing failed (skips are fine), and
+    ``failures`` filters the runs that need attention. Value object
+    returned by ``migrate`` and rendered by the CLI.
+    """
+
     source_url: str
     dest_url: str
     runs: tuple[MigrationRunReport, ...]

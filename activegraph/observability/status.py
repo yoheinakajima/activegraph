@@ -54,6 +54,15 @@ class EventSummary:
 
 @dataclass(frozen=True)
 class RuntimeStatus:
+    """Point-in-time snapshot of a runtime for inspection surfaces.
+
+    What ``activegraph status`` renders: run id, coarse ``state``,
+    queue depth, events processed, a budget snapshot, the frame, the
+    registered behaviors, and recent events. A read-only value object
+    produced by ``Runtime.status()`` and serialized by
+    ``status_to_dict`` for ``--json`` consumers.
+    """
+
     run_id: str
     state: RuntimeState
     queue_depth: int

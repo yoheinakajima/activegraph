@@ -94,7 +94,15 @@ def clear_registry() -> list[Union[Behavior, RelationBehavior]]:
 
 
 def get_registry() -> list[Union[Behavior, RelationBehavior]]:
-    """Snapshot of the global behavior registry (a shallow copy)."""
+    """Snapshot of the global behavior registry (a shallow copy).
+
+    Decoration with ``@behavior`` / ``@relation_behavior`` /
+    ``@llm_behavior`` appends to a module-level list; this returns a
+    copy, so callers can filter or iterate without mutating
+    registration state. ``Runtime`` snapshots it at construction when
+    ``behaviors=`` is omitted — later registrations don't leak into
+    already-built runtimes.
+    """
     return list(_REGISTRY)
 
 

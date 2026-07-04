@@ -140,7 +140,13 @@ class ActiveGraphError(Exception):
 
 class ConfigurationError(ActiveGraphError):
     """Runtime construction problems: invalid budget, malformed store URL,
-    missing required configuration. Fires before any work runs."""
+    missing required configuration.
+
+    Fires before any work runs — configuration failures are
+    exceptions at the entry point, never ``behavior.failed`` events,
+    because there is no run yet to record them in (CONTRACT v1.0
+    #4b's routing rule).
+    """
 
     _doc_slug = "configuration-error"
 
@@ -172,14 +178,27 @@ class ReplayError(ActiveGraphError):
 
 class StorageError(ActiveGraphError):
     """Persistence problems: failed writes, malformed event payloads on
-    deserialize, schema version mismatches."""
+    deserialize, schema version mismatches.
+
+    The category base for the store seam — concrete subclasses
+    (``NonSerializableEventError``, ``CorruptedEventPayloadError``,
+    ``SchemaVersionMismatch``, ``InvalidStoreURL``) say which
+    invariant broke. Storage failures raise rather than emit: a store
+    that can't be trusted can't record its own failure.
+    """
 
     _doc_slug = "storage-error"
 
 
 class PatternError(ActiveGraphError):
     """Pattern subscription problems: invalid Cypher syntax, unsupported
-    features, malformed WHERE clauses at registration time."""
+    features, malformed WHERE clauses.
+
+    Raised at registration time, when ``pattern=`` strings compile —
+    a bad pattern never reaches dispatch. ``UnsupportedPatternError``
+    is the subclass for syntactically valid Cypher that uses features
+    outside the supported subset (CONTRACT v0.7 #8).
+    """
 
     _doc_slug = "pattern-error"
 

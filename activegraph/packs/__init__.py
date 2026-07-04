@@ -347,6 +347,11 @@ class PackSchemaViolation(PackError, ValueError):
 class PackSettingsMissingError(RegistrationError, PackError):
     """`runtime.load_pack(pack)` called without `settings=` for a pack
     whose `settings_schema` doesn't accept no-arg construction.
+
+    Packs whose settings all carry defaults load bare; a schema with
+    required fields makes the caller state its choices explicitly.
+    The fix is always ``load_pack(pack, settings=Schema(...))`` with
+    the required fields filled in.
     """
 
     _doc_slug = "pack-settings-missing-error"
@@ -355,6 +360,11 @@ class PackSettingsMissingError(RegistrationError, PackError):
 class PackPromptLoadError(RegistrationError, PackError):
     """A prompt file is malformed, missing required frontmatter, or
     unreadable. Pack registration time.
+
+    Prompts ship as ``.md`` files with TOML frontmatter (see
+    ``load_prompts_from_dir``); this error names the file and what is
+    missing so a pack author fixes the asset, not the loader. A pack
+    that fails prompt loading does not half-register.
     """
 
     _doc_slug = "pack-prompt-load-error"
@@ -364,8 +374,13 @@ class PackPromptLoadError(RegistrationError, PackError):
 
 
 class EmptySettings(BaseModel):  # type: ignore[misc]  # BaseModel is Any under follow_imports=skip
-    """For packs with no configurable settings. Pydantic model so it
-    matches the rest of the settings API.
+    """For packs with no configurable settings. The default
+    ``settings_schema``.
+
+    A Pydantic model with zero fields, so no-settings packs flow
+    through the same typed-injection machinery as configurable ones
+    (CONTRACT v0.9 #7) — behaviors can still ask for ``settings`` and
+    get a real instance rather than a ``None`` special case.
     """
 
 
@@ -867,7 +882,15 @@ def tool(
 
 @dataclass(frozen=True)
 class DiscoveredPack:
-    """A pack discovered via Python entry points but not yet loaded."""
+    """A pack discovered via Python entry points but not yet loaded.
+
+    What ``discover()`` yields per installed distribution that
+    registers the ``activegraph.packs`` entry-point group: the pack's
+    ``name`` / ``version``, the entry-point string it came from, and
+    the :class:`Pack` object itself. Discovery imports the pack module
+    but changes no runtime state — loading is a separate, explicit
+    ``runtime.load_pack`` call.
+    """
 
     name: str
     version: str
@@ -929,15 +952,26 @@ def discover() -> tuple[DiscoveredPack, ...]:
 
 
 def clear_discovery_cache() -> None:
-    """Reset the cached entry-point scan. Tests that install packages
-    dynamically need to call this; normal usage does not.
+    """Reset the cached entry-point scan.
+
+    ``discover()`` memoizes its result for the life of the process
+    (installed packages don't change under a normal run). Tests that
+    install or mock packages dynamically call this between cases;
+    normal usage never needs it.
     """
     global _DISCOVERY_CACHE
     _DISCOVERY_CACHE = None
 
 
 def load_by_name(name: str) -> Pack:
-    """Find a discovered pack by name. Raises `LookupError` if not found."""
+    """Find a discovered pack by name.
+
+    Resolves against the ``discover()`` scan of installed
+    entry-point packs and returns the :class:`Pack` object — pass it
+    to ``runtime.load_pack`` to actually load it. Raises
+    ``PackNotFoundError`` (a ``LookupError``) naming the installed
+    packs when the name doesn't resolve.
+    """
     installed = tuple(entry.name for entry in discover())
     if name in installed:
         for entry in discover():

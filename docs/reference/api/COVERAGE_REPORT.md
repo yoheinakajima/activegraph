@@ -11,24 +11,24 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 - [x] `ActiveGraphError`
 - [x] `AmbiguousBehaviorError`
-- [ ] `AmbiguousToolError` — **one-line**
+- [x] `AmbiguousToolError`
 - [x] `ApprovalNotFoundError`
 - [x] `Behavior`
 - [x] `BehaviorFailure`
 - [x] `BehaviorNotFoundError`
 - [x] `Budget`
 - [x] `Clock`
-- [ ] `ConfigurationError` — **one-line**
+- [x] `ConfigurationError`
 - [x] `CorruptedEventPayloadError`
-- [ ] `Diff` — **one-line**
-- [ ] `DiscoveredPack` — **one-line**
-- [ ] `DivergentObject` — **one-line**
-- [ ] `DivergentRelation` — **one-line**
+- [x] `Diff`
+- [x] `DiscoveredPack`
+- [x] `DivergentObject`
+- [x] `DivergentRelation`
 - [x] `DuplicateEventError`
-- [ ] `EmptySettings` — **one-line**
+- [x] `EmptySettings`
 - [x] `Event`
 - [x] `EventNotFoundError`
-- [ ] `EventStore` — **one-line**
+- [x] `EventStore`
 - [x] `ExecutionError`
 - [x] `FalkorDBGraphStore`
 - [x] `Frame`
@@ -49,8 +49,8 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `LLMBehavior`
 - [x] `LLMBehaviorError`
 - [x] `Metrics`
-- [ ] `MigrationReport` — **one-line**
-- [ ] `MigrationRunReport` — **one-line**
+- [x] `MigrationReport`
+- [x] `MigrationRunReport`
 - [x] `MissingOptionalDependency`
 - [x] `MissingProviderError`
 - [x] `MissingToolError`
@@ -65,13 +65,13 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `PackNotFoundError`
 - [x] `PackPolicy`
 - [x] `PackPrompt`
-- [ ] `PackPromptLoadError` — **one-line**
+- [x] `PackPromptLoadError`
 - [x] `PackSchemaViolation`
-- [ ] `PackSettingsMissingError` — **one-line**
+- [x] `PackSettingsMissingError`
 - [x] `PackValidationError`
 - [x] `PackVersionConflictError`
 - [x] `Patch`
-- [ ] `PatternError` — **one-line**
+- [x] `PatternError`
 - [x] `PendingApproval`
 - [x] `Policy`
 - [x] `PrometheusMetrics`
@@ -81,35 +81,35 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `RelationType`
 - [x] `ReplayDivergenceError`
 - [x] `ReplayError`
-- [ ] `RunRecord` — **one-line**
+- [x] `RunRecord`
 - [x] `Runtime`
 - [x] `RuntimeContextRequiredError`
-- [ ] `RuntimeStatus` — **one-line**
+- [x] `RuntimeStatus`
 - [x] `SQLiteEventStore`
 - [x] `SchemaVersionMismatch`
-- [ ] `StorageError` — **one-line**
+- [x] `StorageError`
 - [x] `TickingClock`
-- [ ] `Tool` — **one-line**
-- [ ] `ToolContext` — **one-line**
+- [x] `Tool`
+- [x] `ToolContext`
 - [x] `ToolError`
 - [x] `ToolNotFoundError`
 - [x] `UnknownToolError`
 - [x] `UnsupportedPatternError`
 - [x] `View`
 - [x] `behavior`
-- [ ] `clear_discovery_cache` — **one-line**
+- [x] `clear_discovery_cache`
 - [x] `clear_registry`
 - [x] `clear_tool_registry`
 - [x] `configure_logging`
 - [x] `discover`
-- [ ] `get_registry` — **one-line**
+- [x] `get_registry`
 - [x] `get_tool_registry`
 - [x] `llm_behavior`
-- [ ] `load_by_name` — **one-line**
+- [x] `load_by_name`
 - [x] `load_prompts_from_dir`
 - [x] `migrate`
 - [x] `open_store`
-- [ ] `parse_store_url` — **one-line**
+- [x] `parse_store_url`
 - [x] `register`
 - [x] `relation_behavior`
 - [x] `tool`
@@ -387,7 +387,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### Ring 0 — public surface (target 100%)
 
-- **84/106 fully documented (79.2%)** — gap to 100% full: **22 symbols**
+- **106/106 fully documented (100.0%)** — gap to 100% full: **0 symbols**
 - **106/106 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)
