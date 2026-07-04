@@ -118,9 +118,10 @@ rationale has expired. Same design-first discipline as v1.1's
 
 ## Phase 4 — Community surface (promoted from FUTURE; maintainer decisions)
 
-**Status: decided (CONTRACT v1.3 #2).** Contact channel:
-``conduct@activegraph.ai``; CODE_OF_CONDUCT.md ships with it (merge
-gated on the alias forwarding). Issues-first relaxes for
+**Status: decided (CONTRACT v1.3 #2).** Conduct reporting is public
+by design — an X post mentioning ``@yoheinakajima`` (preferred) or a
+public issue; CODE_OF_CONDUCT.md ships with the stock privacy clause
+explicitly amended to match. Issues-first relaxes for
 no-behavior-change fixes, and a maintainer-curated trusted-contributor
 list starts with @dudizimber. CLA/DCO stays deferred.
 

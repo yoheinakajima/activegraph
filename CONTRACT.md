@@ -7137,14 +7137,25 @@ The v1.0.5.post1 #1 deferrals expire (ROADMAP Phase 4: the
 contribution patterns arrived — an external contributor shipped the
 v1.2 arc end-to-end, and adopters file product-grade issues).
 
-1. **The conduct contact channel is `conduct@activegraph.ai`.**
-   Domain-owned, so rotating the underlying inbox never touches the
-   published document. `CODE_OF_CONDUCT.md` ships as Contributor
-   Covenant v2.1 naming that address, plus a plainly-stated
-   single-maintainer caveat: reports are read by the maintainer, and
-   there is no independent escalation path today. The v1.1 ordering
-   rule is honored operationally: the PR that adds the document does
-   not merge until the address forwards to a staffed inbox.
+1. **Conduct reporting is public by design.** The channels named in
+   `CODE_OF_CONDUCT.md` are a public X post mentioning the
+   maintainer (`@yoheinakajima` — the preferred method) and the
+   public issue tracker. There is no private channel, by explicit
+   maintainer decision: a domain alias (`conduct@activegraph.ai`)
+   and private DMs were both considered and declined because the
+   maintainer cannot commit to staffing private inbound — and an
+   unstaffed "confidential" channel is a hollow reporting
+   commitment, the exact failure mode the v1.1 ordering rule ("the
+   document and the channel land together") exists to prevent. The
+   public channels are already staffed. The consequence is stated in
+   the document rather than papered over: the stock Contributor
+   Covenant v2.1 reporter-privacy clause is amended — the CoC says
+   plainly that reports are public the moment they are posted, that
+   the maintainer will not amplify a reporter's identity beyond what
+   the reporter chose to publish, and that anonymous/throwaway
+   reports are read with the same seriousness. The single-maintainer
+   caveat stands. A staffed private channel, if the project ever
+   grows one, lands as a new amendment.
 2. **Issues-first relaxes for no-behavior-change fixes.** The
    direct-PR exemption (previously docs-only) extends to source
    docstrings, comments, and error-message prose. The line is

@@ -121,9 +121,11 @@ and tracked for a future revisit (see CONTRACT v1.0.5.post1 #1's
   request the ceremony, the CLA-vs-DCO decision lands then.
 - ~~No `CODE_OF_CONDUCT.md`.~~ **Shipped (CONTRACT v1.3 #2):**
   [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) is Contributor
-  Covenant v2.1 with `conduct@activegraph.ai` as the reporting
-  channel, honoring the original ordering rule — the document and
-  the inbox landed together.
+  Covenant v2.1 with public reporting channels — an X post
+  mentioning [@yoheinakajima](https://x.com/yoheinakajima) or a
+  public issue. The original ordering rule is honored by naming
+  channels that are already staffed rather than standing up an
+  inbox that would not be.
 - **Broader contributor surface — first relaxation shipped
   (CONTRACT v1.3 #2).** The trivial-fix carve-out and the
   trusted-contributor list above are the calibrated broadening
@@ -133,8 +135,11 @@ and tracked for a future revisit (see CONTRACT v1.0.5.post1 #1's
 ## Reaching the maintainers
 
 For project matters, file an issue — the issues surface is the
-contact channel. For conduct reports, use `conduct@activegraph.ai`
-per [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md); conduct reports are
-the one category that should never go through the public issue
-tracker. When the community-management tooling lands, additional
-contact channels land with it.
+contact channel. Conduct reports are public too, by design
+(CONTRACT v1.3 #2): mention
+[@yoheinakajima](https://x.com/yoheinakajima) in a public post on X
+(preferred) or open a public issue — read
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) first, especially its
+plain-spoken note that there is no private channel. When the
+community-management tooling lands, additional contact channels
+land with it.

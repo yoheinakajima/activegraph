@@ -36,17 +36,32 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at **conduct@activegraph.ai**. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior
+may be reported publicly — this project runs in the open, and
+reporting is public by design (CONTRACT v1.3 #2):
 
-A plain-spoken note on how enforcement is staffed (CONTRACT v1.3
-#2): Active Graph currently has a single maintainer, and reports to
-the address above are read by that maintainer. There is no
-independent escalation path today; if a report concerns the
-maintainer personally, name that in the report and expect the
+- mention [@yoheinakajima](https://x.com/yoheinakajima) in a public
+  post on X (the maintainer's preferred channel), or
+- open a public issue on this repository.
+
+All reports will be reviewed and acted on promptly and fairly.
+
+A plain-spoken note on how enforcement is staffed: Active Graph
+currently has a single maintainer, who reads both channels above.
+There is no private reporting channel — a confidential inbox the
+maintainer cannot commit to staffing would be a hollow promise, and
+this document does not make promises the project cannot keep. For
+the same reason, the standard Contributor Covenant clause obligating
+leaders to protect reporter privacy is amended for this project:
+anything you post is public the moment you post it, so weigh that
+before reporting. The maintainer will not amplify a reporter's
+identity beyond what the reporter chose to publish, and reports from
+throwaway or anonymous accounts are read with the same seriousness.
+There is no independent escalation path today; if a report concerns
+the maintainer personally, say so in the report and expect the
 response to acknowledge the conflict directly. This section will be
-updated if the project grows a second enforcement contact.
-
-All community leaders are obligated to respect the privacy and security of the reporter of any incident.
+updated if the project grows a second enforcement contact or a
+staffed private channel.
 
 ## Enforcement Guidelines
 
