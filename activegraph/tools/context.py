@@ -38,6 +38,17 @@ if TYPE_CHECKING:
 
 @dataclass
 class ToolContext:
+    """What a tool function body sees. CONTRACT v0.7 #5.
+
+    Deliberately narrow: the triggering behavior and event id, the
+    active frame, an ``idempotency_key`` to forward to external APIs
+    (the runtime never uses it for dedupe — caching is the cache's
+    job), the decorator's ``timeout_seconds`` (advisory; the runtime
+    does not preempt), and a per-tool logger. No graph reference —
+    tools that need graph state close over it explicitly at
+    registration (see ``make_graph_query_tool``).
+    """
+
     behavior_name: str
     event_id: str
     frame: Optional["Frame"]

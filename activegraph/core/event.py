@@ -13,6 +13,16 @@ from typing import Any, Optional
 
 @dataclass(frozen=True)
 class Event:
+    """One immutable record in the append-only log. CONTRACT #3.
+
+    An event is a fact: ``type`` names what happened, ``payload``
+    carries the data, ``actor`` says who caused it, ``caused_by``
+    links the causal parent event, and ``frame_id`` scopes it to a
+    mission frame. Events are never modified after ``emit`` —
+    objects, relations, patches, and views are all projections
+    derived from the sequence of these records (CONTRACT #2).
+    """
+
     id: str
     type: str
     payload: dict[str, Any] = field(default_factory=dict)

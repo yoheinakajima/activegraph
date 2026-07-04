@@ -104,11 +104,43 @@ by design: only *recognized* cross-provider mismatches fire.
 | Recognized model families (per `recognizes_model()`) | `claude-*` | `gpt-*`, `o1-*`, `o3-*`, `o4-*` |
 | API key env | `ANTHROPIC_API_KEY` | `OPENAI_API_KEY` |
 | SDK | `anthropic>=0.40` | `openai>=1.0` |
-| Structured output | Instruction-based: schema + example instance embedded in the system prompt by [`build_system_prompt`](api/index.md); provider parses JSON out of the response via the shared `parse_structured_response` helper | Same path. Native `response_format={"type":"json_schema",...}` mode is deferred to a future provider-native structured-output pass |
+| Structured output | Instruction-based by default: schema + example instance embedded in the system prompt by [`build_system_prompt`](api/index.md); provider parses JSON via the shared `parse_structured_response` helper. Opt into native constrained decoding with `Runtime(native_structured_output=True)` — sends Messages API `output_config` on supported `claude-*` families | Same default path. Native mode sends Chat Completions `response_format={"type": "json_schema", ..., "strict": true}` on supported families (`gpt-4o`, `gpt-4.1`, `gpt-5`, `o3`, `o4`) |
 | `count_tokens()` | Server-side via `messages.count_tokens` (1 roundtrip per call when `budget.max_cost_usd` is set and no cache hit) | Client-side via `tiktoken` when available; char/4 heuristic fallback with a one-time debug log if tiktoken is missing |
 | Tool use | Supported (`Tool.to_definition()` emits Anthropic shape) | Supported. The provider translates framework/Anthropic-shaped tool definitions into OpenAI Chat Completions `function` tools and extracts returned `tool_calls` into the shared `ToolCall` shape |
 | Exception mapping | `llm.rate_limited` on 429-shaped errors; `llm.network_error` for everything else (timeouts, connection errors, **auth failures**) | Same mapping |
 | Pricing | Family-prefix lookup; override with `pricing=` kwarg | Family-prefix lookup; override with `pricing=` kwarg |
+
+## Native structured output (opt-in)
+
+CONTRACT v1.3 #1. With `Runtime(native_structured_output=True)`, the
+runtime resolves a structured-output mode per behavior at
+registration time: native constrained decoding when the provider
+supports it for the resolved model **and** the behavior's
+`output_schema` fits the native subset (every field required, no
+numeric/string constraint keywords, no recursion); the
+prompt-embedded path otherwise. Nothing changes at the
+`@llm_behavior` surface — the schema stays `output_schema=`.
+
+Three things to know before flipping the flag:
+
+- **Prompt hashes change.** Native mode drops the schema block from
+  the system prompt and adds a mode field to the hash input, so LLM
+  caches recorded in prompt mode won't be hit, and
+  `replay_strict=True` will (correctly) raise
+  `ReplayDivergenceError` replaying a log recorded under the other
+  mode. Match the flag to how the log was recorded.
+- **Fallback is silent but audited.** A behavior that can't go
+  native (provider capability, model family, or schema subset) uses
+  the prompt path; the resolved mode is recorded on every
+  `llm.requested` event's `structured_output_mode` payload field.
+- **Validation doesn't move.** Responses still flow through
+  `parse_structured_response`, so `llm.parse_error` /
+  `llm.schema_violation` semantics are identical in both modes.
+
+`RecordedLLMProvider` replays whatever mode the fixture was recorded
+in — construct it with `structured_output_mode="native"` to serve
+native-mode fixtures (the default `"prompt"` keeps every pre-v1.3
+fixture reachable unchanged).
 
 ## Mixing with [`RecordedLLMProvider`](api/index.md)
 
@@ -144,7 +176,7 @@ class MyProvider:
 
     def complete(self, *, system, messages, model, max_tokens,
                  temperature, top_p, output_schema, timeout_seconds,
-                 tools=None) -> LLMResponse:
+                 tools=None, structured_output_mode="prompt") -> LLMResponse:
         ...
 
     def estimate_cost(self, *, input_tokens, output_tokens, model) -> Decimal:
@@ -156,14 +188,21 @@ class MyProvider:
     def recognizes_model(self, name: str) -> bool:  # v1.0.2 #1
         return name.startswith("my-")
 
+    def supports_native_structured_output(self, model: str) -> bool:  # v1.3 #1
+        return False
+
 assert isinstance(MyProvider(), LLMProvider)
 ```
 
-`default_model` and `recognizes_model` are additive (v1.0.2 #1).
-Custom providers that pre-date v1.0.2 and omit them keep working
-at the three core call sites — they just require an explicit
-`model=` on every `@llm_behavior` and don't participate in
-cross-provider validation.
+`default_model`, `recognizes_model`, and
+`supports_native_structured_output` are additive (v1.0.2 #1 /
+v1.3 #1). Custom providers that omit them keep working at every
+call site — the runtime guards each lookup with `getattr(...)` —
+they just require an explicit `model=` on every `@llm_behavior`,
+don't participate in cross-provider validation, and resolve to the
+prompt-embedded structured-output path. (The `isinstance` check
+above requires the full current method set; the runtime itself
+never isinstance-checks providers.)
 
 If your provider exposes the framework's instruction-based
 structured-output path (most do), reuse
@@ -173,6 +212,6 @@ the shipped providers — same `llm.parse_error` and
 `llm.schema_violation` reason codes for the same response shapes.
 
 See [CONTRACT v1.0.1 #5](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
-for the provider-commitment surface: which methods are stable,
-which behaviors are provider-dependent (`count_tokens`), and which
-capabilities are still future work (native structured-output modes).
+for the provider-commitment surface: which methods are stable and
+which behaviors are provider-dependent (`count_tokens`). Native
+structured-output mode is specified in CONTRACT v1.3 #1.

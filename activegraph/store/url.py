@@ -85,7 +85,14 @@ def _invalid_url(
 
 
 def parse_store_url(url: str) -> StoreURL:
-    """Parse a store URL, or raise InvalidStoreURL with a helpful message."""
+    """Parse a store URL, or raise InvalidStoreURL with a helpful message.
+
+    Accepts the ``sqlite:///path`` and ``postgres://...`` families and
+    returns a :class:`StoreURL` with the normalised scheme, the raw
+    URL, and the filesystem path for SQLite forms. The single entry
+    point for URL validation — ``open_store`` and the CLI both route
+    through here, so a malformed URL fails identically everywhere.
+    """
     if not url or not isinstance(url, str):
         raise _invalid_url(
             "store URL is empty",

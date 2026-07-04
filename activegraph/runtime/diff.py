@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from activegraph.core.event import Event
 from activegraph.core.graph import Graph, Object, Relation
@@ -29,6 +29,14 @@ def _is_lifecycle(e: Event) -> bool:
 
 @dataclass
 class DivergentObject:
+    """One object id whose final state differs between parent and fork.
+
+    ``in_parent`` / ``in_fork`` are provenance-stripped ``to_dict``
+    snapshots so the comparison is structural, not timestamp noise;
+    ``None`` on the side where the id doesn't exist. ``summary()``
+    renders the one-line form the CLI diff output prints.
+    """
+
     id: str
     in_parent: Optional[dict[str, Any]]  # to_dict snapshot or None
     in_fork: Optional[dict[str, Any]]
@@ -43,13 +51,23 @@ class DivergentObject:
 
 @dataclass
 class DivergentRelation:
+    """One relation id whose final state differs between parent and fork.
+
+    Same shape as :class:`DivergentObject`: provenance-stripped
+    snapshots per side, ``None`` where the id doesn't exist, and a
+    ``summary()`` that names the endpoints and relation type for
+    only-in-one-side cases.
+    """
+
     id: str
     in_parent: Optional[dict[str, Any]]
     in_fork: Optional[dict[str, Any]]
 
     def summary(self) -> str:
         if self.in_parent is None:
-            r = self.in_fork
+            # A divergent relation always has at least one side; cast is a
+            # type-level assertion only, no runtime check.
+            r = cast("dict[str, Any]", self.in_fork)
             return f"{self.id} only in fork ({r['source']} --{r['type']}--> {r['target']})"
         if self.in_fork is None:
             r = self.in_parent
@@ -59,6 +77,16 @@ class DivergentRelation:
 
 @dataclass
 class Diff:
+    """Structural comparison of two runs (typically parent vs fork).
+
+    CONTRACT v0.5 #10: structural only. Non-lifecycle events split
+    into the shared prefix and each side's tail;
+    ``divergent_objects`` / ``divergent_relations`` list per-id final
+    states that differ; ``is_identical`` is the no-divergence check.
+    Semantic comparison ("do these two claims say the same thing?")
+    is a behavior's job, not the runtime's.
+    """
+
     parent_run_id: str
     fork_run_id: str
     shared_events: list[Event] = field(default_factory=list)
@@ -134,12 +162,12 @@ def compute_diff(parent: Graph, fork: Graph, parent_run_id: str, fork_run_id: st
 
 def _normalize_object(o: Object) -> dict[str, Any]:
     """Strip provenance (timestamps, run_id) so equality is structural."""
-    d = o.to_dict()
+    d: dict[str, Any] = o.to_dict()
     d.pop("provenance", None)
     return d
 
 
 def _normalize_relation(r: Relation) -> dict[str, Any]:
-    d = r.to_dict()
+    d: dict[str, Any] = r.to_dict()
     d.pop("provenance", None)
     return d

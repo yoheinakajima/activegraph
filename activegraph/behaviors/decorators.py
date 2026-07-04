@@ -94,7 +94,15 @@ def clear_registry() -> list[Union[Behavior, RelationBehavior]]:
 
 
 def get_registry() -> list[Union[Behavior, RelationBehavior]]:
-    """Snapshot of the global behavior registry (a shallow copy)."""
+    """Snapshot of the global behavior registry (a shallow copy).
+
+    Decoration with ``@behavior`` / ``@relation_behavior`` /
+    ``@llm_behavior`` appends to a module-level list; this returns a
+    copy, so callers can filter or iterate without mutating
+    registration state. ``Runtime`` snapshots it at construction when
+    ``behaviors=`` is omitted — later registrations don't leak into
+    already-built runtimes.
+    """
     return list(_REGISTRY)
 
 
@@ -152,7 +160,7 @@ def behavior(
     *,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-) -> Callable[[Callable], Behavior]:
+) -> Callable[[Callable[..., None]], Behavior]:
     """Decorate a function as an event-driven behavior.
 
     v0.7 additions (both keyword-only):
@@ -175,7 +183,7 @@ def behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> Behavior:
+    def wrap(fn: Callable[..., None]) -> Behavior:
         b = Behavior(
             name=name or fn.__name__,
             fn=fn,
@@ -215,9 +223,9 @@ def llm_behavior(
     priority: int = 0,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-    tools: Optional[list] = None,
+    tools: Optional[list[Any]] = None,
     max_tool_turns: int = 6,
-) -> Callable[[Callable], LLMBehavior]:
+) -> Callable[[Callable[..., None]], LLMBehavior]:
     """Decorate a function as an LLM-driven behavior.
 
     The decorated function's signature is
@@ -281,7 +289,7 @@ def llm_behavior(
     # call; failing here names the cause at the @llm_behavior line.
     _validate_output_schema(output_schema)
 
-    def wrap(fn: Callable) -> LLMBehavior:
+    def wrap(fn: Callable[..., None]) -> LLMBehavior:
         b = LLMBehavior(
             name=name or fn.__name__,
             fn=_llm_behavior_fn_placeholder,
@@ -331,7 +339,7 @@ def relation_behavior(
     *,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-) -> Callable[[Callable], RelationBehavior]:
+) -> Callable[[Callable[..., None]], RelationBehavior]:
     """Decorate a function as a relation behavior — fires once per matching edge.
 
     v0.7: also accepts `pattern=` and `activate_after=` per CONTRACT
@@ -348,7 +356,7 @@ def relation_behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> RelationBehavior:
+    def wrap(fn: Callable[..., None]) -> RelationBehavior:
         rb = RelationBehavior(
             name=name or fn.__name__,
             fn=fn,

@@ -65,7 +65,7 @@ def _monotonic() -> float:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Callable, Iterable, NamedTuple, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterable, NamedTuple, Optional, Union, cast
 
 from activegraph.behaviors.base import Behavior, LLMBehavior, RelationBehavior
 from activegraph.behaviors.decorators import get_registry
@@ -96,6 +96,10 @@ from activegraph.tools.cache import (
 )
 from activegraph.tools.context import ToolContext
 from activegraph.tools.decorators import get_tool_registry
+
+if TYPE_CHECKING:
+    from activegraph.packs.loader import PackRuntimeState
+    from activegraph.trace.printer import Trace
 from activegraph.tools.errors import (
     MissingToolError,
     ToolError,
@@ -127,7 +131,7 @@ class Context:
     # ONCE per event regardless of how many bindings the pattern
     # produced — iterating `ctx.matches` is the developer's job
     # (CONTRACT v0.7 #12).
-    matches: list = field(default_factory=list)
+    matches: list[Any] = field(default_factory=list)
     # v0.9: pack-aware context. Set by the runtime when invoking a
     # pack-owned behavior.
     #   `settings` — the executing behavior's pack's settings instance,
@@ -149,7 +153,7 @@ class Context:
     def propose_object(
         self,
         object_type: str,
-        data: dict,
+        data: dict[str, Any],
         *,
         reason: str = "",
     ) -> str:
@@ -166,9 +170,10 @@ class Context:
         if self._runtime is None:
             from activegraph.runtime.exec_errors import RuntimeContextRequiredError
             raise RuntimeContextRequiredError(method="ctx.propose_object")
-        return self._runtime._add_pending_approval(
+        proposal_id: str = self._runtime._add_pending_approval(
             object_type=object_type, data=data, reason=reason
         )
+        return proposal_id
 
 
 class BehaviorFailure(NamedTuple):
@@ -269,6 +274,10 @@ class Runtime:
         tool_invoker: Any = None,  # defaults to DirectToolInvoker()
         # v0.8: observability
         metrics: Optional[Metrics] = None,
+        # CONTRACT v1.3 #1 #2: opt-in native structured output. Default
+        # False for the v1.3 cycle - native mode changes prompt hashes,
+        # so flipping it must be a deliberate, cache-invalidating act.
+        native_structured_output: bool = False,
     ) -> None:
         self.graph = graph
         self.frame = frame
@@ -278,6 +287,12 @@ class Runtime:
         self.replay_strict = replay_strict
         # CONTRACT v0.6 #3: provider is set once at construction.
         self.llm_provider: Optional[LLMProvider] = llm_provider
+        # CONTRACT v1.3 #1: the opt-in lever plus the per-behavior
+        # resolved modes ("native" | "prompt"), filled by
+        # _ensure_registry. Runtime-local on purpose: behaviors are
+        # shared objects and the mode depends on this runtime's flag.
+        self.native_structured_output: bool = bool(native_structured_output)
+        self._structured_output_modes: dict[str, str] = {}
         self.replay_llm_cache: bool = replay_llm_cache
         # Cache is content-keyed by prompt hash. May be pre-populated
         # (load/fork with replay_llm_cache=True) or lazily filled.
@@ -382,9 +397,9 @@ class Runtime:
         # `_pack_tools` lists are merged into the registry inside
         # `_ensure_registry` (which rebuilds `tool_registry` from
         # scratch each call).
-        self._pack_state = None  # type: ignore[assignment]
-        self._pack_behaviors: list = []
-        self._pack_tools: list = []
+        self._pack_state: Optional[PackRuntimeState] = None
+        self._pack_behaviors: list[Any] = []
+        self._pack_tools: list[Any] = []
 
         # ---- v1.0.2.post1 #1 (b): eager cross-provider validation ----
         # First run the bulk validation pass against whatever's already
@@ -488,6 +503,35 @@ class Runtime:
 
     # ---------- public entry points ----------
 
+    def _resolve_structured_output_mode(self, b: LLMBehavior) -> str:
+        """Resolve "native" or "prompt" for one behavior. CONTRACT v1.3 #1.
+
+        Native requires all four: the runtime opt-in flag, the
+        provider's getattr-guarded capability claim for the resolved
+        model, and the schema passing the offline subset pre-flight.
+        Fallback is silent-but-audited (v1.3 #1 #4): the resolved mode
+        rides every llm.requested payload, and a schema outside the
+        subset logs one debug line here at registration.
+        """
+        if not self.native_structured_output or b.model is None:
+            return "prompt"
+        supports = getattr(
+            self.llm_provider, "supports_native_structured_output", None
+        )
+        if supports is None or not supports(b.model):
+            return "prompt"
+        from activegraph.llm.native import native_schema_compatible
+        from activegraph.llm.prompt import schema_to_json
+
+        if not native_schema_compatible(schema_to_json(b.output_schema)):
+            self._log.debug(
+                "structured-output schema outside the native subset; "
+                "behavior %s stays on the prompt-embedded path",
+                b.name,
+            )
+            return "prompt"
+        return "native"
+
     def _ensure_registry(self) -> None:
         source = (
             self._explicit_behaviors
@@ -513,6 +557,14 @@ class Runtime:
             # behaviors that didn't pin one, and validate explicit model
             # names against cross-provider mismatches.
             _resolve_and_validate_llm_models(source, self.llm_provider)
+            # CONTRACT v1.3 #1 #1: resolve the structured-output mode per
+            # behavior - a pure function of (flag, capability, model,
+            # schema pre-flight); no network, no clock.
+            for b in source:
+                if isinstance(b, LLMBehavior) and b.output_schema is not None:
+                    self._structured_output_modes[b.name] = (
+                        self._resolve_structured_output_mode(b)
+                    )
         self.registry = Registry(source)
 
         # v0.7: assemble the tool registry. Explicit tools= override the
@@ -611,7 +663,7 @@ class Runtime:
                 assert event is not None
                 self.budget.consume("max_events")
                 self._tick += 1
-                matches = self.registry.match(event, self.graph)
+                matches = cast(Registry, self.registry).match(event, self.graph)
                 for b, rels, p_matches in matches:
                     if not self.budget.remaining():
                         break
@@ -642,9 +694,9 @@ class Runtime:
 
     def _schedule(
         self,
-        behavior,
+        behavior: Any,
         event: Event,
-        pattern_matches,
+        pattern_matches: list[Any],
     ) -> None:
         """Emit behavior.scheduled and push onto the delayed queue."""
         sched_evt = self._emit_lifecycle(
@@ -660,7 +712,7 @@ class Runtime:
         self._delayed.push(
             ScheduledEntry(
                 behavior_name=behavior.name,
-                behavior_index=self.registry.index_of(behavior),
+                behavior_index=cast(Registry, self.registry).index_of(behavior),
                 triggering_event_id=event.id,
                 fire_at_event_count=self._tick + behavior.activate_after,
                 where_recheck_path=None,
@@ -676,7 +728,7 @@ class Runtime:
                 # entries fired; preserved for next run_until_idle.
                 self._delayed.push(entry)
                 break
-            behavior = self.registry.all()[entry.behavior_index]
+            behavior = cast(Registry, self.registry).all()[entry.behavior_index]
             # Re-fetch the triggering event so the handler still sees it.
             ev = self._find_event(entry.triggering_event_id)
             if ev is None:
@@ -691,7 +743,7 @@ class Runtime:
             # Re-check pattern as well so a stale pattern hit doesn't
             # fire after the graph has moved on. We pass empty matches
             # if there's no pattern.
-            p_matches: list = []
+            p_matches: list[Any] = []
             if behavior.pattern_matcher is not None:
                 p_matches = behavior.pattern_matcher.matches(ev, self.graph)
                 if not p_matches:
@@ -713,7 +765,7 @@ class Runtime:
                 return e
         return None
 
-    def _emit_pattern_matched(self, behavior, event: Event, p_matches) -> None:
+    def _emit_pattern_matched(self, behavior: Any, event: Event, p_matches: list[Any]) -> None:
         """Emit a pattern.matched marker so the trace shows the bindings."""
         self._emit_lifecycle(
             "pattern.matched",
@@ -727,7 +779,7 @@ class Runtime:
 
     # ---------- invocation ----------
 
-    def _invoke(self, b: Behavior, event: Event, matches: Optional[list] = None) -> None:
+    def _invoke(self, b: Behavior, event: Event, matches: Optional[list[Any]] = None) -> None:
         self.budget.consume("max_behavior_calls")
         bgraph = BehaviorGraph(
             self.graph,
@@ -806,7 +858,7 @@ class Runtime:
         self,
         b: LLMBehavior,
         event: Event,
-        matches: Optional[list] = None,
+        matches: Optional[list[Any]] = None,
     ) -> None:
         """LLM behavior lifecycle, v0.7 — turn loop over tool calls.
 
@@ -878,8 +930,14 @@ class Runtime:
         tool_request_event_ids: list[str] = []
 
         # ---- 1. Assemble base prompt -------------------------------------
+        so_mode = self._structured_output_modes.get(b.name, "prompt")
         try:
-            prompt = b.build_prompt(event, self.graph, frame=self.frame)
+            prompt = b.build_prompt(
+                event,
+                self.graph,
+                frame=self.frame,
+                structured_output_mode=so_mode,
+            )
         except Exception as e:  # pragma: no cover — defensive
             self._emit_behavior_failed(
                 b.name,
@@ -927,7 +985,7 @@ class Runtime:
             estimated_input_tokens: Optional[int] = None
             if cached is None and self.budget.has_cost_limit():
                 try:
-                    estimated_input_tokens = self.llm_provider.count_tokens(
+                    estimated_input_tokens = cast(LLMProvider, self.llm_provider).count_tokens(
                         system=prompt.system,
                         messages=running_messages,
                         model=prompt.model,
@@ -941,7 +999,7 @@ class Runtime:
                         extras={"model": prompt.model, "phase": "count_tokens"},
                     )
                     return
-                pre_estimate_cost = self.llm_provider.estimate_cost(
+                pre_estimate_cost = cast(LLMProvider, self.llm_provider).estimate_cost(
                     input_tokens=estimated_input_tokens,
                     output_tokens=prompt.max_tokens,
                     model=prompt.model,
@@ -994,6 +1052,11 @@ class Runtime:
                     # volatile-field stripping ran (always true in v0.7).
                     "prompt_normalized": True,
                 }
+                if b.output_schema is not None:
+                    # CONTRACT v1.3 #1 #4: fallback is silent-but-audited;
+                    # the resolved mode rides every structured-output
+                    # request event.
+                    requested_payload["structured_output_mode"] = so_mode
                 if attempt_index > 0:
                     requested_payload["attempt_index"] = attempt_index
                     requested_payload["max_attempts"] = max_attempts
@@ -1052,7 +1115,16 @@ class Runtime:
 
                 try:
                     call_t0 = _monotonic()
-                    turn_response = self.llm_provider.complete(
+                    # CONTRACT v1.3 #1 #3: the kwarg is passed only when
+                    # native resolved, so prompt-mode calls stay
+                    # byte-identical to pre-v1.3 (providers that never
+                    # claim the capability never see the parameter).
+                    native_kwargs: dict[str, Any] = (
+                        {"structured_output_mode": "native"}
+                        if so_mode == "native"
+                        else {}
+                    )
+                    turn_response = cast(LLMProvider, self.llm_provider).complete(
                         system=prompt.system,
                         messages=running_messages,
                         model=prompt.model,
@@ -1062,6 +1134,7 @@ class Runtime:
                         output_schema=b.output_schema,
                         timeout_seconds=b.timeout_seconds,
                         tools=tool_defs,
+                        **native_kwargs,
                     )
                 except LLMBehaviorError as e:
                     latency = _monotonic() - call_t0
@@ -1321,7 +1394,7 @@ class Runtime:
         bgraph._llm_request_event_id = successful_llm_request_id  # noqa: SLF001
         bgraph._tool_request_event_ids = list(tool_request_event_ids)  # noqa: SLF001
         try:
-            b.handler(event, bgraph, ctx, response.parsed)
+            cast("Callable[..., None]", b.handler)(event, bgraph, ctx, response.parsed)
         except LLMBehaviorError as e:
             self._emit_behavior_failed(
                 b.name, event.id, e, reason=e.reason,
@@ -1720,9 +1793,9 @@ class Runtime:
     def _invoke_relation(
         self,
         b: RelationBehavior,
-        relation,
+        relation: Any,
         event: Event,
-        matches: Optional[list] = None,
+        matches: Optional[list[Any]] = None,
     ) -> None:
         self.budget.consume("max_behavior_calls")
         bgraph = BehaviorGraph(
@@ -1925,7 +1998,7 @@ class Runtime:
 
     # ---------- v0.9: pack public API ----------
 
-    def load_pack(self, pack, settings=None) -> bool:
+    def load_pack(self, pack: Any, settings: Any = None) -> bool:
         """Load a pack into the runtime.
 
         Returns True on first load, False if the same `(name, version)`
@@ -1935,15 +2008,16 @@ class Runtime:
         Pre-mutation: a failed load leaves the runtime exactly as it was.
         """
         from activegraph.packs.loader import load_pack_into_runtime
-        return load_pack_into_runtime(self, pack, settings=settings)
+        loaded: bool = load_pack_into_runtime(self, pack, settings=settings)
+        return loaded
 
-    def loaded_packs(self) -> list:
+    def loaded_packs(self) -> list[Any]:
         """List of currently-loaded packs."""
         if self._pack_state is None:
             return []
         return list(self._pack_state.loaded_packs.values())
 
-    def get_behavior(self, name: str):
+    def get_behavior(self, name: str) -> Any:
         """Look up a registered behavior by canonical or short name.
 
         Short names resolve when unambiguous (load-time conflict check
@@ -1985,7 +2059,7 @@ class Runtime:
             raise AmbiguousBehaviorError(name, packs=owners)
         return self.get_behavior(canonical)
 
-    def get_tool(self, name: str):
+    def get_tool(self, name: str) -> Tool:
         """Look up a registered tool by canonical or short name.
 
         Same resolution rule as `get_behavior`. CONTRACT v0.9 #8 / #9.
@@ -2027,7 +2101,7 @@ class Runtime:
             raise AmbiguousToolError(name, packs=owners)
         return self.tool_registry[canonical]
 
-    def _pack_settings_for_behavior(self, b) -> Any:
+    def _pack_settings_for_behavior(self, b: Any) -> Any:
         """Return the settings instance for the pack that owns `b`, or
         None if `b` is not pack-owned.
         """
@@ -2040,14 +2114,14 @@ class Runtime:
 
     # ---------- v0.9: approval flow ----------
 
-    def pending_approvals(self) -> list:
+    def pending_approvals(self) -> list[Any]:
         """List of currently-pending approvals (in creation order)."""
         if self._pack_state is None:
             return []
         return list(self._pack_state.pending_approvals)
 
     def _add_pending_approval(
-        self, *, object_type: str, data: dict, reason: str = ""
+        self, *, object_type: str, data: dict[str, Any], reason: str = ""
     ) -> str:
         """Internal: create a PendingApproval and return its id.
 
@@ -2127,7 +2201,7 @@ class Runtime:
         )
 
     @property
-    def trace(self):
+    def trace(self) -> "Trace":
         from activegraph.trace.printer import Trace
 
         return Trace(self.graph)
@@ -2274,6 +2348,7 @@ class Runtime:
         replay_reinvoke_deterministic: bool = False,
         metrics: Optional[Metrics] = None,
         graph_store: Optional[GraphStore] = None,
+        native_structured_output: bool = False,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -2336,6 +2411,7 @@ class Runtime:
             tool_cache=tcache,
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
             metrics=metrics,
+            native_structured_output=native_structured_output,
         )
         # Make sure the run row exists (older files might predate it; in v0.5
         # they shouldn't, but be defensive).
@@ -2360,6 +2436,7 @@ class Runtime:
                 budget,
                 seed,
                 llm_provider=llm_provider,
+                native_structured_output=native_structured_output,
             )
 
         return rt
@@ -2500,6 +2577,9 @@ class Runtime:
             replay_tool_cache=replay_tool_cache,
             tool_cache=tcache,
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
+            # CONTRACT v1.3 #1: forks inherit the parent's mode posture
+            # so pre-populated caches stay reachable.
+            native_structured_output=self.native_structured_output,
         )
         # CONTRACT v0.5 diff #8 (extended to fork in v0.6): events whose
         # behaviors never started get re-queued. For a fork at an early
@@ -2546,10 +2626,11 @@ def _llm_retry_delay_seconds(
             pass
     if initial <= 0:
         return 0.0
-    return min(initial * (2 ** attempt_index), maximum)
+    delay: float = min(initial * (2 ** attempt_index), maximum)
+    return delay
 
 
-def _resolve_and_validate_llm_models(source, provider) -> None:
+def _resolve_and_validate_llm_models(source: list[Any], provider: LLMProvider) -> None:
     """Stamp provider defaults onto LLMBehaviors with model=None, and
     raise InvalidRuntimeConfiguration for explicit names that belong to
     a different shipped provider. CONTRACT v1.0.2 #1.
@@ -2589,9 +2670,9 @@ def _budget_reason(name: Optional[str]) -> str:
 
 def _hash_turn_prompt(
     *,
-    prompt,
-    messages: list,
-    tool_defs: Optional[list],
+    prompt: Any,
+    messages: list[Any],
+    tool_defs: Optional[list[Any]],
 ) -> str:
     """Hash the prompt+messages+tools for a single turn.
 
@@ -2615,6 +2696,11 @@ def _hash_turn_prompt(
         "deterministic": bool(prompt.deterministic),
         "tools": list(tool_defs) if tool_defs else None,
     }
+    # CONTRACT v1.3 #1 #7: mode is part of prompt identity; the field is
+    # emitted only when native so every pre-v1.3 hash stays
+    # byte-identical.
+    if getattr(prompt, "structured_output_mode", "prompt") == "native":
+        payload["structured_output_mode"] = "native"
     canonical = _json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -2650,7 +2736,8 @@ def _most_recent_run_id(path_or_url: str) -> Optional[str]:
         if parsed.scheme == "postgres":
             from activegraph.store.postgres import PostgresEventStore
 
-            return PostgresEventStore.most_recent_run_id(parsed.raw)
+            run_id: Optional[str] = PostgresEventStore.most_recent_run_id(parsed.raw)
+            return run_id
         # sqlite via URL — fall through to the SQLite helper on the path
         path_or_url = parsed.sqlite_path or ""
     from activegraph.store.sqlite import SQLiteEventStore
@@ -2658,8 +2745,12 @@ def _most_recent_run_id(path_or_url: str) -> Optional[str]:
     return SQLiteEventStore.most_recent_run_id(path_or_url)
 
 
-def _open_sqlite_store(path_or_url: str, run_id: str):
+def _open_sqlite_store(path_or_url: str, run_id: str) -> Any:
     """Open a store by path (v0.5-v0.7 sugar) or URL (v0.8).
+
+    Typed ``Any``, not ``EventStore``: callers use ``upsert_run``, a
+    persistent-backend extra that is deliberately not part of the minimal
+    ``EventStore`` protocol (CONTRACT v0.5 #2).
 
     A bare path like ``/tmp/run.db`` is treated as a SQLite path —
     preserves backward compatibility with all existing call sites.
@@ -2756,6 +2847,7 @@ def _verify_replay(
     seed: int,
     *,
     llm_provider: Optional[LLMProvider] = None,
+    native_structured_output: bool = False,
 ) -> None:
     """Replay the run from scratch — fresh Graph, behaviors fire — and
     compare the resulting event stream to the recorded log.
@@ -2780,7 +2872,7 @@ def _verify_replay(
     # event id.
     non_replayable_llm_ids = _non_replayable_llm_attempt_event_ids(recorded_events)
     expected_hashes = [
-        e.payload.get("prompt_hash")
+        cast(str, e.payload.get("prompt_hash"))
         for e in recorded_events
         if (
             e.type == "llm.requested"
@@ -2802,6 +2894,7 @@ def _verify_replay(
         replay_llm_cache=True,
         llm_cache=cache,
         replay_strict=True,
+        native_structured_output=native_structured_output,
     )
     # Install the expected-hash queue. _invoke_llm pops one per LLM call
     # and raises ReplayDivergenceError if the live hash differs.

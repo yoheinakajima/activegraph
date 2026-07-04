@@ -75,7 +75,7 @@ from activegraph.core.patch import Patch
 def _require_falkordb_client() -> Any:
     """Import the ``falkordb`` server client or raise a guided error."""
     try:
-        from falkordb import FalkorDB  # type: ignore
+        from falkordb import FalkorDB
     except ImportError as e:  # pragma: no cover — exercised only without dep
         from activegraph.errors import MissingOptionalDependency
 
@@ -90,7 +90,7 @@ def _require_falkordb_client() -> Any:
 def _require_falkordblite() -> Any:
     """Import the embedded ``falkordblite`` client or raise a guided error."""
     try:
-        from redislite.falkordb_client import FalkorDB  # type: ignore
+        from redislite.falkordb_client import FalkorDB
     except ImportError as e:  # pragma: no cover — exercised only without dep
         from activegraph.errors import MissingOptionalDependency
 

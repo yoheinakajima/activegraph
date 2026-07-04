@@ -73,10 +73,11 @@ def _canonical_prompt_payload(
     top_p: float,
     deterministic: bool,
     tools: Optional[list[dict[str, Any]]] = None,
+    structured_output_mode: str = "prompt",
 ) -> dict[str, Any]:
     from activegraph.llm.prompt import schema_to_json
 
-    return {
+    payload: dict[str, Any] = {
         "model": model,
         "system": system,
         "messages": [m.to_dict() for m in messages],
@@ -92,6 +93,12 @@ def _canonical_prompt_payload(
         # behavior gaining or losing a tool produces a different key.
         "tools": list(tools) if tools else None,
     }
+    # CONTRACT v1.3 #1 #7: the mode is part of prompt identity, but only
+    # contributes when native (omit-when-absent, the v1.0.3 #4 pattern)
+    # so every pre-v1.3 fixture hash stays byte-identical.
+    if structured_output_mode == "native":
+        payload["structured_output_mode"] = "native"
+    return payload
 
 
 def _hash_payload(payload: dict[str, Any]) -> str:
@@ -117,13 +124,29 @@ class RecordedLLMProvider(LLMProvider):
     # so existing fixtures stay reachable.
     default_model: str = "claude-sonnet-4-5"
 
-    def __init__(self, fixtures_dir: str) -> None:
+    def __init__(
+        self, fixtures_dir: str, *, structured_output_mode: str = "prompt"
+    ) -> None:
         self._dir = fixtures_dir
+        # CONTRACT v1.3 #1 #7: the capability this provider claims, so
+        # runtime mode resolution assembles prompts the same way the
+        # recording run did. Default "prompt" keeps every pre-v1.3
+        # fixture reachable with zero changes.
+        self._structured_output_mode = structured_output_mode
 
     def recognizes_model(self, name: str) -> bool:
         # Fixture-backed: claim every name so cross-provider validation
         # doesn't fire against recorded responses.
         return True
+
+    def supports_native_structured_output(self, model: str) -> bool:
+        """True when constructed with native mode. CONTRACT v1.3 #1 #7.
+
+        Fixture-backed replay must assemble prompts exactly the way the
+        recording run did, so the capability claim is explicit
+        per-instance rather than model-derived.
+        """
+        return self._structured_output_mode == "native"
 
     # ---- LLMProvider methods ----
 
@@ -139,6 +162,7 @@ class RecordedLLMProvider(LLMProvider):
         output_schema: Optional[type],
         timeout_seconds: float,
         tools: Optional[list[dict[str, Any]]] = None,
+        structured_output_mode: str = "prompt",
     ) -> LLMResponse:
         payload = _canonical_prompt_payload(
             model=model,
@@ -150,6 +174,7 @@ class RecordedLLMProvider(LLMProvider):
             top_p=top_p,
             deterministic=(temperature == 0.0 and top_p == 1.0),
             tools=tools,
+            structured_output_mode=structured_output_mode,
         )
         prompt_hash = _hash_payload(payload)
         path = os.path.join(self._dir, f"{prompt_hash}.json")
@@ -249,6 +274,16 @@ class RecordingLLMProvider(LLMProvider):
             return True
         return bool(recognizes(name))
 
+    def supports_native_structured_output(self, model: str) -> bool:
+        """Delegates to the inner provider (absent method = prompt
+        mode), so wrapping does not change mode resolution.
+        CONTRACT v1.3 #1.
+        """
+        supports = getattr(self._inner, "supports_native_structured_output", None)
+        if supports is None:
+            return False
+        return bool(supports(model))
+
     def complete(
         self,
         *,
@@ -261,7 +296,14 @@ class RecordingLLMProvider(LLMProvider):
         output_schema: Optional[type],
         timeout_seconds: float,
         tools: Optional[list[dict[str, Any]]] = None,
+        structured_output_mode: str = "prompt",
     ) -> LLMResponse:
+        inner_kwargs: dict[str, Any] = {}
+        if structured_output_mode == "native":
+            # Forwarded only when native, so inner providers that
+            # pre-date v1.3 (and never claim the capability) are never
+            # called with a parameter they do not accept.
+            inner_kwargs["structured_output_mode"] = "native"
         response = self._inner.complete(
             system=system,
             messages=messages,
@@ -272,6 +314,7 @@ class RecordingLLMProvider(LLMProvider):
             output_schema=output_schema,
             timeout_seconds=timeout_seconds,
             tools=tools,
+            **inner_kwargs,
         )
         payload = _canonical_prompt_payload(
             model=model,
@@ -283,6 +326,7 @@ class RecordingLLMProvider(LLMProvider):
             top_p=top_p,
             deterministic=(temperature == 0.0 and top_p == 1.0),
             tools=tools,
+            structured_output_mode=structured_output_mode,
         )
         prompt_hash = _hash_payload(payload)
         fixture = {

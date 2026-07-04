@@ -347,6 +347,11 @@ class PackSchemaViolation(PackError, ValueError):
 class PackSettingsMissingError(RegistrationError, PackError):
     """`runtime.load_pack(pack)` called without `settings=` for a pack
     whose `settings_schema` doesn't accept no-arg construction.
+
+    Packs whose settings all carry defaults load bare; a schema with
+    required fields makes the caller state its choices explicitly.
+    The fix is always ``load_pack(pack, settings=Schema(...))`` with
+    the required fields filled in.
     """
 
     _doc_slug = "pack-settings-missing-error"
@@ -355,6 +360,11 @@ class PackSettingsMissingError(RegistrationError, PackError):
 class PackPromptLoadError(RegistrationError, PackError):
     """A prompt file is malformed, missing required frontmatter, or
     unreadable. Pack registration time.
+
+    Prompts ship as ``.md`` files with TOML frontmatter (see
+    ``load_prompts_from_dir``); this error names the file and what is
+    missing so a pack author fixes the asset, not the loader. A pack
+    that fails prompt loading does not half-register.
     """
 
     _doc_slug = "pack-prompt-load-error"
@@ -363,9 +373,14 @@ class PackPromptLoadError(RegistrationError, PackError):
 # ----------------------------------------------------- value objects (frozen)
 
 
-class EmptySettings(BaseModel):
-    """For packs with no configurable settings. Pydantic model so it
-    matches the rest of the settings API.
+class EmptySettings(BaseModel):  # type: ignore[misc]  # BaseModel is Any under follow_imports=skip
+    """For packs with no configurable settings. The default
+    ``settings_schema``.
+
+    A Pydantic model with zero fields, so no-settings packs flow
+    through the same typed-injection machinery as configurable ones
+    (CONTRACT v0.9 #7) — behaviors can still ask for ``settings`` and
+    get a real instance rather than a ``None`` special case.
     """
 
 
@@ -541,12 +556,12 @@ class Pack:
     name: str
     version: str
     description: str = ""
-    object_types: tuple = ()
-    relation_types: tuple = ()
-    behaviors: tuple = ()
-    tools: tuple = ()
-    policies: tuple = ()
-    prompts: tuple = ()
+    object_types: tuple[Any, ...] = ()
+    relation_types: tuple[Any, ...] = ()
+    behaviors: tuple[Any, ...] = ()
+    tools: tuple[Any, ...] = ()
+    policies: tuple[Any, ...] = ()
+    prompts: tuple[Any, ...] = ()
     settings_schema: type = EmptySettings
 
     def __post_init__(self) -> None:
@@ -653,7 +668,7 @@ def behavior(
     *,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-) -> Callable[[Callable], Behavior]:
+) -> Callable[[Callable[..., None]], Behavior]:
     """Pack-aware `@behavior`. Does not register globally."""
 
     from activegraph.runtime.patterns import parse as _parse_pattern
@@ -666,7 +681,7 @@ def behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> Behavior:
+    def wrap(fn: Callable[..., None]) -> Behavior:
         b = Behavior(
             name=name or fn.__name__,
             fn=fn,
@@ -714,9 +729,9 @@ def llm_behavior(
     priority: int = 0,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-    tools: Optional[list] = None,
+    tools: Optional[list[Any]] = None,
     max_tool_turns: int = 6,
-) -> Callable[[Callable], LLMBehavior]:
+) -> Callable[[Callable[..., None]], LLMBehavior]:
     """Pack-aware `@llm_behavior`. Does not register globally."""
 
     from activegraph.runtime.patterns import parse as _parse_pattern
@@ -729,7 +744,7 @@ def llm_behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> LLMBehavior:
+    def wrap(fn: Callable[..., None]) -> LLMBehavior:
         b = LLMBehavior(
             name=name or fn.__name__,
             fn=_llm_behavior_fn_placeholder,
@@ -780,7 +795,7 @@ def relation_behavior(
     *,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-) -> Callable[[Callable], RelationBehavior]:
+) -> Callable[[Callable[..., None]], RelationBehavior]:
     """Pack-aware `@relation_behavior`. Does not register globally."""
 
     from activegraph.runtime.patterns import parse as _parse_pattern
@@ -793,7 +808,7 @@ def relation_behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> RelationBehavior:
+    def wrap(fn: Callable[..., None]) -> RelationBehavior:
         rb = RelationBehavior(
             name=name or fn.__name__,
             fn=fn,
@@ -829,7 +844,7 @@ def tool(
     timeout_seconds: float = 30.0,
     deterministic: bool = False,
     export_globally: bool = False,
-) -> Callable[[Callable], Tool]:
+) -> Callable[[Callable[..., Any]], Tool]:
     """Pack-aware `@tool`. Does not register globally.
 
     `export_globally=True` opts the tool into BOTH the pack-scoped
@@ -838,7 +853,7 @@ def tool(
     """
     from decimal import Decimal
 
-    def wrap(fn: Callable) -> Tool:
+    def wrap(fn: Callable[..., Any]) -> Tool:
         t = Tool(
             name=name or fn.__name__,
             fn=fn,
@@ -867,7 +882,15 @@ def tool(
 
 @dataclass(frozen=True)
 class DiscoveredPack:
-    """A pack discovered via Python entry points but not yet loaded."""
+    """A pack discovered via Python entry points but not yet loaded.
+
+    What ``discover()`` yields per installed distribution that
+    registers the ``activegraph.packs`` entry-point group: the pack's
+    ``name`` / ``version``, the entry-point string it came from, and
+    the :class:`Pack` object itself. Discovery imports the pack module
+    but changes no runtime state — loading is a separate, explicit
+    ``runtime.load_pack`` call.
+    """
 
     name: str
     version: str
@@ -894,7 +917,7 @@ def discover() -> tuple[DiscoveredPack, ...]:
     try:
         selected = eps.select(group="activegraph.packs")
     except AttributeError:  # pragma: no cover — pre-3.10 fallback
-        selected = eps.get("activegraph.packs", [])  # type: ignore[union-attr]
+        selected = eps.get("activegraph.packs", [])  # type: ignore[arg-type]
 
     for ep in selected:
         try:
@@ -929,15 +952,26 @@ def discover() -> tuple[DiscoveredPack, ...]:
 
 
 def clear_discovery_cache() -> None:
-    """Reset the cached entry-point scan. Tests that install packages
-    dynamically need to call this; normal usage does not.
+    """Reset the cached entry-point scan.
+
+    ``discover()`` memoizes its result for the life of the process
+    (installed packages don't change under a normal run). Tests that
+    install or mock packages dynamically call this between cases;
+    normal usage never needs it.
     """
     global _DISCOVERY_CACHE
     _DISCOVERY_CACHE = None
 
 
 def load_by_name(name: str) -> Pack:
-    """Find a discovered pack by name. Raises `LookupError` if not found."""
+    """Find a discovered pack by name.
+
+    Resolves against the ``discover()`` scan of installed
+    entry-point packs and returns the :class:`Pack` object — pass it
+    to ``runtime.load_pack`` to actually load it. Raises
+    ``PackNotFoundError`` (a ``LookupError``) naming the installed
+    packs when the name doesn't resolve.
+    """
     installed = tuple(entry.name for entry in discover())
     if name in installed:
         for entry in discover():
@@ -967,7 +1001,7 @@ class PendingApproval:
     id: str
     kind: str
     object_type: str
-    data: dict
+    data: dict[str, Any]
     reason: str
     pack: str  # the pack whose policy gated this
 

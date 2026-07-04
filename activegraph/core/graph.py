@@ -24,13 +24,16 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from activegraph.core.clock import Clock
 from activegraph.core.event import Event
-from activegraph.core.graph_store import GraphStore, InMemoryGraphStore
+from activegraph.core.graph_store import ChainMatch, GraphStore, InMemoryGraphStore
 from activegraph.core.ids import IDGen
 from activegraph.core.patch import Patch
+
+if TYPE_CHECKING:
+    from activegraph.store.base import EventStore
 
 
 # ---------- handles ----------
@@ -38,6 +41,16 @@ from activegraph.core.patch import Patch
 
 @dataclass
 class Object:
+    """A typed node in the materialized graph projection.
+
+    ``data`` is the structured payload (schema-validated on
+    ``add_object`` when a loaded pack owns the type); ``version``
+    increments once per applied patch (CONTRACT #4); ``provenance``
+    records the events that created and last touched it. A handle is
+    for reading — mutations go through the graph's event surface
+    (``patch_object`` / patches), never by assigning to fields.
+    """
+
     id: str
     type: str
     data: dict[str, Any]
@@ -56,6 +69,16 @@ class Object:
 
 @dataclass
 class Relation:
+    """A typed edge between two object ids in the graph projection.
+
+    ``source`` and ``target`` hold object ids — dangling endpoints
+    (ids with no object yet) are legal and queryable, so relations
+    can arrive before the things they connect. ``type`` is the
+    relation kind used by matching and traversal. Created via
+    ``add_relation`` events; like ``Object``, a projection of the
+    log, not a hand-mutated record.
+    """
+
     id: str
     source: str
     target: str
@@ -98,7 +121,17 @@ _MISSING = object()
 
 
 class Graph:
-    """Event-sourced graph. The log is truth; objects/relations are projection."""
+    """Event-sourced graph. The log is truth; objects/relations are projection.
+
+    The only mutator is :meth:`emit`: every add/patch/remove sugar
+    method builds an event, appends it to the log, projects it into
+    the materialized state (a pluggable :class:`GraphStore`,
+    CONTRACT v1.2 #1), persists it when an ``EventStore`` is
+    attached, and notifies listeners. Read surfaces (``objects``,
+    ``relations``, ``neighborhood``, ``match_chain``) delegate to
+    the projection's query hooks. Wiping the projection loses
+    nothing — replaying the log rebuilds it.
+    """
 
     def __init__(
         self,
@@ -130,7 +163,7 @@ class Graph:
         self._replayed_ids: set[str] = set()
 
         # Optional persistence sink (attached by Runtime when persist_to=...).
-        self._store = None  # type: ignore[assignment]
+        self._store: Optional[EventStore] = None
 
         # v0.9: optional schema validators attached by `runtime.load_pack`.
         # `_pack_object_validator(type, data) -> validated_data` is called
@@ -215,7 +248,11 @@ class Graph:
         # native variable-length path query). See GraphStore.neighborhood.
         return self._state.neighborhood(object_id, depth)
 
-    def match_chain(self, node_types, rels):
+    def match_chain(
+        self,
+        node_types: list[Optional[str]],
+        rels: list[tuple[Optional[str], str]],
+    ) -> list[ChainMatch]:
         # Pushed down to the store: the default mirrors the matcher's
         # structural chain walk; FalkorDB resolves the whole chain in one
         # Cypher query. Node {prop: value} equality and WHERE stay in the
@@ -274,7 +311,7 @@ class Graph:
 
     # ---------- store attachment (Runtime sets this) ----------
 
-    def attach_store(self, store) -> None:
+    def attach_store(self, store: EventStore) -> None:
         """Wire an EventStore as the durability sink. Idempotent on the same
         store. Calling with a *different* store after events exist is an error
         — events would be persisted in two places and you'd lose history.
@@ -314,7 +351,7 @@ class Graph:
         self._store = store
 
     @property
-    def store(self):
+    def store(self) -> Optional[EventStore]:
         return self._store
 
     # ---------- the only mutator (live path) ----------
@@ -397,7 +434,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._state.get_object(obj_id)
+        return cast(Object, self._state.get_object(obj_id))
 
     def add_relation(
         self,
@@ -454,7 +491,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._state.get_relation(rel_id)
+        return cast(Relation, self._state.get_relation(rel_id))
 
     def remove_relation(
         self,
@@ -550,7 +587,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._state.get_patch(patch.id)
+        return cast(Patch, self._state.get_patch(patch.id))
 
     def propose_patch(
         self,
@@ -600,7 +637,7 @@ class Graph:
             timestamp=self.clock.now(),
         )
         self.emit(event)
-        return self._state.get_patch(patch.id)
+        return cast(Patch, self._state.get_patch(patch.id))
 
     def apply_patch(
         self,
@@ -665,7 +702,9 @@ class Graph:
         caused_by: Optional[str],
         frame_id: Optional[str],
     ) -> Event:
-        patch = self._state.get_patch(patch_id)
+        # Type-level assertion only: a missing patch_id fails on attribute
+        # access exactly as before (validation is the caller's job).
+        patch = cast(Patch, self._state.get_patch(patch_id))
         current = self._state.get_object(patch.target)
         event = Event(
             id=self.ids.event(),
@@ -815,7 +854,7 @@ def _patch_from_dict(d: dict[str, Any]) -> Patch:
 
 # ---------- where evaluator (used by query and matchers) ----------
 
-_OPS = {
+_OPS: dict[str, Callable[[Any, Any], bool]] = {
     ">": lambda a, b: a is not None and a > b,
     "<": lambda a, b: a is not None and a < b,
     ">=": lambda a, b: a is not None and a >= b,

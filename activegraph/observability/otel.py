@@ -92,8 +92,8 @@ def _attributes(tags: dict[str, str]) -> dict[str, Any]:
 
 def _require_opentelemetry() -> tuple[Any, Any]:
     try:
-        import opentelemetry.metrics as metrics_api  # type: ignore
-        import opentelemetry.sdk.metrics as metrics_sdk  # type: ignore
+        import opentelemetry.metrics as metrics_api
+        import opentelemetry.sdk.metrics as metrics_sdk
     except ImportError as e:
         from activegraph.errors import MissingOptionalDependency
 

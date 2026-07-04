@@ -37,9 +37,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional
 
 from activegraph.errors import DOCS_BASE_URL, PatternError
+
+if TYPE_CHECKING:
+    from activegraph.core.event import Event
+    from activegraph.core.graph import Graph, Object, Relation
 
 
 # CONTRACT v0.7 #8 voice notes for v1.0 PR-B:
@@ -701,7 +705,7 @@ class Match:
     def __getitem__(self, key: str) -> str:
         return self.bindings[key]
 
-    def get(self, key: str, default=None) -> Any:
+    def get(self, key: str, default: Any = None) -> Any:
         return self.bindings.get(key, default)
 
 
@@ -711,14 +715,16 @@ class PatternMatcher:
     def __init__(self, pattern: Pattern) -> None:
         self.pattern = pattern
 
-    def matches(self, event, graph) -> list[Match]:
+    def matches(self, event: "Optional[Event]", graph: "Graph") -> list[Match]:
         # `event` is currently unused — patterns evaluate against the
         # post-event graph state. Future extensions may bind event
         # properties (e.g. `$event.payload.x`). v0.7 spec keeps it
         # graph-only.
         return list(self._enumerate_matches(self.pattern.match, graph))
 
-    def _enumerate_matches(self, match_clause: MatchClause, graph):
+    def _enumerate_matches(
+        self, match_clause: MatchClause, graph: "Graph"
+    ) -> Iterator[Match]:
         if not match_clause.nodes:
             return
         # Resolve the whole structural chain in one push-down call: node types
@@ -728,7 +734,9 @@ class PatternMatcher:
         # node {prop: value} equality (it lives in the JSON data blob),
         # variable-consistency, and WHERE.
         node_types = [n.type for n in match_clause.nodes]
-        rels = [(r.type, r.direction) for r in match_clause.rels]
+        rels: list[tuple[Optional[str], str]] = [
+            (r.type, r.direction) for r in match_clause.rels
+        ]
         for chain in graph.match_chain(node_types, rels):
             objs = chain.objects
             if not all(
@@ -745,7 +753,9 @@ class PatternMatcher:
                 yield Match(bindings=dict(bindings))
 
 
-def _bind_chain(match_clause, objs, rels) -> Optional[dict[str, str]]:
+def _bind_chain(
+    match_clause: MatchClause, objs: "list[Object]", rels: "list[Relation]"
+) -> Optional[dict[str, str]]:
     """Build the binding dict for one structural chain, enforcing that a
     repeated variable resolves to a single id. Returns ``None`` on conflict
     (the chain reuses an object/relation under a variable already bound to a
@@ -767,7 +777,7 @@ def _bind_chain(match_clause, objs, rels) -> Optional[dict[str, str]]:
     return bindings
 
 
-def _node_matches(obj, node_pat: NodePat) -> bool:
+def _node_matches(obj: "Object", node_pat: NodePat) -> bool:
     if node_pat.type is not None and obj.type != node_pat.type:
         return False
     for k, v in node_pat.properties.items():
@@ -779,7 +789,7 @@ def _node_matches(obj, node_pat: NodePat) -> bool:
 # ---------- WHERE evaluator -------------------------------------------------
 
 
-_OPS = {
+_OPS: dict[str, Callable[[Any, Any], bool]] = {
     "=": lambda a, b: a == b,
     "==": lambda a, b: a == b,
     "!=": lambda a, b: a != b,
@@ -791,7 +801,7 @@ _OPS = {
 }
 
 
-def _eval_where(expr: BoolExpr, bindings: dict[str, str], graph) -> bool:
+def _eval_where(expr: BoolExpr, bindings: dict[str, str], graph: "Graph") -> bool:
     if isinstance(expr, Comparison):
         left = _resolve_path(expr.left_path, bindings, graph)
         if expr.right_path is not None:
@@ -880,7 +890,7 @@ def _eval_where(expr: BoolExpr, bindings: dict[str, str], graph) -> bool:
     )
 
 
-def _resolve_path(path: list[str], bindings: dict[str, str], graph) -> Any:
+def _resolve_path(path: list[str], bindings: dict[str, str], graph: "Graph") -> Any:
     """Resolve `a.confidence` etc. against bindings + graph."""
     if not path:
         return None

@@ -11,31 +11,31 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 - [x] `ActiveGraphError`
 - [x] `AmbiguousBehaviorError`
-- [ ] `AmbiguousToolError` — **one-line**
+- [x] `AmbiguousToolError`
 - [x] `ApprovalNotFoundError`
-- [ ] `Behavior` — **one-line**
+- [x] `Behavior`
 - [x] `BehaviorFailure`
 - [x] `BehaviorNotFoundError`
 - [x] `Budget`
-- [ ] `Clock` — **one-line**
-- [ ] `ConfigurationError` — **one-line**
+- [x] `Clock`
+- [x] `ConfigurationError`
 - [x] `CorruptedEventPayloadError`
-- [ ] `Diff` — **one-line**
-- [ ] `DiscoveredPack` — **one-line**
-- [ ] `DivergentObject` — **one-line**
-- [ ] `DivergentRelation` — **one-line**
+- [x] `Diff`
+- [x] `DiscoveredPack`
+- [x] `DivergentObject`
+- [x] `DivergentRelation`
 - [x] `DuplicateEventError`
-- [ ] `EmptySettings` — **one-line**
-- [ ] `Event` — **one-line**
+- [x] `EmptySettings`
+- [x] `Event`
 - [x] `EventNotFoundError`
-- [ ] `EventStore` — **one-line**
+- [x] `EventStore`
 - [x] `ExecutionError`
 - [x] `FalkorDBGraphStore`
-- [ ] `Frame` — **one-line**
-- [ ] `FrozenClock` — **one-line**
-- [ ] `Graph` — **one-line**
+- [x] `Frame`
+- [x] `FrozenClock`
+- [x] `Graph`
 - [x] `GraphStore`
-- [ ] `IDGen` — **one-line**
+- [x] `IDGen`
 - [x] `InMemoryEventStore`
 - [x] `InMemoryGraphStore`
 - [x] `IncompatibleRuntimeState`
@@ -49,14 +49,14 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `LLMBehavior`
 - [x] `LLMBehaviorError`
 - [x] `Metrics`
-- [ ] `MigrationReport` — **one-line**
-- [ ] `MigrationRunReport` — **one-line**
+- [x] `MigrationReport`
+- [x] `MigrationRunReport`
 - [x] `MissingOptionalDependency`
 - [x] `MissingProviderError`
 - [x] `MissingToolError`
 - [x] `NoOpMetrics`
 - [x] `NonSerializableEventError`
-- [ ] `Object` — **one-line**
+- [x] `Object`
 - [x] `ObjectType`
 - [x] `OpenTelemetryMetrics`
 - [x] `Pack`
@@ -65,51 +65,51 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `PackNotFoundError`
 - [x] `PackPolicy`
 - [x] `PackPrompt`
-- [ ] `PackPromptLoadError` — **one-line**
+- [x] `PackPromptLoadError`
 - [x] `PackSchemaViolation`
-- [ ] `PackSettingsMissingError` — **one-line**
+- [x] `PackSettingsMissingError`
 - [x] `PackValidationError`
 - [x] `PackVersionConflictError`
-- [ ] `Patch` — **one-line**
-- [ ] `PatternError` — **one-line**
+- [x] `Patch`
+- [x] `PatternError`
 - [x] `PendingApproval`
-- [ ] `Policy` — **one-line**
+- [x] `Policy`
 - [x] `PrometheusMetrics`
 - [x] `RegistrationError`
-- [ ] `Relation` — **one-line**
-- [ ] `RelationBehavior` — **one-line**
+- [x] `Relation`
+- [x] `RelationBehavior`
 - [x] `RelationType`
 - [x] `ReplayDivergenceError`
 - [x] `ReplayError`
-- [ ] `RunRecord` — **one-line**
+- [x] `RunRecord`
 - [x] `Runtime`
 - [x] `RuntimeContextRequiredError`
-- [ ] `RuntimeStatus` — **one-line**
+- [x] `RuntimeStatus`
 - [x] `SQLiteEventStore`
 - [x] `SchemaVersionMismatch`
-- [ ] `StorageError` — **one-line**
-- [ ] `TickingClock` — **one-line**
-- [ ] `Tool` — **one-line**
-- [ ] `ToolContext` — **one-line**
+- [x] `StorageError`
+- [x] `TickingClock`
+- [x] `Tool`
+- [x] `ToolContext`
 - [x] `ToolError`
 - [x] `ToolNotFoundError`
 - [x] `UnknownToolError`
 - [x] `UnsupportedPatternError`
 - [x] `View`
 - [x] `behavior`
-- [ ] `clear_discovery_cache` — **one-line**
+- [x] `clear_discovery_cache`
 - [x] `clear_registry`
 - [x] `clear_tool_registry`
 - [x] `configure_logging`
 - [x] `discover`
-- [ ] `get_registry` — **one-line**
+- [x] `get_registry`
 - [x] `get_tool_registry`
 - [x] `llm_behavior`
-- [ ] `load_by_name` — **one-line**
+- [x] `load_by_name`
 - [x] `load_prompts_from_dir`
 - [x] `migrate`
 - [x] `open_store`
-- [ ] `parse_store_url` — **one-line**
+- [x] `parse_store_url`
 - [x] `register`
 - [x] `relation_behavior`
 - [x] `tool`
@@ -387,7 +387,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### Ring 0 — public surface (target 100%)
 
-- **71/106 fully documented (67.0%)** — gap to 100% full: **35 symbols**
+- **106/106 fully documented (100.0%)** — gap to 100% full: **0 symbols**
 - **106/106 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)

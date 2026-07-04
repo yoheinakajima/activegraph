@@ -20,11 +20,23 @@ from typing import Any, Callable, Optional
 
 @dataclass
 class Tool:
+    """Metadata plus the callable for a runtime-invokable tool.
+
+    ``fn`` runs as ``fn(args, ctx)``: ``args`` is validated against
+    ``input_schema`` before invocation and the return value against
+    ``output_schema`` after (both Pydantic models). ``cost_per_call``
+    feeds the budget's cost dimension; ``deterministic`` declares
+    whether replay may re-invoke (CONTRACT v0.7 #7 — False means
+    replay must serve the recorded fixture or fail loud). Instances
+    come from ``@tool``; the runtime owns invocation and the
+    ``tool.requested`` / ``tool.responded`` event pair.
+    """
+
     name: str
     fn: Callable[..., Any]
     description: str = ""
-    input_schema: Optional[type] = None
-    output_schema: Optional[type] = None
+    input_schema: Optional[type[Any]] = None
+    output_schema: Optional[type[Any]] = None
     cost_per_call: Decimal = field(default_factory=lambda: Decimal("0"))
     timeout_seconds: float = 30.0
     # CONTRACT v0.7 #7. False (the default) means "replay must serve

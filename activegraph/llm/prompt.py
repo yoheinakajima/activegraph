@@ -67,6 +67,12 @@ class AssembledPrompt:
     output_schema_name: Optional[str]
     output_schema_json: Optional[dict[str, Any]]
     deterministic: bool
+    # CONTRACT v1.3 #1: "native" when the runtime resolved provider-
+    # native constrained decoding for this behavior; "prompt" otherwise.
+    # Part of prompt identity — but only contributes to the hash when
+    # native (omit-when-absent, the v1.0.3 #4 pattern), so every
+    # pre-v1.3 hash stays byte-identical.
+    structured_output_mode: str = "prompt"
 
     # Source-by-source breakdown — useful for debugging and for
     # snapshot tests that target a single section.
@@ -76,7 +82,7 @@ class AssembledPrompt:
         """Canonical content used for hashing. Recorded-at timestamps,
         latencies, and other run-specific data are NOT included."""
 
-        return {
+        out: dict[str, Any] = {
             "model": self.model,
             "system": self.system,
             "messages": [m.to_dict() for m in self.messages],
@@ -87,6 +93,9 @@ class AssembledPrompt:
             "top_p": float(self.top_p),
             "deterministic": bool(self.deterministic),
         }
+        if self.structured_output_mode == "native":
+            out["structured_output_mode"] = "native"
+        return out
 
     def canonical_json(self) -> str:
         return json.dumps(
@@ -187,6 +196,7 @@ def build_system_prompt(
     frame: Optional[Frame],
     output_schema_name: Optional[str],
     output_schema_json: Optional[dict[str, Any]],
+    structured_output_mode: str = "prompt",
 ) -> str:
     """The system prompt is assembled — never hand-written by the user.
 
@@ -211,7 +221,16 @@ def build_system_prompt(
     if description:
         blocks.append(f"Role: {description}")
 
-    if output_schema_name and output_schema_json is not None:
+    if output_schema_name and structured_output_mode == "native":
+        # CONTRACT v1.3 #1 #6: native constrained decoding enforces the
+        # schema at generation time, so the schema dump, the example
+        # instance, and the v1.0.1 #2 "Return an INSTANCE" framing (a
+        # mitigation for a failure mode native mode eliminates) are
+        # omitted. One stable sentence names the expected shape.
+        blocks.append(
+            f"Respond with JSON that matches the `{output_schema_name}` schema."
+        )
+    elif output_schema_name and output_schema_json is not None:
         schema_block = json.dumps(output_schema_json, indent=2, sort_keys=True)
         example = example_instance_from_schema(output_schema_json)
         example_block = json.dumps(example, indent=2, sort_keys=True)
@@ -456,6 +475,7 @@ def assemble_prompt(
     top_p: float,
     deterministic: bool,
     prompt_template: Optional[str] = None,
+    structured_output_mode: str = "prompt",
 ) -> AssembledPrompt:
     """Assemble a prompt for one behavior invocation.
 
@@ -476,6 +496,7 @@ def assemble_prompt(
         frame=frame,
         output_schema_name=schema_name,
         output_schema_json=schema_json,
+        structured_output_mode=structured_output_mode,
     )
 
     view_block = serialize_view(view, around=around, depth=depth)
@@ -515,6 +536,7 @@ def assemble_prompt(
         output_schema_name=schema_name,
         output_schema_json=schema_json,
         deterministic=bool(deterministic),
+        structured_output_mode=structured_output_mode,
         sections={
             "system": system,
             "view": view_block,

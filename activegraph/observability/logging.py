@@ -60,19 +60,19 @@ _RESERVED_RECORD_ATTRS = frozenset(
 )
 
 
-_payload_redactor_state: dict[str, Optional[Callable[[dict], dict]]] = {
+_payload_redactor_state: dict[str, Optional[Callable[[dict[str, Any]], dict[str, Any]]]] = {
     "fn": None
 }
 
 
-def set_payload_redactor(fn: Optional[Callable[[dict], dict]]) -> None:
+def set_payload_redactor(fn: Optional[Callable[[dict[str, Any]], dict[str, Any]]]) -> None:
     """Install a redactor that runs on any payload before it enters a log
     record's ``extra`` dict. Idempotent. Pass None to remove.
     """
     _payload_redactor_state["fn"] = fn
 
 
-def redact_payload(payload: dict) -> dict:
+def redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Apply the configured redactor (or identity)."""
     fn = _payload_redactor_state["fn"]
     return fn(payload) if fn is not None else payload
@@ -171,7 +171,7 @@ def configure_logging(
     *,
     json_output: bool = True,
     stream: Any = None,
-    payload_redactor: Optional[Callable[[dict], dict]] = None,
+    payload_redactor: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None,
 ) -> logging.Logger:
     """Configure the activegraph logger hierarchy.
 

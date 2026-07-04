@@ -28,9 +28,9 @@ class PrometheusMetrics:
         client = _require_client()
         self._client = client
         self._registry = registry if registry is not None else client.REGISTRY
-        self._counters: dict[tuple, Any] = {}
-        self._histograms: dict[tuple, Any] = {}
-        self._gauges: dict[tuple, Any] = {}
+        self._counters: dict[tuple[Any, ...], Any] = {}
+        self._histograms: dict[tuple[Any, ...], Any] = {}
+        self._gauges: dict[tuple[Any, ...], Any] = {}
 
     @staticmethod
     def available() -> bool:
@@ -90,7 +90,7 @@ class PrometheusMetrics:
 
 def _require_client() -> Any:
     try:
-        import prometheus_client  # type: ignore
+        import prometheus_client
     except ImportError as e:
         from activegraph.errors import MissingOptionalDependency
         raise MissingOptionalDependency(

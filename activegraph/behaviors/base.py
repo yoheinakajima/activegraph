@@ -20,12 +20,15 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from activegraph.core.event import Event
-    from activegraph.core.graph import Graph
+    from activegraph.core.graph import Graph, Relation
     from activegraph.frame import Frame
     from activegraph.llm.prompt import AssembledPrompt
+    from activegraph.runtime.runtime import Context
 
 
-def _llm_behavior_fn_placeholder(event, graph, ctx) -> None:  # pragma: no cover
+def _llm_behavior_fn_placeholder(
+    event: "Event", graph: "Graph", ctx: "Context"
+) -> None:  # pragma: no cover
     raise RuntimeError(
         "LLMBehavior.fn invoked directly. The runtime owns LLM behavior "
         "invocation via _invoke_llm; calling .run() bypasses prompt "
@@ -35,6 +38,18 @@ def _llm_behavior_fn_placeholder(event, graph, ctx) -> None:  # pragma: no cover
 
 @dataclass
 class Behavior:
+    """Metadata plus the callable for an event-driven behavior.
+
+    A Behavior is data, not magic: ``on`` (event types), ``where``
+    (payload filter), ``pattern`` (Cypher-subset subscription),
+    ``activate_after`` (event-count delay), and ``view_spec`` (what
+    the runtime builds into ``ctx.view``) describe *when* it fires;
+    the 3-arg ``fn`` — invoked as ``fn(event, graph, ctx)`` — is
+    *what* runs. Instances come from ``@behavior`` or a pack; the
+    runtime introspects the metadata to match events, and nothing
+    here executes on its own.
+    """
+
     name: str
     fn: Callable[..., None]
     on: list[str] = field(default_factory=list)
@@ -51,12 +66,22 @@ class Behavior:
     # CONTRACT v0.7 #13. Event-count delay. None = fire immediately.
     activate_after: Optional[int] = None
 
-    def run(self, event, graph, ctx) -> None:
+    def run(self, event: "Event", graph: "Graph", ctx: "Context") -> None:
         self.fn(event, graph, ctx)
 
 
 @dataclass
 class RelationBehavior:
+    """A behavior that fires once per matching relation edge.
+
+    Same metadata surface as :class:`Behavior` plus
+    ``relation_type``: when a triggering event touches a relation of
+    that type, the 4-arg ``fn`` runs as
+    ``fn(relation, event, graph, ctx)`` — once per (event, relation)
+    pair. Deliberately not a subclass of ``Behavior``; the runtime
+    dispatches the two kinds separately.
+    """
+
     name: str
     fn: Callable[..., None]
     relation_type: str
@@ -72,7 +97,9 @@ class RelationBehavior:
     pattern_matcher: Any = None
     activate_after: Optional[int] = None
 
-    def run(self, relation, event, graph, ctx) -> None:
+    def run(
+        self, relation: "Relation", event: "Event", graph: "Graph", ctx: "Context"
+    ) -> None:
         self.fn(relation, event, graph, ctx)
 
 
@@ -98,7 +125,7 @@ class LLMBehavior(Behavior):
     # at registration time. Existing call sites that pass an explicit
     # string keep working unchanged.
     model: Optional[str] = None
-    output_schema: Optional[type] = None
+    output_schema: Optional[type[Any]] = None
     deterministic: bool = False
     max_tokens: int = 4096
     temperature: float = 0.7
@@ -106,7 +133,7 @@ class LLMBehavior(Behavior):
     timeout_seconds: float = 60.0
     prompt_template: Optional[str] = None
     # v0.7
-    tools: list = field(default_factory=list)
+    tools: list[Any] = field(default_factory=list)  # Tool | str names
     max_tool_turns: int = 6
 
     def build_prompt(
@@ -115,6 +142,7 @@ class LLMBehavior(Behavior):
         graph: "Graph",
         *,
         frame: Optional["Frame"] = None,
+        structured_output_mode: str = "prompt",
     ) -> "AssembledPrompt":
         """Assemble the prompt that would be sent for this event.
 
@@ -161,4 +189,5 @@ class LLMBehavior(Behavior):
             top_p=self.top_p,
             deterministic=self.deterministic,
             prompt_template=self.prompt_template,
+            structured_output_mode=structured_output_mode,
         )

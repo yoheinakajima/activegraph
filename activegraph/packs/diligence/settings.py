@@ -10,7 +10,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class DiligenceSettings(BaseModel):
+class DiligenceSettings(BaseModel):  # type: ignore[misc]  # BaseModel is Any under follow_imports=skip
     """Configuration for the Diligence pack.
 
     Accessed by behaviors in three forms (CONTRACT v0.9 #7):

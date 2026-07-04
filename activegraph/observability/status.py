@@ -54,6 +54,15 @@ class EventSummary:
 
 @dataclass(frozen=True)
 class RuntimeStatus:
+    """Point-in-time snapshot of a runtime for inspection surfaces.
+
+    What ``activegraph status`` renders: run id, coarse ``state``,
+    queue depth, events processed, a budget snapshot, the frame, the
+    registered behaviors, and recent events. A read-only value object
+    produced by ``Runtime.status()`` and serialized by
+    ``status_to_dict`` for ``--json`` consumers.
+    """
+
     run_id: str
     state: RuntimeState
     queue_depth: int
@@ -70,7 +79,8 @@ def status_to_dict(status: RuntimeStatus) -> dict[str, Any]:
     Used by the CLI's --json flag. Field names match the documented
     schema; nested dataclasses become nested dicts.
     """
-    return _asdict_with_tuples(status)
+    result: dict[str, Any] = _asdict_with_tuples(status)
+    return result
 
 
 def _asdict_with_tuples(obj: Any) -> Any:

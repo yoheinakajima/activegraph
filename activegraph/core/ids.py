@@ -39,7 +39,15 @@ _NUM_RE = re.compile(r"^[a-zA-Z]+_(?P<n>\d+)$")
 
 
 class IDGen:
-    """Per-graph monotonic ID generator. Not thread-safe (single-threaded loop)."""
+    """Per-graph monotonic ID generator. Not thread-safe (single-threaded loop).
+
+    Objects share one global counter prefixed by type — ``task#1``,
+    ``task#2``, ``claim#3``, not ``claim#1`` (CONTRACT #1); events,
+    relations, patches, and frames each have their own ``evt_`` /
+    ``rel_`` / ``patch_`` / ``frame_`` sequence. Replay does not call
+    this: recorded events carry their ids, which is what keeps forked
+    and reloaded runs aligned with their logs.
+    """
 
     def __init__(self) -> None:
         # CONTRACT #1: objects use a global counter prefixed by type
