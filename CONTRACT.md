@@ -7021,3 +7021,145 @@ here.
   repository executes on at least one matrix leg.** A new
   optional-dependency skip that no leg exercises is a gate
   regression, not a neutral skip.
+
+# v1.3 — quality ratchets, native structured output, community surface (cycle in progress)
+
+The first plan-first cycle after v1.2's merge-then-lock exception
+(`ROADMAP.md`, written 2026-07-03, is the scoping document). Phase 1
+(type-completeness burndown to 41/41 and docstring Wave 2 to Ring 0
+100%) executed the already-locked CONTRACT v1.1 #3 / #4 decisions and
+needed no new amendment. The sections below lock the decisions the
+cycle *does* introduce. Design-first discipline: v1.3 #1 was written
+and approved as a design document before any implementation commit,
+the v1.1 `fork --set` pattern.
+
+## v1.3 #1. Native structured-output mode
+
+Both shipped providers have used the instruction-based structured-
+output path since v0.6: schema + example instance embedded in the
+system prompt (v1.0.1 #2), response parsed by
+`parse_structured_response` (v1.0.1 #5). Provider-native constrained
+decoding was deferred twice (v1.0.1 #5 (c) clause 3; v1.1 Phase 6
+DEFERRED) pending tool-shape parity, which shipped in v1.1.0. This
+section locks the design; the implementation lands in the same PR
+series.
+
+1. **Mode is resolved, never requested per-behavior.** The
+   `@llm_behavior` surface is unchanged — the schema surface stays
+   `output_schema=` (a Pydantic model class); there is no per-behavior
+   mode parameter. For each LLM behavior the runtime resolves
+   `"native"` or `"prompt"` at registration time (alongside v1.0.2
+   #1's model resolution) as a pure function of: the runtime's opt-in
+   flag (below), the provider's declared capability, the resolved
+   model, and schema compatibility with the provider's native-mode
+   subset rules (checked offline; no network, no clock).
+2. **Opt-in in v1.3.** `Runtime(native_structured_output=False)` is
+   the additive operational lever; the default stays `False` for the
+   v1.3 cycle because native mode changes prompt hashes — flipping it
+   silently would invalidate warm LLM caches and make `replay_strict`
+   correctly reject old logs. Flipping the default is a future
+   amendment, expected after the pattern soaks (the tool-support
+   precedent). The flag is runtime-level, not decorator-level, so the
+   ROADMAP Phase 2 rule ("a provider capability, not a user-facing
+   mode switch") holds at the behavior surface.
+3. **Provider matrix.** `AnthropicProvider` uses Messages API
+   structured outputs (`output_config={"format": {"type":
+   "json_schema", "schema": ...}}`, GA — the 2025-11 `output_format`
+   + beta-header spelling is transitional and not used).
+   `OpenAIProvider` uses Chat Completions
+   `response_format={"type": "json_schema", "json_schema": {name,
+   schema, "strict": true}}`. Both gate by model-family allowlist,
+   table-driven with constructor override — the pricing-table
+   pattern. Capability is declared by an additive, `getattr`-guarded
+   provider method (`supports_native_structured_output(model)`), the
+   v1.0.2 #1 precedent: providers that pre-date it keep working at
+   every call site and resolve to prompt mode. (Known consequence,
+   same as when v1.0.2 #1 added ``recognizes_model``: the
+   runtime-checkable ``isinstance(x, LLMProvider)`` check now
+   requires the new method; the framework itself never
+   isinstance-checks providers, and the custom-provider doc shows
+   the current full surface.) `complete()` gains one keyword-only
+   parameter (`structured_output_mode`) that the runtime passes
+   **only** when native resolved — prompt-mode calls stay
+   byte-identical to v1.2.
+4. **Fallback is silent-but-audited; no new reason codes.** When
+   native is unavailable (flag off, capability absent, model outside
+   the allowlist, or schema outside the subset), the behavior uses
+   the prompt-embedded path. The resolved mode rides every
+   `llm.requested` payload for structured-output behaviors as an
+   additive `structured_output_mode` field, and a failed schema
+   pre-flight logs one debug line per behavior at registration. The
+   closed v0.6 #11 taxonomy is untouched.
+5. **The validation boundary does not move.**
+   `parse_structured_response` remains the sole boundary between raw
+   provider text and the typed downstream world. Native mode
+   constrains generation; it never replaces Pydantic validation.
+   `llm.responded` payloads, `LLMResponse.parsed`, handler arguments,
+   and cache entries are byte-identical across modes for a conforming
+   response.
+6. **Prompt assembly in native mode** omits the schema-block section
+   (schema dump, example instance, and the v1.0.1 #2 "Return an
+   INSTANCE" framing — a mitigation for a failure mode constrained
+   decoding eliminates) and emits one stable sentence naming the
+   schema. Other sections are unchanged; headers stay stable.
+7. **Replay/fixture identity rule: the mode is part of prompt
+   identity.** `_hash_turn_prompt` and the fixture canonical payload
+   gain a `structured_output_mode` field **emitted only when
+   native** (the v1.0.3 #4 omit-when-absent pattern), so every
+   existing fixture and recorded hash stays byte-identical — zero
+   migration. A record-vs-replay mode flip is a true divergence and
+   raises the existing `ReplayDivergenceError` pinned at the first
+   `llm.requested`; no new reason code, no new error class.
+   `RecordedLLMProvider` takes an explicit
+   `structured_output_mode=` constructor argument (default
+   `"prompt"`) so lookup assembly matches recording assembly.
+8. **Schema subset pre-flight.** Both native APIs require
+   `additionalProperties: false` and reject numeric/string constraint
+   keywords the framework's Pydantic schemas may carry. The
+   pre-flight is conservative: a schema qualifies only if every
+   object node already lists all properties as `required` and uses
+   only supported keywords; `additionalProperties: false` is injected
+   (a pure narrowing — extra keys were ignored by validation, never
+   produced meaning). Schemas outside the subset resolve to prompt
+   mode per #4. No schema rewriting beyond that injection — optional-
+   field-to-nullable transformations are explicitly out of scope.
+
+v1.3 #1 deliberately does NOT touch: dict-form `output_schema` (stays
+FUTURE), a new decorator or per-behavior mode parameter, the v0.6 #11
+reason-code taxonomy, Anthropic strict tool use (separate capability,
+FUTURE if wanted), streaming, or the Responses-API migration. Native-
+mode fixture seeding against live APIs is maintainer-owned (the
+standing fixture discipline; CONTRACT v1.0 #C8's spirit).
+
+## v1.3 #2. Community surface: contact channel, CODE_OF_CONDUCT, trivial-fix carve-out
+
+The v1.0.5.post1 #1 deferrals expire (ROADMAP Phase 4: the
+contribution patterns arrived — an external contributor shipped the
+v1.2 arc end-to-end, and adopters file product-grade issues).
+
+1. **The conduct contact channel is `conduct@activegraph.ai`.**
+   Domain-owned, so rotating the underlying inbox never touches the
+   published document. `CODE_OF_CONDUCT.md` ships as Contributor
+   Covenant v2.1 naming that address, plus a plainly-stated
+   single-maintainer caveat: reports are read by the maintainer, and
+   there is no independent escalation path today. The v1.1 ordering
+   rule is honored operationally: the PR that adds the document does
+   not merge until the address forwards to a staffed inbox.
+2. **Issues-first relaxes for no-behavior-change fixes.** The
+   direct-PR exemption (previously docs-only) extends to source
+   docstrings, comments, and error-message prose. The line is
+   mechanical, not editorial: no test's expected behavior changes, no
+   public signature changes, no CONTRACT.md surface touched, and the
+   CI gates stay green — a "trivial" PR that turns a gate red was not
+   trivial and gets the issue-first pointer. Enabled by CONTRACT v1.2
+   #6: every PR now runs the test suite, which is what makes the
+   carve-out safe to offer strangers.
+3. **Trusted-contributor direct-PR rights exist and are named in
+   CONTRIBUTING.md.** The criterion is demonstrated discipline: a
+   full issue → discussion → PR arc carried to merge. Inaugural
+   entry: @dudizimber (the v1.2 GraphStore/FalkorDB arc,
+   #38/#41/#43/#45 → #39/#46). The list is maintainer-curated;
+   additions are one-line PRs to CONTRIBUTING.md.
+4. **CLA / DCO stays deferred** (ROADMAP Phase 4 DEFERRED restated):
+   Apache 2.0 §5's implicit grant remains the contract at current
+   volume.

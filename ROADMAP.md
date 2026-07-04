@@ -42,6 +42,10 @@ Items that close out v1.2.0. None are code; all need the maintainer.
 
 ## Phase 1 — Quality ratchets (CONTRACT v1.1 #3 / #4, promoted from FUTURE)
 
+**Status: shipped (PR #50).** Type burndown closed 41/41 (100%);
+docstring Wave 2 closed Ring 0 at 106/106 full. Ring 1 burndown stays
+DEFERRED as marked below.
+
 Both deferrals said "after the drift-gate foundation is in place."
 The foundation shipped in v1.1.0; the deferral rationale has expired.
 
@@ -62,6 +66,14 @@ The foundation shipped in v1.1.0; the deferral rationale has expired.
   bar, not a blocker; revisit after Waves 1–2.
 
 ## Phase 2 — Native structured-output mode (promoted from FUTURE)
+
+**Status: design locked (CONTRACT v1.3 #1); implementation in the same
+PR series.** Both MUST questions below are answered there: the
+provider matrix (Anthropic ``output_config`` / OpenAI
+``response_format``, capability-gated with prompt-path fallback,
+silent-but-audited) and replay/fixture semantics (mode is part of
+prompt identity; omit-when-absent hash field; a mode flip is a true
+divergence via the existing ``ReplayDivergenceError``).
 
 The deferral said "after provider tool-shape parity lands." Parity
 shipped in v1.1.0 (OpenAI tool translation, parity tests); the
@@ -105,6 +117,12 @@ rationale has expired. Same design-first discipline as v1.1's
   the v1.1 deferral; no new evidence it blocks anyone.
 
 ## Phase 4 — Community surface (promoted from FUTURE; maintainer decisions)
+
+**Status: decided (CONTRACT v1.3 #2).** Contact channel:
+``conduct@activegraph.ai``; CODE_OF_CONDUCT.md ships with it (merge
+gated on the alias forwarding). Issues-first relaxes for
+no-behavior-change fixes, and a maintainer-curated trusted-contributor
+list starts with @dudizimber. CLA/DCO stays deferred.
 
 The deferral said "after observing actual v1.0.x contribution
 patterns." The patterns arrived: an external contributor shipped the
