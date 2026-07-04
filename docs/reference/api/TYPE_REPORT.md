@@ -9,20 +9,18 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ## Summary
 
 - Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **37 / 41 (90.2%)**
-- Dirty (one or more findings): **4** (gap to 100% target: 4 modules)
+- Clean (mypy --strict passes): **39 / 41 (95.1%)**
+- Dirty (one or more findings): **2** (gap to 100% target: 2 modules)
 
 ### Error categories (across dirty modules)
 
 - ``type-arg`` — 29 occurrence(s)
-- ``no-untyped-def`` — 22 occurrence(s)
-- ``union-attr`` — 8 occurrence(s)
-- ``no-any-return`` — 5 occurrence(s)
-- ``return-value`` — 4 occurrence(s)
-- ``unused-ignore`` — 3 occurrence(s)
+- ``no-untyped-def`` — 11 occurrence(s)
+- ``union-attr`` — 6 occurrence(s)
+- ``no-any-return`` — 4 occurrence(s)
 - ``attr-defined`` — 3 occurrence(s)
-- ``no-untyped-call`` — 2 occurrence(s)
 - ``misc`` — 2 occurrence(s)
+- ``unused-ignore`` — 2 occurrence(s)
 - ``arg-type`` — 2 occurrence(s)
 
 ## Clean modules (mypy --strict passes)
@@ -31,6 +29,7 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.behaviors.decorators``
 - [x] ``activegraph.core.clock``
 - [x] ``activegraph.core.event``
+- [x] ``activegraph.core.graph``
 - [x] ``activegraph.core.graph_store``
 - [x] ``activegraph.core.ids``
 - [x] ``activegraph.core.patch``
@@ -51,6 +50,7 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.runtime.diff``
 - [x] ``activegraph.runtime.errors``
 - [x] ``activegraph.runtime.exec_errors``
+- [x] ``activegraph.runtime.patterns``
 - [x] ``activegraph.runtime.registration_errors``
 - [x] ``activegraph.runtime.scheduler``
 - [x] ``activegraph.store.base``
@@ -67,17 +67,9 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 ## Dirty modules
 
-### ``activegraph.core.graph``
-
-- [ ] 11 error(s); categories: ``return-value`` (4), ``no-untyped-def`` (3), ``union-attr`` (2), ``unused-ignore`` (1), ``no-untyped-call`` (1)
-
 ### ``activegraph.packs``
 
 - [ ] 19 error(s); categories: ``type-arg`` (16), ``misc`` (1), ``unused-ignore`` (1), ``arg-type`` (1)
-
-### ``activegraph.runtime.patterns``
-
-- [ ] 10 error(s); categories: ``no-untyped-def`` (8), ``no-any-return`` (1), ``no-untyped-call`` (1)
 
 ### ``activegraph.runtime.runtime``
 
