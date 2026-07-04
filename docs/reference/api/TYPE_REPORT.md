@@ -9,16 +9,16 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ## Summary
 
 - Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **27 / 41 (65.9%)**
-- Dirty (one or more findings): **14** (gap to 100% target: 14 modules)
+- Clean (mypy --strict passes): **31 / 41 (75.6%)**
+- Dirty (one or more findings): **10** (gap to 100% target: 10 modules)
 
 ### Error categories (across dirty modules)
 
-- ``type-arg`` — 49 occurrence(s)
+- ``type-arg`` — 42 occurrence(s)
 - ``no-untyped-def`` — 26 occurrence(s)
-- ``unused-ignore`` — 8 occurrence(s)
 - ``union-attr`` — 8 occurrence(s)
-- ``no-any-return`` — 7 occurrence(s)
+- ``no-any-return`` — 6 occurrence(s)
+- ``unused-ignore`` — 5 occurrence(s)
 - ``return-value`` — 4 occurrence(s)
 - ``misc`` — 3 occurrence(s)
 - ``attr-defined`` — 3 occurrence(s)
@@ -36,7 +36,11 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.errors``
 - [x] ``activegraph.frame``
 - [x] ``activegraph.llm.errors``
+- [x] ``activegraph.observability.logging``
 - [x] ``activegraph.observability.metrics``
+- [x] ``activegraph.observability.otel``
+- [x] ``activegraph.observability.prometheus``
+- [x] ``activegraph.observability.status``
 - [x] ``activegraph.policy``
 - [x] ``activegraph.runtime.budget``
 - [x] ``activegraph.runtime.config_errors``
@@ -69,25 +73,9 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 - [ ] 11 error(s); categories: ``return-value`` (4), ``no-untyped-def`` (3), ``union-attr`` (2), ``unused-ignore`` (1), ``no-untyped-call`` (1)
 
-### ``activegraph.observability.logging``
-
-- [ ] 4 error(s); categories: ``type-arg`` (4)
-
 ### ``activegraph.observability.migration``
 
 - [ ] 5 error(s); categories: ``type-arg`` (3), ``no-any-return`` (1), ``no-untyped-def`` (1)
-
-### ``activegraph.observability.otel``
-
-- [ ] 2 error(s); categories: ``unused-ignore`` (2)
-
-### ``activegraph.observability.prometheus``
-
-- [ ] 4 error(s); categories: ``type-arg`` (3), ``unused-ignore`` (1)
-
-### ``activegraph.observability.status``
-
-- [ ] 1 error(s); categories: ``no-any-return`` (1)
 
 ### ``activegraph.packs``
 

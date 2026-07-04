@@ -70,7 +70,8 @@ def status_to_dict(status: RuntimeStatus) -> dict[str, Any]:
     Used by the CLI's --json flag. Field names match the documented
     schema; nested dataclasses become nested dicts.
     """
-    return _asdict_with_tuples(status)
+    result: dict[str, Any] = _asdict_with_tuples(status)
+    return result
 
 
 def _asdict_with_tuples(obj: Any) -> Any:
