@@ -15,9 +15,12 @@ parent linkage for forks, an optional label, and the original goal/frame.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Optional, Protocol
+from typing import TYPE_CHECKING, Iterable, Iterator, Optional, Protocol
 
 from activegraph.core.event import Event
+
+if TYPE_CHECKING:
+    from activegraph.core.graph import Graph
 
 
 @dataclass
@@ -53,7 +56,7 @@ class EventStore(Protocol):
     def close(self) -> None: ...
 
 
-def replay_into(graph, events: Iterable[Event]) -> int:
+def replay_into(graph: Graph, events: Iterable[Event]) -> int:
     """Apply a stream of events to a Graph without firing listeners.
 
     The single replay entry point — used by `Runtime.load` and `Runtime.fork`.

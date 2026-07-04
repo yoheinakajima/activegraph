@@ -122,7 +122,8 @@ def decode_payload(s: str) -> dict[str, Any]:
     corruption is visible at the call site that triggered the load.
     """
     try:
-        return json.loads(s)
+        decoded: dict[str, Any] = json.loads(s)
+        return decoded
     except json.JSONDecodeError as e:
         preview = s if len(s) <= 64 else s[:60] + " ..."
         raise CorruptedEventPayloadError(

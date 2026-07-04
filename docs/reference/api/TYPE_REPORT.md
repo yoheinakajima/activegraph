@@ -8,27 +8,28 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 ## Summary
 
-- Allowlist modules: **38** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **22 / 38 (57.9%)**
-- Dirty (one or more findings): **16** (gap to 100% target: 16 modules)
+- Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
+- Clean (mypy --strict passes): **27 / 41 (65.9%)**
+- Dirty (one or more findings): **14** (gap to 100% target: 14 modules)
 
 ### Error categories (across dirty modules)
 
 - ``type-arg`` — 49 occurrence(s)
-- ``no-untyped-def`` — 28 occurrence(s)
+- ``no-untyped-def`` — 26 occurrence(s)
+- ``unused-ignore`` — 8 occurrence(s)
+- ``union-attr`` — 8 occurrence(s)
 - ``no-any-return`` — 7 occurrence(s)
-- ``union-attr`` — 6 occurrence(s)
-- ``unused-ignore`` — 4 occurrence(s)
-- ``no-untyped-call`` — 4 occurrence(s)
+- ``return-value`` — 4 occurrence(s)
 - ``misc`` — 3 occurrence(s)
 - ``attr-defined`` — 3 occurrence(s)
+- ``no-untyped-call`` — 2 occurrence(s)
 - ``arg-type`` — 2 occurrence(s)
-- ``index`` — 1 occurrence(s)
 
 ## Clean modules (mypy --strict passes)
 
 - [x] ``activegraph.core.clock``
 - [x] ``activegraph.core.event``
+- [x] ``activegraph.core.graph_store``
 - [x] ``activegraph.core.ids``
 - [x] ``activegraph.core.patch``
 - [x] ``activegraph.core.view``
@@ -39,12 +40,16 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.policy``
 - [x] ``activegraph.runtime.budget``
 - [x] ``activegraph.runtime.config_errors``
+- [x] ``activegraph.runtime.diff``
 - [x] ``activegraph.runtime.errors``
 - [x] ``activegraph.runtime.exec_errors``
 - [x] ``activegraph.runtime.registration_errors``
 - [x] ``activegraph.runtime.scheduler``
+- [x] ``activegraph.store.base``
 - [x] ``activegraph.store.errors``
 - [x] ``activegraph.store.memory``
+- [x] ``activegraph.store.serde``
+- [x] ``activegraph.store.sqlite``
 - [x] ``activegraph.store.url``
 - [x] ``activegraph.tools.base``
 - [x] ``activegraph.tools.context``
@@ -62,7 +67,7 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 ### ``activegraph.core.graph``
 
-- [ ] 4 error(s); categories: ``no-untyped-def`` (2), ``unused-ignore`` (1), ``no-untyped-call`` (1)
+- [ ] 11 error(s); categories: ``return-value`` (4), ``no-untyped-def`` (3), ``union-attr`` (2), ``unused-ignore`` (1), ``no-untyped-call`` (1)
 
 ### ``activegraph.observability.logging``
 
@@ -71,6 +76,10 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ### ``activegraph.observability.migration``
 
 - [ ] 5 error(s); categories: ``type-arg`` (3), ``no-any-return`` (1), ``no-untyped-def`` (1)
+
+### ``activegraph.observability.otel``
+
+- [ ] 2 error(s); categories: ``unused-ignore`` (2)
 
 ### ``activegraph.observability.prometheus``
 
@@ -88,29 +97,17 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 - [ ] 1 error(s); categories: ``misc`` (1)
 
-### ``activegraph.runtime.diff``
-
-- [ ] 1 error(s); categories: ``index`` (1)
-
 ### ``activegraph.runtime.patterns``
 
-- [ ] 15 error(s); categories: ``no-untyped-def`` (11), ``no-untyped-call`` (3), ``no-any-return`` (1)
+- [ ] 10 error(s); categories: ``no-untyped-def`` (8), ``no-any-return`` (1), ``no-untyped-call`` (1)
 
 ### ``activegraph.runtime.runtime``
 
-- [ ] 38 error(s); categories: ``type-arg`` (13), ``no-untyped-def`` (10), ``union-attr`` (6), ``no-any-return`` (3), ``attr-defined`` (3), ``unused-ignore`` (1), ``misc`` (1), ``arg-type`` (1)
+- [ ] 40 error(s); categories: ``type-arg`` (13), ``no-untyped-def`` (11), ``union-attr`` (6), ``no-any-return`` (4), ``attr-defined`` (3), ``unused-ignore`` (1), ``misc`` (1), ``arg-type`` (1)
 
-### ``activegraph.store.base``
+### ``activegraph.store.falkordb``
 
-- [ ] 1 error(s); categories: ``no-untyped-def`` (1)
-
-### ``activegraph.store.serde``
-
-- [ ] 1 error(s); categories: ``no-any-return`` (1)
-
-### ``activegraph.store.sqlite``
-
-- [ ] 0 error(s); categories: 
+- [ ] 2 error(s); categories: ``unused-ignore`` (2)
 
 ### ``activegraph.tools.decorators``
 

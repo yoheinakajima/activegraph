@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from activegraph.core.event import Event
 from activegraph.core.graph import Graph, Object, Relation
@@ -49,7 +49,9 @@ class DivergentRelation:
 
     def summary(self) -> str:
         if self.in_parent is None:
-            r = self.in_fork
+            # A divergent relation always has at least one side; cast is a
+            # type-level assertion only, no runtime check.
+            r = cast("dict[str, Any]", self.in_fork)
             return f"{self.id} only in fork ({r['source']} --{r['type']}--> {r['target']})"
         if self.in_fork is None:
             r = self.in_parent
@@ -134,12 +136,12 @@ def compute_diff(parent: Graph, fork: Graph, parent_run_id: str, fork_run_id: st
 
 def _normalize_object(o: Object) -> dict[str, Any]:
     """Strip provenance (timestamps, run_id) so equality is structural."""
-    d = o.to_dict()
+    d: dict[str, Any] = o.to_dict()
     d.pop("provenance", None)
     return d
 
 
 def _normalize_relation(r: Relation) -> dict[str, Any]:
-    d = r.to_dict()
+    d: dict[str, Any] = r.to_dict()
     d.pop("provenance", None)
     return d
