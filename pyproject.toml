@@ -175,6 +175,8 @@ ignore_missing_imports = true
 # these and only these. CI just runs `mypy` and the config does the
 # rest.
 files = [
+    "activegraph/behaviors/base.py",
+    "activegraph/behaviors/decorators.py",
     "activegraph/core/clock.py",
     "activegraph/core/event.py",
     "activegraph/core/graph_store.py",
@@ -217,6 +219,8 @@ files = [
 
 [[tool.mypy.overrides]]
 module = [
+    "activegraph.behaviors.base",
+    "activegraph.behaviors.decorators",
     "activegraph.core.clock",
     "activegraph.core.event",
     "activegraph.core.graph_store",

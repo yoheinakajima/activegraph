@@ -20,12 +20,15 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from activegraph.core.event import Event
-    from activegraph.core.graph import Graph
+    from activegraph.core.graph import Graph, Relation
     from activegraph.frame import Frame
     from activegraph.llm.prompt import AssembledPrompt
+    from activegraph.runtime.runtime import Context
 
 
-def _llm_behavior_fn_placeholder(event, graph, ctx) -> None:  # pragma: no cover
+def _llm_behavior_fn_placeholder(
+    event: "Event", graph: "Graph", ctx: "Context"
+) -> None:  # pragma: no cover
     raise RuntimeError(
         "LLMBehavior.fn invoked directly. The runtime owns LLM behavior "
         "invocation via _invoke_llm; calling .run() bypasses prompt "
@@ -51,7 +54,7 @@ class Behavior:
     # CONTRACT v0.7 #13. Event-count delay. None = fire immediately.
     activate_after: Optional[int] = None
 
-    def run(self, event, graph, ctx) -> None:
+    def run(self, event: "Event", graph: "Graph", ctx: "Context") -> None:
         self.fn(event, graph, ctx)
 
 
@@ -72,7 +75,9 @@ class RelationBehavior:
     pattern_matcher: Any = None
     activate_after: Optional[int] = None
 
-    def run(self, relation, event, graph, ctx) -> None:
+    def run(
+        self, relation: "Relation", event: "Event", graph: "Graph", ctx: "Context"
+    ) -> None:
         self.fn(relation, event, graph, ctx)
 
 
@@ -106,7 +111,7 @@ class LLMBehavior(Behavior):
     timeout_seconds: float = 60.0
     prompt_template: Optional[str] = None
     # v0.7
-    tools: list = field(default_factory=list)
+    tools: list[Any] = field(default_factory=list)  # Tool | str names
     max_tool_turns: int = 6
 
     def build_prompt(

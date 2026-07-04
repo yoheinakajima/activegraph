@@ -9,13 +9,13 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ## Summary
 
 - Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **35 / 41 (85.4%)**
-- Dirty (one or more findings): **6** (gap to 100% target: 6 modules)
+- Clean (mypy --strict passes): **37 / 41 (90.2%)**
+- Dirty (one or more findings): **4** (gap to 100% target: 4 modules)
 
 ### Error categories (across dirty modules)
 
-- ``type-arg`` — 37 occurrence(s)
-- ``no-untyped-def`` — 25 occurrence(s)
+- ``type-arg`` — 29 occurrence(s)
+- ``no-untyped-def`` — 22 occurrence(s)
 - ``union-attr`` — 8 occurrence(s)
 - ``no-any-return`` — 5 occurrence(s)
 - ``return-value`` — 4 occurrence(s)
@@ -27,6 +27,8 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 ## Clean modules (mypy --strict passes)
 
+- [x] ``activegraph.behaviors.base``
+- [x] ``activegraph.behaviors.decorators``
 - [x] ``activegraph.core.clock``
 - [x] ``activegraph.core.event``
 - [x] ``activegraph.core.graph_store``
@@ -64,14 +66,6 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.tools.errors``
 
 ## Dirty modules
-
-### ``activegraph.behaviors.base``
-
-- [ ] 4 error(s); categories: ``no-untyped-def`` (3), ``type-arg`` (1)
-
-### ``activegraph.behaviors.decorators``
-
-- [ ] 7 error(s); categories: ``type-arg`` (7)
 
 ### ``activegraph.core.graph``
 
