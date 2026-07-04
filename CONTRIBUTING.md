@@ -22,15 +22,25 @@ Active Graph uses an **issues-first** policy:
 - **Code pull requests are maintainer-only by default.** The
   abstractions are still settling (twelve milestones of audit
   discipline against a stable surface; the surface is now the
-  contract). External code PRs are accepted only after an issue
-  discussion has agreed on the change's shape. Drive-by code
-  PRs that bypass the issue-first gate will be closed with a
-  pointer back to this document.
-- **Documentation PRs may be opened directly.** Typo fixes,
-  example improvements, doc clarifications, and broken-link fixes
-  do not need an issue first. The doc-site source is under
-  [`docs/`](docs/); the docs build is gated by `mkdocs build` plus
-  the link-coverage gate in `tests/test_doc_links.py`.
+  contract). External code PRs other than the trivial-fix class
+  below are accepted only after an issue discussion has agreed on
+  the change's shape. Drive-by code PRs that bypass the
+  issue-first gate will be closed with a pointer back to this
+  document. Contributors who have carried a full issue →
+  discussion → PR arc to merge may be granted direct-PR rights by
+  the maintainer, named here (CONTRACT v1.3 #2):
+  - [@dudizimber](https://github.com/dudizimber) (the GraphStore /
+    FalkorDB arc: issues #38/#41/#43/#45 → PRs #39/#46, v1.2.0)
+- **Documentation and trivial-fix PRs may be opened directly.**
+  Typo fixes, example improvements, doc clarifications, and
+  broken-link fixes do not need an issue first — whether they live
+  under [`docs/`](docs/) or in source docstrings, comments, and
+  error-message prose. The test for "trivial" is mechanical, not
+  editorial: no test's expected behavior changes, no public
+  signature changes, no [`CONTRACT.md`](CONTRACT.md) surface is
+  touched. The CI gates (pytest, mypy, docstrings, docs build)
+  apply as always — a "trivial" PR that turns a gate red was not
+  trivial, and gets the issue-first pointer.
 
 The policy is a pre-launch posture, not a permanent stance. It
 exists to preserve the contract-amendment discipline that produced
@@ -109,20 +119,22 @@ and tracked for a future revisit (see CONTRACT v1.0.5.post1 #1's
   is the contract today. If contribution volume grows past the
   maintainer-review bandwidth, or if enterprise legal desks
   request the ceremony, the CLA-vs-DCO decision lands then.
-- **No `CODE_OF_CONDUCT.md`.** Contributor Covenant v2.1 is the
-  standard text, but the contact channel that the code of conduct
-  must name for reports is not yet established. The document and
-  the inbox land together in a future pass; carrying one without
-  the other would publish a hollow reporting commitment.
-- **Broader contributor surface.** The maintainer-only-code-PRs
-  posture is a pre-launch stance. It relaxes when contribution
-  patterns are observable enough to inform a calibrated
-  broadening — likely first as a trusted-contributor list with
-  direct-PR rights, then more broadly.
+- ~~No `CODE_OF_CONDUCT.md`.~~ **Shipped (CONTRACT v1.3 #2):**
+  [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) is Contributor
+  Covenant v2.1 with `conduct@activegraph.ai` as the reporting
+  channel, honoring the original ordering rule — the document and
+  the inbox landed together.
+- **Broader contributor surface — first relaxation shipped
+  (CONTRACT v1.3 #2).** The trivial-fix carve-out and the
+  trusted-contributor list above are the calibrated broadening
+  this bullet promised. Further relaxation waits on more observed
+  contribution patterns.
 
 ## Reaching the maintainers
 
-For now, file an issue. There is no maintainer email or chat
-channel; the issues surface is the contact channel. When the
-community-management tooling lands, additional contact channels
-land with it.
+For project matters, file an issue — the issues surface is the
+contact channel. For conduct reports, use `conduct@activegraph.ai`
+per [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md); conduct reports are
+the one category that should never go through the public issue
+tracker. When the community-management tooling lands, additional
+contact channels land with it.
