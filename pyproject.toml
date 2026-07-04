@@ -151,9 +151,10 @@ markers = [
 # it to both `files` and the per-module override below. The gate then
 # enforces the new module's strict-mode invariants going forward.
 #
-# Current baseline (v1.0-rc1 #3/5): 22/38 allowlist modules pass
-# (57.9%). The 16 dirty modules are tracked in TYPE_REPORT.md and the
-# v1.1 type-completeness follow-on closes them in one PR series.
+# Current baseline (v1.3 Phase 1): 41/41 allowlist modules pass
+# (100%). The burndown that closed the original 16-module gap is the
+# CONTRACT v1.1 #3 follow-on, landed as the v1.3 Phase 1 PR series;
+# TYPE_REPORT.md tracks the audit state.
 
 [tool.mypy]
 python_version = "3.11"
@@ -162,8 +163,8 @@ python_version = "3.11"
 # rather than checking them — the gate's purpose is preventing
 # regression on the allowlist, not retroactively typing internals.
 # This means strict-mode checks pass even when a clean module
-# imports from a dirty one; the v1.1 follow-on closes the dirty
-# modules and they become Any-free imports.
+# imports from a module outside the allowlist (those imports stay
+# Any); every allowlist module is now in the strict set.
 follow_imports = "skip"
 # Optional-dep imports (anthropic, psycopg, prometheus_client) don't
 # ship type stubs; treat them as untyped at the boundary. Strict-mode
@@ -203,6 +204,7 @@ files = [
     "activegraph/runtime/diff.py",
     "activegraph/runtime/patterns.py",
     "activegraph/runtime/registration_errors.py",
+    "activegraph/runtime/runtime.py",
     "activegraph/runtime/scheduler.py",
     "activegraph/store/base.py",
     "activegraph/store/errors.py",
@@ -250,6 +252,7 @@ module = [
     "activegraph.runtime.diff",
     "activegraph.runtime.patterns",
     "activegraph.runtime.registration_errors",
+    "activegraph.runtime.runtime",
     "activegraph.runtime.scheduler",
     "activegraph.store.base",
     "activegraph.store.errors",

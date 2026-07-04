@@ -23,8 +23,8 @@ class Tool:
     name: str
     fn: Callable[..., Any]
     description: str = ""
-    input_schema: Optional[type] = None
-    output_schema: Optional[type] = None
+    input_schema: Optional[type[Any]] = None
+    output_schema: Optional[type[Any]] = None
     cost_per_call: Decimal = field(default_factory=lambda: Decimal("0"))
     timeout_seconds: float = 30.0
     # CONTRACT v0.7 #7. False (the default) means "replay must serve

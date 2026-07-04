@@ -103,7 +103,7 @@ class LLMBehavior(Behavior):
     # at registration time. Existing call sites that pass an explicit
     # string keep working unchanged.
     model: Optional[str] = None
-    output_schema: Optional[type] = None
+    output_schema: Optional[type[Any]] = None
     deterministic: bool = False
     max_tokens: int = 4096
     temperature: float = 0.7

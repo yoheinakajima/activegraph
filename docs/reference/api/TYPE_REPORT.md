@@ -9,19 +9,8 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ## Summary
 
 - Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **40 / 41 (97.6%)**
-- Dirty (one or more findings): **1** (gap to 100% target: 1 modules)
-
-### Error categories (across dirty modules)
-
-- ``type-arg`` — 13 occurrence(s)
-- ``no-untyped-def`` — 11 occurrence(s)
-- ``union-attr`` — 6 occurrence(s)
-- ``no-any-return`` — 4 occurrence(s)
-- ``attr-defined`` — 3 occurrence(s)
-- ``unused-ignore`` — 1 occurrence(s)
-- ``misc`` — 1 occurrence(s)
-- ``arg-type`` — 1 occurrence(s)
+- Clean (mypy --strict passes): **41 / 41 (100.0%)**
+- Dirty (one or more findings): **0** (gap to 100% target: 0 modules)
 
 ## Clean modules (mypy --strict passes)
 
@@ -53,6 +42,7 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.runtime.exec_errors``
 - [x] ``activegraph.runtime.patterns``
 - [x] ``activegraph.runtime.registration_errors``
+- [x] ``activegraph.runtime.runtime``
 - [x] ``activegraph.runtime.scheduler``
 - [x] ``activegraph.store.base``
 - [x] ``activegraph.store.errors``
@@ -68,7 +58,4 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 ## Dirty modules
 
-### ``activegraph.runtime.runtime``
-
-- [ ] 40 error(s); categories: ``type-arg`` (13), ``no-untyped-def`` (11), ``union-attr`` (6), ``no-any-return`` (4), ``attr-defined`` (3), ``unused-ignore`` (1), ``misc`` (1), ``arg-type`` (1)
-
+(none)
