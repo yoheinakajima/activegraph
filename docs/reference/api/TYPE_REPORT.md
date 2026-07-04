@@ -9,19 +9,19 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 ## Summary
 
 - Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **39 / 41 (95.1%)**
-- Dirty (one or more findings): **2** (gap to 100% target: 2 modules)
+- Clean (mypy --strict passes): **40 / 41 (97.6%)**
+- Dirty (one or more findings): **1** (gap to 100% target: 1 modules)
 
 ### Error categories (across dirty modules)
 
-- ``type-arg`` — 29 occurrence(s)
+- ``type-arg`` — 13 occurrence(s)
 - ``no-untyped-def`` — 11 occurrence(s)
 - ``union-attr`` — 6 occurrence(s)
 - ``no-any-return`` — 4 occurrence(s)
 - ``attr-defined`` — 3 occurrence(s)
-- ``misc`` — 2 occurrence(s)
-- ``unused-ignore`` — 2 occurrence(s)
-- ``arg-type`` — 2 occurrence(s)
+- ``unused-ignore`` — 1 occurrence(s)
+- ``misc`` — 1 occurrence(s)
+- ``arg-type`` — 1 occurrence(s)
 
 ## Clean modules (mypy --strict passes)
 
@@ -43,6 +43,7 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.observability.otel``
 - [x] ``activegraph.observability.prometheus``
 - [x] ``activegraph.observability.status``
+- [x] ``activegraph.packs``
 - [x] ``activegraph.packs.diligence.settings``
 - [x] ``activegraph.policy``
 - [x] ``activegraph.runtime.budget``
@@ -66,10 +67,6 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.tools.errors``
 
 ## Dirty modules
-
-### ``activegraph.packs``
-
-- [ ] 19 error(s); categories: ``type-arg`` (16), ``misc`` (1), ``unused-ignore`` (1), ``arg-type`` (1)
 
 ### ``activegraph.runtime.runtime``
 

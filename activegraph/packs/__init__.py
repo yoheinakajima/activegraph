@@ -363,7 +363,7 @@ class PackPromptLoadError(RegistrationError, PackError):
 # ----------------------------------------------------- value objects (frozen)
 
 
-class EmptySettings(BaseModel):
+class EmptySettings(BaseModel):  # type: ignore[misc]  # BaseModel is Any under follow_imports=skip
     """For packs with no configurable settings. Pydantic model so it
     matches the rest of the settings API.
     """
@@ -541,12 +541,12 @@ class Pack:
     name: str
     version: str
     description: str = ""
-    object_types: tuple = ()
-    relation_types: tuple = ()
-    behaviors: tuple = ()
-    tools: tuple = ()
-    policies: tuple = ()
-    prompts: tuple = ()
+    object_types: tuple[Any, ...] = ()
+    relation_types: tuple[Any, ...] = ()
+    behaviors: tuple[Any, ...] = ()
+    tools: tuple[Any, ...] = ()
+    policies: tuple[Any, ...] = ()
+    prompts: tuple[Any, ...] = ()
     settings_schema: type = EmptySettings
 
     def __post_init__(self) -> None:
@@ -653,7 +653,7 @@ def behavior(
     *,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-) -> Callable[[Callable], Behavior]:
+) -> Callable[[Callable[..., None]], Behavior]:
     """Pack-aware `@behavior`. Does not register globally."""
 
     from activegraph.runtime.patterns import parse as _parse_pattern
@@ -666,7 +666,7 @@ def behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> Behavior:
+    def wrap(fn: Callable[..., None]) -> Behavior:
         b = Behavior(
             name=name or fn.__name__,
             fn=fn,
@@ -714,9 +714,9 @@ def llm_behavior(
     priority: int = 0,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-    tools: Optional[list] = None,
+    tools: Optional[list[Any]] = None,
     max_tool_turns: int = 6,
-) -> Callable[[Callable], LLMBehavior]:
+) -> Callable[[Callable[..., None]], LLMBehavior]:
     """Pack-aware `@llm_behavior`. Does not register globally."""
 
     from activegraph.runtime.patterns import parse as _parse_pattern
@@ -729,7 +729,7 @@ def llm_behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> LLMBehavior:
+    def wrap(fn: Callable[..., None]) -> LLMBehavior:
         b = LLMBehavior(
             name=name or fn.__name__,
             fn=_llm_behavior_fn_placeholder,
@@ -780,7 +780,7 @@ def relation_behavior(
     *,
     pattern: Optional[str] = None,
     activate_after: Any = None,
-) -> Callable[[Callable], RelationBehavior]:
+) -> Callable[[Callable[..., None]], RelationBehavior]:
     """Pack-aware `@relation_behavior`. Does not register globally."""
 
     from activegraph.runtime.patterns import parse as _parse_pattern
@@ -793,7 +793,7 @@ def relation_behavior(
     if activate_after is not None:
         delay_n = _parse_aa(activate_after)
 
-    def wrap(fn: Callable) -> RelationBehavior:
+    def wrap(fn: Callable[..., None]) -> RelationBehavior:
         rb = RelationBehavior(
             name=name or fn.__name__,
             fn=fn,
@@ -829,7 +829,7 @@ def tool(
     timeout_seconds: float = 30.0,
     deterministic: bool = False,
     export_globally: bool = False,
-) -> Callable[[Callable], Tool]:
+) -> Callable[[Callable[..., Any]], Tool]:
     """Pack-aware `@tool`. Does not register globally.
 
     `export_globally=True` opts the tool into BOTH the pack-scoped
@@ -838,7 +838,7 @@ def tool(
     """
     from decimal import Decimal
 
-    def wrap(fn: Callable) -> Tool:
+    def wrap(fn: Callable[..., Any]) -> Tool:
         t = Tool(
             name=name or fn.__name__,
             fn=fn,
@@ -894,7 +894,7 @@ def discover() -> tuple[DiscoveredPack, ...]:
     try:
         selected = eps.select(group="activegraph.packs")
     except AttributeError:  # pragma: no cover — pre-3.10 fallback
-        selected = eps.get("activegraph.packs", [])  # type: ignore[union-attr]
+        selected = eps.get("activegraph.packs", [])  # type: ignore[arg-type]
 
     for ep in selected:
         try:
@@ -967,7 +967,7 @@ class PendingApproval:
     id: str
     kind: str
     object_type: str
-    data: dict
+    data: dict[str, Any]
     reason: str
     pack: str  # the pack whose policy gated this
 
