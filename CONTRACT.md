@@ -7479,6 +7479,46 @@ carries the reasoning, this entry locks the deltas and boundaries:
    trials plus cross-store promote remain the follow-on design if
    consumers need hard separation.
 
+Post-release addendum (v1.7, closing the gap the first consumer
+flagged): **1b. `extra_packs` — cross-pack interaction trials,
+opt-in.** The default is and stays candidate-only isolation: the
+child loads nothing but the candidate. `run_forked_trial(...,
+extra_packs=(PackSource(...), ...))` is the sanctioned path for
+loading additional trusted packs into the child: each entry is
+materialized by the IDENTICAL chain the candidate goes through
+(bundle hash before import, manifest schema, two-way surface check —
+no trust shortcut) and loaded, in order, before the candidate; any
+extra pack failing a pin is `materialization_failed` for the whole
+trial. The scenario still resolves inside the candidate's root only.
+Pinned by `test_extra_packs_enable_cross_pack_interaction_trials`
+and `test_extra_pack_bundle_mismatch_fails_materialization`.
+
+Post-release addendum (v1.7, a downstream soak surfaced two defects):
+**1c. Environment and code location are two separate channels, and
+the child never swallows its own startup failure.** (i) The env
+allow-list stays CLOSED and is a security control: only `PATH`,
+`HOME`, `LANG`, plus explicit `env_passthrough`, cross into the
+child — no ambient parent env (secrets, platform vars like
+`REPLIT_*`). (ii) Code location is an EXPLICIT channel, not an
+ambient one: the child's `PYTHONPATH` is COMPUTED by the parent from
+its own resolved `sys.path` (the `activegraph.__file__` root first,
+then real `sys.path` dirs), never forwarded from ambient env, so the
+child imports the same code the parent can on any platform —
+including those (Replit, Nix) whose package discovery the allow-list
+correctly strips — without the allow-list widening. Code locations
+are not secrets; this fixes the restricted-env break without eroding
+the boundary. (iii) The child's stderr is PIPED, never `DEVNULL`: a
+crash before it can write its report tail (module-import failure,
+rlimit setup) folds its real cause into `TrialReport.detail` rather
+than reporting an opaque "exited N with no report tail". (iv)
+`preflight()` spawns a null-job child to verify a child can START
+under the sandbox env and raises `SandboxStartupError` with the
+cause if not, so consumers fail loud at boot. Pinned by
+`test_child_import_crash_surfaces_the_cause_in_detail`,
+`test_preflight_fails_loud_with_the_cause_on_a_restricted_env`,
+`test_explicit_code_channel_rescues_a_restricted_child`, and
+`test_env_allow_list_stays_closed_secrets_do_not_leak`.
+
 ## v1.5 #2. Compaction phase 1: snapshot + archive tier + the pin set
 
 Implements phase 1 of `compaction-design.md`. The design doc carries
@@ -7527,6 +7567,30 @@ the reasoning; this entry locks what shipped and where phase 1 stops:
    grained compaction of parents with live children (cutoff above
    the child's fork point) is a design call deliberately not made
    here: phase 1 refuses the whole operation instead.
+
+Post-release ruling (v1.6.x, downstream consumer confirm-request):
+**2b. The offline rule is per-RUN, not per-file.** "No runtime
+attached" means no live runtime attached to the run the operation
+touches; other runs in the same store file may hold live runtimes
+throughout. Grounds, from the implementation: every event-row
+statement is scoped `WHERE run_id = ?`; the store runs in WAL mode
+(retention's readers never block a live run's writer or see torn
+state); a live runtime appends via single-statement autocommit
+transactions and never re-reads its own log mid-dispatch; the
+archive move is one short `BEGIN IMMEDIATE` transaction a contending
+writer waits out (sqlite3's default busy timeout — exhausted, it
+raises `OperationalError`, never corrupting). What the rule protects
+against is the SAME-run case, verified empirically: a runtime
+attached to a run being compacted mints the snapshot event's id
+itself (`UNIQUE(id, run_id)` → `IntegrityError`) and its projection
+never learns the horizon exists. Two caveats stay the caller's:
+`pins` → archive is check-then-act, so no pin-creating operation
+(promote from the run, fork of it) may race the retirement of that
+run — retire after decisions are final (a lost race degrades audit
+walks but destroys no bytes; archiving is a move); and a very large
+run's archive move can hold the write lock past a concurrent
+writer's busy timeout (`OperationalError`, not corruption). Pinned
+by `tests/test_compaction.py::test_retire_fork_per_run_while_parent_runtime_is_live`.
 
 # v1.6 — closing-the-loop cycle (in progress)
 

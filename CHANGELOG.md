@@ -13,6 +13,85 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [v1.7.0] — 2026-07-08
+
+The sandbox-hardening release: cross-pack trials become expressible,
+and a downstream Replit soak's two trial-child defects are fixed —
+both additive, both in `activegraph.sandbox`. Everything additive on
+1.6.0; packs pinned `>=1.6,<2.0` (and `>=1.5,<2.0`) keep working
+unchanged.
+
+### Migration
+
+No breaking changes. One behavioral refinement in the trial sandbox:
+the child's environment allow-list is now `PATH`/`HOME`/`LANG` (plus
+explicit `env_passthrough`) and its `PYTHONPATH` is COMPUTED by the
+parent from its own `sys.path` rather than forwarded from ambient
+env. A trial that relied on an ambient `PYTHONPATH` reaching the
+child should name it in `env_passthrough` — but in practice the
+computed channel is a superset of what the child could import
+before, so trials that worked keep working, and trials that broke on
+restricted platforms (Replit/Nix) now start. New `preflight()` lets
+consumers verify a child can start at boot.
+
+### Added
+
+- **`extra_packs` on `run_forked_trial`: cross-pack interaction
+  trials, opt-in** (CONTRACT v1.5 #1 addendum 1b — the gap the first
+  consumer flagged). The default is and stays candidate-only
+  isolation: the child loads nothing but the candidate. Each
+  `extra_packs` entry is a `PackSource` materialized in the child by
+  the identical chain the candidate goes through (bundle hash before
+  import, manifest schema, two-way surface check — no trust
+  shortcut) and loaded, in order, before the candidate; any extra
+  pack failing a pin is `materialization_failed` for the whole
+  trial. Scenario resolution stays inside the candidate's root.
+  Loading-scope statement + consumer-endorsed patterns
+  (pinned-driver scenario, marker-object sweep) added to
+  `trial-isolation-design.md` §2b/§2c.
+- **`sandbox.preflight()` + explicit code-path channel** (CONTRACT
+  v1.5 #1 addendum 1c, from the Replit soak). The trial child's
+  `PYTHONPATH` is now computed by the parent from its own resolved
+  `sys.path` (`activegraph.__file__`'s root first, then real
+  `sys.path` dirs) and passed as an explicit channel — so a child
+  can import `activegraph` and its deps on any box where the parent
+  could, including platforms (Replit, Nix) whose package discovery
+  the env allow-list correctly strips. The allow-list itself stays
+  closed (a security control): code locations are not secrets, so
+  the computed channel widens nothing it protects. `preflight()`
+  spawns a null-job child to verify startup end to end and raises
+  `SandboxStartupError` with the cause if a child cannot start.
+
+### Fixed
+
+- **Trial child stderr is no longer discarded** (CONTRACT v1.5 #1
+  addendum 1c, from the Replit soak). The child was spawned with
+  `stderr=subprocess.DEVNULL`, so any crash before it could write
+  its report tail — a module-import failure, rlimit setup, anything
+  pre-`main` — surfaced as an opaque `crashed` with
+  "exited N with no report tail" and the real exception gone. The
+  pre-execution gate must never swallow its own failure cause:
+  stderr is now PIPED and, on a crashed/no-tail exit, its tail is
+  folded into `TrialReport.detail`. A child that dies importing
+  `activegraph` now reports the `ModuleNotFoundError`, not an opaque
+  string.
+
+### Documentation
+
+- **Retention's offline contract ruled per-RUN, not per-file**
+  (CONTRACT v1.5 #2 addendum 2b, a downstream confirm-request).
+  Retiring a finished fork while the parent run holds a live runtime
+  on the same SQLite file is sanctioned — WAL + `run_id`-scoped
+  statements + single-statement autocommit appends + one short
+  `BEGIN IMMEDIATE` archive transaction; the rule protects against
+  the SAME-run case (verified: `compact` under an attached runtime
+  collides on `UNIQUE(id, run_id)`). Caveats stated in the
+  docstrings: `pins` → archive is check-then-act (don't race
+  pin-creating operations against retirement of that run), and an
+  oversized archive move can outlast a concurrent writer's busy
+  timeout (`OperationalError`, never corruption). Regression test
+  `test_retire_fork_per_run_while_parent_runtime_is_live`.
+
 ## [v1.6.0] — 2026-07-08
 
 The closing-the-loop release: two downstream-facing confirmations

@@ -150,6 +150,62 @@ Notes that make this correct rather than merely plausible:
   run in a fresh interpreter; the executable proof is
   `tests/test_sandbox_trial.py::test_recorded_segment_replay_inside_the_trial`.
 
+Two patterns from the first production consumer (the evolution
+pack's stage 3), endorsed here so the next consumer copies them:
+
+- **Ship the replay driver inside the authored file set, pinned.**
+  `scenario` resolves inside the bundle-hashed pack root, which
+  means a chassis-owned driver either breaks the pin or escapes via
+  `..`. The consumer's resolution — authors include the driver file
+  (their `fixtures/trial_scenario.py`) verbatim in the pack, with a
+  gate refusing any proposal whose copy differs byte for byte — is
+  **stronger than an out-of-root scenario parameter would be**, and
+  is the recommended pattern: the replay types, the held-out
+  fraction, the whole evaluation protocol freeze at proposal
+  creation under the same bundle hash the owner later approves.
+  Nothing about the evaluation can drift between proposal and
+  approval. An out-of-root `scenario_source` escape hatch remains
+  unbuilt on these grounds.
+- **Write trial results as ordinary fork objects; let the parent
+  sweep them.** The driver records its verdicts (in-sample /
+  held-out / sweep counts) as untyped marker objects (e.g.
+  `trial_stage_result`) in the fork; after the child exits, the
+  parent reads them from the store, converts them into its own audit
+  objects, and *removes them in the fork* — so by addendum 4d
+  (fork-tail removals are ordinary events) they vanish from the
+  promote delta and the markers never leak into adopted state. "The
+  store is the record" needs no side channel, and the delta stays
+  clean.
+
+## 2c. Loading scope: candidate-only by default, `extra_packs` to opt in
+
+**The default is candidate-only isolation.** The child loads
+NOTHING but the candidate (`Runtime.load(behaviors=[])` +
+`load_pack(candidate)`): recorded-segment replay exercises the
+candidate apart from every other pack's behaviors, which is the
+right null hypothesis for a candidate-only comparator and is why
+the worked example above needs no other pack present.
+
+For **cross-pack interaction trials**, `extra_packs` (v1.7,
+CONTRACT v1.5 #1 addendum 1b) is the sanctioned opt-in:
+
+```python
+report = run_forked_trial(
+    ...,
+    pack_source=PackSource(root_dir=candidate, expected_bundle_hash=...),
+    extra_packs=(
+        PackSource(root_dir=trusted_root, expected_bundle_hash=...),
+    ),
+)
+```
+
+Each entry is materialized in the child by the identical chain the
+candidate goes through — bundle hash verified BEFORE import,
+manifest schema, two-way surface check — and loaded, in order,
+before the candidate. There is no trust shortcut: an extra pack
+failing any pin is `materialization_failed` for the whole trial.
+The scenario still resolves inside the candidate's root only.
+
 ## 3. Artifact-materialization contract
 
 The child cannot receive a `Pack` object (it is code; pickling
@@ -221,6 +277,31 @@ store resolves in favor of the store.
   child's environment has made a choice the runtime cannot unmake.
   The helper never forwards the parent's environment wholesale
   (explicit allow-list env pass-through, default empty).
+- **Environment vs. code location are two separate channels** (v1.7,
+  the Replit soak fix). The env allow-list — `PATH`, `HOME`, `LANG`,
+  plus explicit `env_passthrough` — is a *security* control and
+  stays closed: no ambient parent env (secrets, API keys, platform
+  vars like `REPLIT_*`) crosses into a child running hostile code.
+  But a child must still be able to import `activegraph` and its
+  deps, and on some platforms (Replit, Nix) the package is
+  discoverable only via a platform env var the allow-list correctly
+  strips — so a naive child dies at import before it can do anything.
+  The resolution keeps the boundary closed and makes code discovery
+  an *explicit* input instead of an ambient one: the parent resolves
+  the `sys.path` entries that make its OWN code importable
+  (`activegraph.__file__`'s root first, then its real `sys.path`
+  dirs) and passes them to the child as a computed `PYTHONPATH`.
+  Code locations are not secrets; a computed `PYTHONPATH` widens
+  nothing that the env allow-list protects. The child can therefore
+  import `activegraph` on any box where the parent could, without
+  the allow-list growing a single entry. `preflight()` spawns a
+  null-job child to verify this end to end at boot, so a broken
+  sandbox env fails loud instead of surfacing as an opaque `crashed`
+  on the first real trial. Relatedly, the child's stderr is PIPED,
+  never `DEVNULL`: a crash before the child can write its report
+  tail (import failure, rlimit setup) carries its real cause back
+  into `TrialReport.detail` — the pre-execution gate must never
+  swallow its own failure cause.
 - **Windows**: rlimits are POSIX; on Windows the memory/CPU nets
   degrade to wall-clock + budgets, stated in the API docs rather
   than emulated badly.

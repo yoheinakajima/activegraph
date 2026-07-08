@@ -62,11 +62,15 @@ def _apply_rlimits(limits: dict[str, Any]) -> None:
 
 
 def _materialize_pack(job: dict[str, Any]) -> Any:
-    """Verify pins, then import the candidate and return its Pack.
+    """Verify pins, then import one pack source and return its Pack.
 
-    Order is the design's §3: bundle hash BEFORE any import (the pin
-    covers manifest.toml per the v1.4 amendment), then manifest schema,
-    then import, then the two-way surface check against the live Pack.
+    ``job`` carries ``pack_root`` / ``expected_bundle_hash`` /
+    ``manifest_required`` — the top-level job spec for the candidate,
+    or one ``extra_packs`` entry (v1.7 addendum 1b), which uses the
+    identical chain. Order is the design's §3: bundle hash BEFORE any
+    import (the pin covers manifest.toml per the v1.4 amendment),
+    then manifest schema, then import, then the two-way surface check
+    against the live Pack.
     """
     from activegraph.packs import Pack
     from activegraph.packs.manifest import (
@@ -133,6 +137,16 @@ def _resolve_scenario(
 
 def main() -> None:
     job = json.loads(sys.stdin.read())
+
+    # Preflight (v1.7): a null job that only proves the child could
+    # START — i.e. that importing activegraph under the sandbox env
+    # succeeded, which happens before this function even runs. Reaching
+    # here at all means the heavy import chain worked; echo the marker
+    # and exit clean. No fork, no store, no candidate touched.
+    if job.get("preflight"):
+        print(json.dumps({"preflight": "ok"}), flush=True)
+        raise SystemExit(0)
+
     fork_run_id = str(job["fork_run_id"])
     initial = int(job.get("initial_events", 0))
     _apply_rlimits(job.get("limits", {}))
@@ -144,6 +158,9 @@ def main() -> None:
         )
 
     try:
+        # Extra packs first (addendum 1b): each pinned and verified
+        # exactly like the candidate, loaded before it below.
+        extra = [_materialize_pack(p) for p in job.get("extra_packs", [])]
         pack = _materialize_pack(job)
     except Exception as e:  # noqa: BLE001 — outcome, not crash
         _report(
@@ -174,6 +191,8 @@ def main() -> None:
         behaviors=[],
         budget=budget or None,
     )
+    for trusted in extra:
+        rt.load_pack(trusted)
     rt.load_pack(pack)
 
     try:

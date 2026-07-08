@@ -2,7 +2,7 @@
 
 CONTRACT v1.5 #2, phase 1 of ``compaction-design.md``. Three offline
 operations over a SQLite store (no self-compaction under a live
-dispatcher — run these against a store no runtime is attached to):
+dispatcher — run these against runs no runtime is attached to):
 
   * :func:`compact` — emit a ``runtime.snapshot`` event capturing the
     run's projected state, store the blob in the snapshot sidecar,
@@ -26,6 +26,40 @@ horizon stop at it); there is no CLI yet; and patch records from the
 archived prefix are not reconstructed after compaction (``compact``
 refuses runs with patches still in ``proposed`` status, and applied/
 rejected patch history remains queryable via the archive).
+
+**What "offline" means — the attachment rule is per-RUN, not
+per-file** (v1.6.x ruling; CONTRACT v1.5 #2 addendum 2b). These
+operations must not run against a run that has a live runtime
+attached; OTHER runs in the same store file may hold live runtimes
+throughout. Why that is safe, from the implementation: every event-
+row statement is scoped ``WHERE run_id = ?``; the store runs in WAL
+mode, so the readers these functions open never block a live run's
+writer and never see torn state; a live runtime appends via single-
+statement autocommit transactions and never re-reads its own log
+mid-dispatch; and the archive move is one short ``BEGIN IMMEDIATE``
+transaction that a contending writer simply waits out (sqlite3's
+default 5-second busy timeout — exhausted, it raises
+``OperationalError``, never corrupting). What per-run attachment
+actually protects against is the SAME-run case: a runtime attached
+to the run being compacted mints the same event id as the snapshot
+event (``UNIQUE(id, run_id)`` — ``IntegrityError``) and never learns
+the horizon exists; a runtime attached to a run being retired would
+keep appending to a log the operator believes empty.
+
+Two caveats stay the caller's responsibility:
+
+  * ``pins`` → archive is check-then-act, not one atomic unit. Do
+    not race a pin-creating operation against retirement of the
+    same run — a promote from the fork, or a new fork of it, landing
+    between the pin check and the archive move would be archived-
+    while-pinned. Retire after decisions on that run are final. (A
+    lost race degrades audit walks — ``causal_chain`` does not read
+    the archive — but destroys no bytes: archiving is a move, and
+    the rows stay readable via ``iter_archived``.)
+  * A very large run's archive move holds the write lock for the
+    duration of its one transaction; a concurrent writer that
+    exhausts its busy timeout gets ``OperationalError``, not
+    corruption. Size housekeeping windows accordingly.
 """
 
 from __future__ import annotations
@@ -148,6 +182,10 @@ def pins(path: str, run_id: str) -> list[str]:
     Empty list = unpinned. The same computation the refusals in
     :func:`compact` / :func:`retire` run — design §5's "why can't I
     retire this run?" API.
+
+    Read-only, safe to call while any run in the file holds a live
+    runtime (WAL readers never block or tear). The answer is
+    point-in-time: a pin created after it returns is not in it.
     """
     reasons: list[str] = []
     store = SQLiteEventStore(path, run_id=run_id)
@@ -220,8 +258,12 @@ def compact(path: str, run_id: str) -> str:
     design's crash-safe one: snapshot event, then blob, then the
     archive move (idempotent). Returns the snapshot event id.
 
-    Offline operation: run against a store no live runtime is
-    attached to.
+    Offline operation, per-RUN: no live runtime may be attached to
+    ``run_id`` itself — the snapshot event would collide with the
+    ids a live runtime mints (``UNIQUE(id, run_id)``), and that
+    runtime's projection would never learn the horizon exists. Other
+    runs in the same file may hold live runtimes; see the module
+    docstring for the full reasoning.
     """
     reasons = pins(path, run_id)
     if reasons:
@@ -272,6 +314,16 @@ def retire(path: str, run_id: str) -> int:
 
     The typical subject is a rejected fork trial that was never
     promoted. Pinned runs refuse with the full reason list.
+
+    Offline operation, per-RUN: no live runtime may be attached to
+    ``run_id`` itself, and no pin-creating operation (a promote from
+    this run, a fork of it) may race the retirement. Other runs in
+    the same file may hold live runtimes throughout — retiring a
+    finished fork while the parent run's runtime is live is
+    sanctioned usage (see the module docstring for the transaction
+    reasoning, and ``test_compaction.py``'s
+    ``test_retire_fork_per_run_while_parent_runtime_is_live`` for
+    the pinned behavior).
     """
     reasons = pins(path, run_id)
     if reasons:
