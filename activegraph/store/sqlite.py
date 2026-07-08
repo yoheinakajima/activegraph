@@ -308,14 +308,21 @@ class SQLiteEventStore:
         goal: Optional[str] = None,
         frame_id: Optional[str] = None,
     ) -> None:
+        """Insert or update this run's row. ``None`` never clears a
+        stored value (v1.3 fix): ``Runtime.load`` upserts with only
+        ``created_at``, and before the COALESCEs below that erased a
+        fork's ``parent_run_id`` / ``forked_at_event_id`` / ``label``
+        on every reload — silently destroying the lineage records
+        ``promote()`` verifies against.
+        """
         self._conn.execute(
             """
             INSERT INTO runs (run_id, parent_run_id, forked_at_event_id, label, created_at, goal, frame_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
-                parent_run_id      = excluded.parent_run_id,
-                forked_at_event_id = excluded.forked_at_event_id,
-                label              = excluded.label,
+                parent_run_id      = COALESCE(excluded.parent_run_id, runs.parent_run_id),
+                forked_at_event_id = COALESCE(excluded.forked_at_event_id, runs.forked_at_event_id),
+                label              = COALESCE(excluded.label, runs.label),
                 goal               = COALESCE(excluded.goal, runs.goal),
                 frame_id           = COALESCE(excluded.frame_id, runs.frame_id)
             """,

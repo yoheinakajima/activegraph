@@ -1,6 +1,6 @@
 """activegraph CLI entry point. CONTRACT v0.8 #12–#13.
 
-Subcommands: inspect, replay, fork, diff, export-trace, migrate.
+Subcommands: inspect, replay, fork, diff, promote, export-trace, migrate.
 
 Each one is a thin wrapper around a library API. The CLI does no
 business logic — it parses arguments, calls into Python, and formats
@@ -129,7 +129,7 @@ def _list_runs_or_die(url: str):
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(message="activegraph %(version)s")
 def cli() -> None:
-    """Inspect, replay, fork, diff, export, and migrate activegraph runs."""
+    """Inspect, replay, fork, diff, promote, export, and migrate activegraph runs."""
 
 
 # ---- quickstart ---------------------------------------------------------
@@ -864,6 +864,98 @@ def cmd_diff(url: str, run_a: str, run_b: str, as_json: bool) -> None:
         click.echo("divergent relations:")
         for r in diff.divergent_relations:
             click.echo(f"  - {r.summary()}")
+
+
+# ---- promote ------------------------------------------------------------
+
+
+@cli.command("promote")
+@click.argument("url")
+@click.option("--run-id", required=True, help="Destination (parent) run.")
+@click.option("--from-run", required=True, help="Source (fork) run.")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Compute and print the plan without applying anything.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def cmd_promote(
+    url: str, run_id: str, from_run: str, dry_run: bool, as_json: bool
+) -> None:
+    """Apply a fork's net structural delta to its parent (CONTRACT v1.3 #4).
+
+    Fail-closed and atomic: any conflict between the fork's delta and
+    the parent's own post-fork changes aborts with nothing applied
+    (exit 5, the divergence code). Fork lineage is verified from the
+    store's runs table.
+    """
+    from activegraph.runtime.exec_errors import (
+        PromoteConflictError,
+        PromoteLineageError,
+    )
+    from activegraph.runtime.runtime import Runtime
+
+    try:
+        parent = Runtime.load(url, run_id=run_id)
+        fork = Runtime.load(url, run_id=from_run)
+    except FileNotFoundError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(EXIT_NOT_FOUND)
+    except __import__("sqlite3").OperationalError as e:
+        click.echo(f"{url}: {e}", err=True)
+        raise SystemExit(EXIT_NOT_FOUND)
+
+    try:
+        outcome = parent.promote(fork, dry_run=dry_run)
+    except PromoteLineageError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(EXIT_NOT_FOUND)
+    except PromoteConflictError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(EXIT_DIVERGENCE)
+
+    plan = outcome if dry_run else outcome.plan
+    summary = {
+        "from_run": plan.from_run,
+        "into_run": plan.into_run,
+        "forked_at_event": plan.forked_at_event,
+        "computed_against": plan.computed_against,
+        "dry_run": dry_run,
+        "objects_created": [o["id"] for o in plan.object_creates],
+        "objects_patched": [o["id"] for o in plan.object_patches],
+        "objects_removed": list(plan.object_removes),
+        "relations_created": [r["id"] for r in plan.relation_creates],
+        "relations_removed": list(plan.relation_removes),
+        "conflicts": [
+            {"kind": c.kind, "entity": c.entity, "id": c.id, "detail": c.detail}
+            for c in plan.conflicts
+        ],
+        "warnings": list(plan.warnings),
+    }
+    if not dry_run:
+        summary["marker_event_id"] = outcome.marker_event_id
+        summary["applied_event_ids"] = list(outcome.applied_event_ids)
+    if as_json:
+        click.echo(_json.dumps(summary))
+        return
+    verb = "would promote" if dry_run else "promoted"
+    click.echo(f"{verb} {plan.from_run} -> {plan.into_run}:")
+    for key in (
+        "objects_created",
+        "objects_patched",
+        "objects_removed",
+        "relations_created",
+        "relations_removed",
+    ):
+        ids = summary[key]
+        if ids:
+            click.echo(f"  {key:20s} {', '.join(ids)}")
+    for w in plan.warnings:
+        click.echo(f"  warning: {w}")
+    if dry_run and plan.conflicts:
+        click.echo("conflicts (promote would fail):")
+        for c in plan.conflicts:
+            click.echo(f"  - [{c.kind}] {c.entity} {c.id}: {c.detail}")
 
 
 # ---- export-trace -------------------------------------------------------

@@ -460,9 +460,9 @@ class PostgresEventStore:
                 INSERT INTO runs ({_RUN_COLUMNS})
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (run_id) DO UPDATE SET
-                    parent_run_id      = EXCLUDED.parent_run_id,
-                    forked_at_event_id = EXCLUDED.forked_at_event_id,
-                    label              = EXCLUDED.label,
+                    parent_run_id      = COALESCE(EXCLUDED.parent_run_id, runs.parent_run_id),
+                    forked_at_event_id = COALESCE(EXCLUDED.forked_at_event_id, runs.forked_at_event_id),
+                    label              = COALESCE(EXCLUDED.label, runs.label),
                     goal               = COALESCE(EXCLUDED.goal, runs.goal),
                     frame_id           = COALESCE(EXCLUDED.frame_id, runs.frame_id)
                 """,

@@ -54,6 +54,7 @@ Added in v0.7:
 
 from __future__ import annotations
 
+import copy
 import json
 import random as _random
 import time as _time
@@ -84,6 +85,12 @@ from activegraph.policy import Policy
 from activegraph.runtime.behavior_graph import BehaviorGraph
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, compute_diff
+from activegraph.runtime.promote import (
+    PromotePlan,
+    PromoteResult,
+    compute_promote_plan,
+    promote_warnings,
+)
 from activegraph.runtime.errors import ReplayDivergenceError
 from activegraph.runtime.queue import EventQueue
 from activegraph.runtime.registry import Registry
@@ -297,6 +304,9 @@ class Runtime:
         # (e.g. lexical-only retrieval) or fail loud per their own
         # contract.
         self.embedding_provider: Optional[EmbeddingProvider] = embedding_provider
+        # CONTRACT v1.3 #4: raised only inside promote()'s apply phase
+        # so delta events skip behavior enqueueing (see _on_event).
+        self._promote_quiescent: bool = False
         # CONTRACT v1.3 #1: the opt-in lever plus the per-behavior
         # resolved modes ("native" | "prompt"), filled by
         # _ensure_registry. Runtime-local on purpose: behaviors are
@@ -477,6 +487,12 @@ class Runtime:
             "activegraph_events_emitted_total",
             {"event_type": event.type},
         )
+        # CONTRACT v1.3 #4: promote applies its delta quiescently —
+        # the events persist and project, but never enqueue for
+        # behavior matching. The promote.applied marker is emitted
+        # BEFORE this flag is raised, so it alone is queue-visible.
+        if self._promote_quiescent:
+            return
         # Don't enqueue our own lifecycle events for re-matching.
         # v0.7 adds `llm.*`, `tool.*`, `pattern.*`, `behavior.scheduled`
         # to the suppression list — they're internal to the runtime's
@@ -2612,8 +2628,289 @@ class Runtime:
     def diff(self, other: "Runtime") -> Diff:
         return compute_diff(self.graph, other.graph, self.run_id, other.run_id)
 
+    def promote(
+        self, fork: "Runtime", *, dry_run: bool = False
+    ) -> Union[PromotePlan, PromoteResult]:
+        """Apply ``fork``'s net structural delta to this runtime.
+
+        The third piece of the fork → test → promote loop
+        (CONTRACT v1.3 #4; design in ``promote-design.md``). The
+        receiver is the destination (parent), the argument the source
+        — the ``rt.diff(fork)`` orientation.
+
+        The delta is computed three-way against this run's state at
+        the recorded fork point: fork-only changes are applied as
+        ordinary parent events; both-sides changes raise
+        :class:`~activegraph.runtime.exec_errors.PromoteConflictError`
+        before ANY mutation (fail-closed, atomic, no semantic merge);
+        this run's own post-fork work is left alone. Referential
+        integrity is part of the conflict check: promoted relations
+        with missing endpoints, and promoted removals that would
+        cascade away parent relations, both conflict.
+
+        ``dry_run=True`` returns the advisory
+        :class:`~activegraph.runtime.promote.PromotePlan` without
+        mutating anything. Apply always recomputes against the
+        parent's current state — a stale dry-run plan cannot be
+        handed back in; ``computed_against`` on the plan/result
+        records the parent tip event id the applied plan actually
+        saw.
+
+        Application is quiescent: the delta events append, project,
+        and persist, but do not fire behaviors — the single reaction
+        point is the ``promote.applied`` marker event, which is
+        queue-visible and fires subscribed behaviors once, after the
+        full delta is in place, seeing post-promote state. Pack loads
+        and settings overrides are never applied; they surface in
+        ``plan.warnings`` (adopting code is an explicit
+        ``load_pack``).
+
+        Requires both runtimes on the same SQLite store and ``fork``
+        to be a direct fork of this run per the store's lineage
+        records (:class:`~activegraph.runtime.exec_errors.PromoteLineageError`
+        otherwise; promote grandchildren one level at a time).
+        """
+        from activegraph.core.patch import Patch
+        from activegraph.runtime.exec_errors import (
+            PromoteConflictError,
+            PromoteLineageError,
+        )
+        from activegraph.store.sqlite import SQLiteEventStore
+
+        parent_store = self.graph.store
+        fork_store = fork.graph.store
+        if not isinstance(parent_store, SQLiteEventStore) or not isinstance(
+            fork_store, SQLiteEventStore
+        ):
+            from activegraph.runtime.config_errors import IncompatibleRuntimeState
+
+            kinds = (
+                f"parent: {type(parent_store).__name__ if parent_store else 'no store'}, "
+                f"fork: {type(fork_store).__name__ if fork_store else 'no store'}"
+            )
+            raise IncompatibleRuntimeState(
+                f"runtime.promote() requires both runtimes on a SQLite store ({kinds})",
+                what_failed=(
+                    f"runtime.promote() was called with {kinds}. Promote "
+                    f"verifies fork lineage from the store's runs table, "
+                    f"which requires the SQLite store on both sides."
+                ),
+                why=(
+                    "Lineage (parent_run_id, forked_at_event_id) is "
+                    "recorded durably by fork(), which itself requires a "
+                    "SQLite store (CONTRACT v0.8 #5). Promote trusts the "
+                    "store's records, not the caller's claim, so it has "
+                    "the same store requirement (CONTRACT v1.3 #4)."
+                ),
+                how_to_fix=(
+                    "Create the fork with runtime.fork() on a "
+                    "SQLite-backed runtime and promote between those two "
+                    "runtimes. For Postgres runs, migrate first:\n"
+                    "    activegraph migrate --from <url> --to sqlite:///runs.db"
+                ),
+                context={"stores": kinds},
+            )
+        if parent_store.path != fork_store.path:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=None,
+                detail=(
+                    f"the runs live in different stores "
+                    f"({parent_store.path!r} vs {fork_store.path!r})"
+                ),
+            )
+
+        record = fork_store.get_run()
+        if record is None or record.parent_run_id != self.run_id:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=record.parent_run_id if record else None,
+                detail=(
+                    f"the store records "
+                    f"{(record.parent_run_id if record else None)!r} as its "
+                    f"parent, not {self.run_id!r}"
+                ),
+            )
+        forked_at = record.forked_at_event_id
+        if not forked_at:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=record.parent_run_id,
+                detail="the store has no forked_at_event_id for this run",
+            )
+
+        warnings = promote_warnings(self, fork)
+        try:
+            plan = compute_promote_plan(
+                self.graph,
+                fork.graph,
+                forked_at_event=forked_at,
+                warnings=warnings,
+            )
+        except LookupError as e:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=record.parent_run_id,
+                detail=str(e),
+            ) from e
+
+        if dry_run:
+            return plan
+        if plan.conflicts:
+            raise PromoteConflictError(
+                conflicts=plan.conflicts,
+                from_run=fork.run_id,
+                into_run=self.run_id,
+            )
+
+        # ---- apply (marker first, then the delta, quiescently) ----
+
+        actor = f"promote:{fork.run_id}"
+        frame_id = self.frame.id if self.frame else None
+        marker = self.graph.emit(
+            Event(
+                id=self.graph.ids.event(),
+                type="promote.applied",
+                payload={
+                    "from_run": plan.from_run,
+                    "forked_at_event": plan.forked_at_event,
+                    "computed_against": plan.computed_against,
+                    "objects_created": [o["id"] for o in plan.object_creates],
+                    "objects_patched": [o["id"] for o in plan.object_patches],
+                    "objects_removed": list(plan.object_removes),
+                    "relations_created": [r["id"] for r in plan.relation_creates],
+                    "relations_removed": list(plan.relation_removes),
+                    "warnings": list(plan.warnings),
+                },
+                actor="runtime",
+                frame_id=frame_id,
+                caused_by=None,
+                timestamp=self.graph.clock.now(),
+            )
+        )
+
+        applied: list[str] = []
+
+        def _emit(type_: str, payload: dict[str, Any]) -> None:
+            ev = self.graph.emit(
+                Event(
+                    id=self.graph.ids.event(),
+                    type=type_,
+                    payload=payload,
+                    actor=actor,
+                    frame_id=frame_id,
+                    caused_by=marker.id,
+                    timestamp=self.graph.clock.now(),
+                )
+            )
+            applied.append(ev.id)
+
+        self._promote_quiescent = True
+        try:
+            # Order matters: explicit relation removals first (so the
+            # object-removal cascade below finds nothing left to touch
+            # — the orphaning_removal conflict guarantees every
+            # parent relation on a removed object is in this list),
+            # then object removals, creations, patches, and finally
+            # relation creations whose endpoints now all exist.
+            for rid in plan.relation_removes:
+                _emit("relation.removed", {"id": rid})
+            for oid in plan.object_removes:
+                _emit("object.removed", {"id": oid})
+            for o in plan.object_creates:
+                prov = self.graph._provenance(  # noqa: SLF001 — internal seam
+                    actor, marker.id, frame_id, []
+                )
+                _emit(
+                    "object.created",
+                    {
+                        "object": {
+                            "id": o["id"],
+                            "type": o["type"],
+                            "data": copy.deepcopy(o["data"]),
+                            "version": 1,
+                            "provenance": prov,
+                        },
+                        "id": o["id"],
+                    },
+                )
+            for o in plan.object_patches:
+                current = self.graph.get_object(o["id"])
+                assert current is not None  # plan guarantees presence
+                patch = Patch(
+                    id=self.graph.ids.patch(),
+                    target=o["id"],
+                    op="replace",
+                    value=copy.deepcopy(o["data"]),
+                    expected_version=current.version,
+                    proposed_by=actor,
+                    rationale=f"promoted from {fork.run_id}",
+                    evidence=[],
+                    status="applied",
+                    provenance=self.graph._provenance(  # noqa: SLF001
+                        actor, marker.id, frame_id, []
+                    ),
+                )
+                _emit(
+                    "patch.applied",
+                    {
+                        "patch": patch.to_dict(),
+                        "target": o["id"],
+                        "diff": _promote_data_diff(current.data, o["data"]),
+                    },
+                )
+            for r in plan.relation_creates:
+                prov = self.graph._provenance(  # noqa: SLF001
+                    actor, marker.id, frame_id, []
+                )
+                _emit(
+                    "relation.created",
+                    {
+                        "relation": {
+                            "id": r["id"],
+                            "source": r["source"],
+                            "target": r["target"],
+                            "type": r["type"],
+                            "data": copy.deepcopy(r["data"]),
+                            "provenance": prov,
+                        },
+                        "id": r["id"],
+                        "source": r["source"],
+                        "target": r["target"],
+                    },
+                )
+        finally:
+            self._promote_quiescent = False
+
+        # Promoted entities keep their fork-minted ids; bump this run's
+        # generators past them so future mints can't collide.
+        self.graph.ids.reseed_from_events(self.graph.events)
+
+        return PromoteResult(
+            plan=plan,
+            marker_event_id=marker.id,
+            applied_event_ids=applied,
+        )
+
 
 # ---------- helpers ----------
+
+
+def _promote_data_diff(
+    old: dict[str, Any], new: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Per-field {old, new} for a promote replace-patch, including
+    fields the replacement drops (rendered as new=None), so the trace
+    line shows the full change like any other patch.applied."""
+    out: dict[str, dict[str, Any]] = {}
+    for k in sorted(set(old) | set(new)):
+        if old.get(k) != new.get(k):
+            out[k] = {"old": old.get(k), "new": new.get(k)}
+    return out
 
 
 _BUDGET_REASON_MAP = {
@@ -2848,6 +3145,13 @@ def _requeue_unfired(rt: "Runtime", events: list[Event]) -> None:
         if _is_lifecycle(e):
             continue
         if e.id in fired_on:
+            continue
+        # CONTRACT v1.3 #4: promote delta events were applied
+        # quiescently — never queued live, so never requeued either.
+        # The promote.applied marker itself (actor="runtime") stays
+        # requeue-eligible: it WAS queued, so a stop-before-drain
+        # legitimately recovers it here.
+        if (e.actor or "").startswith("promote:"):
             continue
         rt._queue.push(e)  # noqa: SLF001 — internal seam by design
     if rt._queue:

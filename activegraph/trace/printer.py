@@ -358,8 +358,35 @@ def _short(v: Any) -> str:
     return repr(v)
 
 
+def _fmt_promote_applied(e: Event) -> str:
+    """CONTRACT v1.3 #4: one line naming the source run and the delta
+    counts; the delta events themselves follow as ordinary lines."""
+    p = e.payload
+    parts = []
+    n_created = len(p.get("objects_created", [])) + len(
+        p.get("relations_created", [])
+    )
+    n_patched = len(p.get("objects_patched", []))
+    n_removed = len(p.get("objects_removed", [])) + len(
+        p.get("relations_removed", [])
+    )
+    if n_created:
+        parts.append(f"+{n_created}")
+    if n_patched:
+        parts.append(f"~{n_patched}")
+    if n_removed:
+        parts.append(f"-{n_removed}")
+    counts = " ".join(parts) if parts else "empty delta"
+    return (
+        f'{_format_tag("promote.applied")}'
+        f'{p.get("from_run", "?")} -> here ({counts}) '
+        f'forked_at={p.get("forked_at_event", "?")}'
+    )
+
+
 _FORMATTERS = {
     "goal.created": _fmt_goal_created,
+    "promote.applied": _fmt_promote_applied,
     "object.created": _fmt_object_created,
     "object.removed": _fmt_object_removed,
     "relation.created": _fmt_relation_created,

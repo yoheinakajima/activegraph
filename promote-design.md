@@ -1,11 +1,14 @@
 # Promote: closing the fork → test → promote loop
 
-**Status: DESIGN FOR REVIEW — no implementation yet.**
-Proposed as CONTRACT v1.3 #4; it locks only after downstream review
-(the pack library consumes this for its evolution capability and
-asked for eyes on conflict semantics before code lands).
-Review focus: §4 (conflict rules), §5 (what is deliberately not
-promoted), §8 (open questions).
+**Status: REVIEWED AND LOCKED (CONTRACT v1.3 #4).**
+Downstream review (2026-07-08) approved the core decisions as
+written — state application over event replay, three-way base
+reconstruction, entity-granular fail-closed conflicts with
+identical-concurrent-edits conflicting in v1, re-fork as the escape
+hatch, §5's exclusions — and required three amendments, all folded
+in below: quiescent apply semantics (§6), the referential-integrity
+conflict rule (§4), and the plan/apply staleness rule (§3). The §8
+open questions are answered inline.
 
 ## 1. Why the runtime needs this
 
@@ -80,6 +83,16 @@ result = parent_rt.promote(fork_rt)               # apply atomically
   but not applied), and `is_promotable`.
 - `PromoteResult`: everything in the plan, plus the applied event
   ids and the `promote.applied` marker event id.
+- **Plan/apply staleness (review amendment #3).** `promote()` always
+  recomputes the plan against **parent-now at apply time**; a
+  `PromotePlan` from an earlier `dry_run=True` call is advisory and
+  is never handed back in for application. If the parent advanced
+  between dry-run and apply, the apply-time recomputation sees the
+  new parent state — new conflicts fail the promote exactly as if
+  the dry run had never happened. `PromotePlan` and `PromoteResult`
+  both record `computed_against`: the parent's tip event id at the
+  moment the plan was computed, so callers (and audits) can detect
+  that a dry-run plan went stale before apply.
 - CLI: `activegraph promote <url> --from-run <fork-run> [--dry-run]`
   — SHOULD, same release if small; the Python API is the MUST.
 
@@ -130,6 +143,25 @@ Rules:
   conflict means *a human or a higher layer decides*.
 - Field-level merging within one object: out of scope. The unit of
   conflict is the entity, matching `Diff`'s granularity.
+- **Referential integrity (review amendment #2).** A promoted
+  relation whose endpoint objects would not exist in
+  parent-post-promote state — endpoints neither surviving in
+  parent-now (present and not delta-removed) nor created by the
+  delta — is a conflict. This catches the fork relating to a parent
+  object the parent has since removed. The rule is applied in both
+  directions: a promoted **object removal** that would orphan a
+  parent-now relation not itself removed by the delta is also a
+  conflict, because the projection cascades `object.removed` into
+  removal of touching relations — promoting such a removal would
+  silently delete the parent's own post-fork work, the exact
+  mutation class fail-closed exists to prevent. (Relation removals
+  the fork performed via its own cascade arrive in the delta as
+  ordinary relation removals and promote cleanly.)
+- "State" for comparison purposes is type + data (+ endpoints for
+  relations). Version counters and provenance are bookkeeping, not
+  state: a fork that patched a field twice back to the same value
+  differs from base in version only and contributes nothing to the
+  delta.
 - **Atomicity**: conflicts are computed on the full plan before any
   mutation; one conflict fails the whole promote, applying nothing —
   the `load_pack` pre-mutation precedent. There is no partial
@@ -163,19 +195,35 @@ Surfaced in `PromotePlan.warnings` where relevant; never applied:
 - **Budget state, pending approvals, frames** — runtime-local
   posture, not graph state.
 
-## 6. Audit trail
+## 6. Audit trail and apply semantics
 
 An applied promote emits, on the parent, in order:
 
 1. `promote.applied` — one marker event:
-   `{from_run, forked_at_event, base_event_count, objects_created,
+   `{from_run, forked_at_event, computed_against, objects_created,
    objects_patched, objects_removed, relations_created,
-   relations_patched, relations_removed, warnings}` (counts + id
-   lists), `actor="runtime"`.
+   relations_removed, warnings}` (id lists), `actor="runtime"`.
 2. The delta as ordinary mutation events, `actor="promote:<fork_run_id>"`,
    each `caused_by` the marker event — so `trace.causal_chain()`
    walks any promoted object back to the promote, and the trace
-   shows the adoption as one visually grouped block.
+   shows the adoption as one visually grouped block. Object patches
+   use `op="replace"` with the fork's full data, so post-promote
+   state is byte-equal to fork state (merge-style `update` could not
+   express a removed field).
+
+**Quiescent apply (review amendment #1).** The delta events are
+applied projection-only — the same posture as replay: they append to
+the log, project onto graph state, and persist, but they are **not**
+enqueued for behavior matching, neither live at apply time nor
+retroactively (load-time requeue recovery skips
+`actor="promote:*"` events). Re-firing triggers per delta event
+would duplicate side effects the fork already processed when it ran
+those mutations live, and any behavior-emitted events would
+interleave new history into the middle of the atomic block. The one
+reaction point is the `promote.applied` marker itself: it is
+queue-visible (like `pack.loaded`, unlike `approval.*`), so a
+behavior subscribed to `promote.applied` fires once, after the full
+delta is in place, seeing post-promote state.
 
 Replaying the parent's log reproduces promoted state with no special
 cases, because promoted state *is* ordinary events. `trace.lines()`
@@ -194,26 +242,31 @@ promoted up one level then the other; trace snapshot of the promoted
 block; `Diff` of parent vs fork being `is_identical`-equivalent for
 promoted entities after promote.
 
-## 8. Open questions for reviewers
+Added with the review amendments: a behavior registered on
+`object.created` does **not** fire during apply while one registered
+on `promote.applied` fires once with post-promote state visible; the
+dangling-relation conflict (fork relates to a parent object the
+parent has since removed) and its reverse (promoted removal
+orphaning a parent-post-fork relation); and a staleness case where
+the parent advances between `dry_run=True` and apply so the
+recomputed plan conflicts and `computed_against` differs between
+plan and attempted apply.
 
-1. **Granularity of provenance.** The marker event records the fork
-   run and the id lists. Does the evolution pack need per-entity
-   provenance ("this object came from fork event `evt_078`")? That
-   would require event-level tracing through the fork's log —
-   feasible (walk the fork's tail for the last event touching each
-   promoted id) and additive to the payload. Speak now if the
-   product needs it in v1; otherwise it's a fast follow.
-2. **Approval integration.** v1 promote is a plain method; gating is
-   the caller's job (consistent with the runtime staying
-   domain-neutral). Alternative: a `propose_promote` path through
-   the pack approval flow. Current position: no — approval flow is
-   pack-level machinery, and the product can wrap `promote` in a
-   gated tool today. Push back if the evolution pack wants the
-   runtime to own this.
-3. **Selective promote** (`promote(fork, only=[ids])`): deferred.
-   The atomic all-or-nothing delta is easier to reason about and to
-   gate. A product wanting cherry-picks can fork again and prune.
-4. **Postgres.** Follows `fork()`: SQLite-only in v1, same
+## 8. Open questions — RESOLVED by the 2026-07-08 review
+
+1. **Granularity of provenance: fast-follow, not v1.** The marker
+   plus the fork's intact log gives two-hop auditability (promoted
+   entity → marker → fork run → fork's own event history), and that
+   is sufficient. Per-entity fork-event provenance is additive to
+   the marker payload when the evolution pack asks for it.
+2. **Approval integration: caller-side, confirmed.** Downstream
+   wraps `promote` in a gated capability; the runtime stays
+   domain-neutral.
+3. **Selective promote: deferred, on correctness grounds.** The fork
+   was tested as a whole; a partial promote is an untested state.
+   This is stronger than the simplicity argument — cherry-picking is
+   fork-again-and-prune, which re-tests.
+4. **Postgres: SQLite-only v1 confirmed.** Follows `fork()`: same
    structured error, same migration pointer.
 
 ## 9. Relationship to the incoming pack-manifest spec
