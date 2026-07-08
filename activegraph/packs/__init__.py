@@ -570,10 +570,20 @@ class Pack:
     policies: tuple[Any, ...] = ()
     prompts: tuple[Any, ...] = ()
     settings_schema: type = EmptySettings
+    # v1.4: the DECLARATIVE half of gateway-capability registration
+    # (manifest spec Q8). Entries are CapabilityDecl instances from
+    # activegraph.packs.manifest. The runtime never registers these —
+    # registration stays imperative host wiring — but the declaration
+    # is loader-introspectable: verify_surface two-way checks it
+    # against the manifest, and load_pack records it in the
+    # pack.loaded payload so decision surfaces read a pack's declared
+    # outbound reach from the graph. The gateway-side check ("did the
+    # registering pack declare this?") is downstream's half.
+    capabilities: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         # list → tuple conversion (frozen requires object.__setattr__)
-        for f in ("object_types", "relation_types", "behaviors", "tools", "policies", "prompts"):
+        for f in ("object_types", "relation_types", "behaviors", "tools", "policies", "prompts", "capabilities"):
             v = getattr(self, f)
             if isinstance(v, list):
                 object.__setattr__(self, f, tuple(v))
@@ -624,6 +634,32 @@ class Pack:
                     f"Pack {self.name!r}: tool {t.name!r} was not declared via "
                     f"activegraph.packs.tool (use activegraph.packs.tool, not activegraph.tool)"
                 )
+
+        # v1.4: capabilities are CapabilityDecl entries with a valid
+        # risk class; (provider, capability) pairs unique within the
+        # pack. Lazy import — manifest.py imports nothing from this
+        # module at import time, but keep the seam one-directional.
+        if self.capabilities:
+            from activegraph.packs.manifest import _RISK_CLASSES, CapabilityDecl
+
+            for c in self.capabilities:
+                if not isinstance(c, CapabilityDecl):
+                    raise PackValidationError(
+                        f"Pack {self.name!r}: capabilities entries must be "
+                        f"activegraph.packs.manifest.CapabilityDecl, got {c!r}"
+                    )
+                if c.risk_class not in _RISK_CLASSES:
+                    raise PackValidationError(
+                        f"Pack {self.name!r}: capability "
+                        f"{c.provider}.{c.capability} has risk_class "
+                        f"{c.risk_class!r}; must be one of "
+                        f"low|medium|high|critical"
+                    )
+            _check_unique(
+                [f"{c.provider}.{c.capability}" for c in self.capabilities],
+                "capability",
+                self.name,
+            )
 
     # identity by (name, version) — CONTRACT v0.9 #2 / #6
     def __eq__(self, other: Any) -> bool:

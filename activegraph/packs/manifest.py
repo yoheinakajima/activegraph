@@ -402,33 +402,58 @@ def verify_surface(manifest: PackManifest, pack: Any) -> None:
             f"settings_schema: declared {manifest.settings_schema!r}, "
             f"Pack has {actual_settings!r}"
         )
+    # v1.4 (spec Q8, runtime half): Pack.capabilities is declarative,
+    # so the loader can two-way check it exactly like behaviors/tools.
+    # Keyed by (provider, capability); a declared pair must also agree
+    # on risk_class — a relabeled risk class is precisely the swap the
+    # decision surface needs to catch.
+    declared_caps = {
+        (c.provider, c.capability): c.risk_class for c in manifest.capabilities
+    }
+    actual_caps = {
+        (c.provider, c.capability): c.risk_class
+        for c in getattr(pack, "capabilities", ())
+    }
+    for key in sorted(set(declared_caps) - set(actual_caps)):
+        violations.append(
+            f"capabilities: declared {key[0]}.{key[1]} not on Pack"
+        )
+    for key in sorted(set(actual_caps) - set(declared_caps)):
+        violations.append(
+            f"capabilities: Pack declares {key[0]}.{key[1]} undeclared "
+            f"in manifest"
+        )
+    for key in sorted(set(declared_caps) & set(actual_caps)):
+        if declared_caps[key] != actual_caps[key]:
+            violations.append(
+                f"capabilities: {key[0]}.{key[1]} risk_class mismatch — "
+                f"manifest {declared_caps[key]!r}, Pack {actual_caps[key]!r}"
+            )
     if violations:
         raise PackManifestError(
             source=f"{manifest.name}@{manifest.version}", violations=violations
         )
 
 
-def compute_content_hash(pack_root: str | Path) -> str:
-    """The spec §4 content hash over a pack directory, byte-exact.
+def _hash_pack_dir(pack_root: str | Path, *, include_manifest: bool) -> str:
+    """The shared §4 canonical byte stream over a pack directory.
 
-    PROVISIONAL — this function is the normative reference for all
-    three recomputation sites (loader, downstream CI, evolution
-    gates). Canonicalization:
+    ``include_manifest=False`` is the manifest-internal content hash
+    (a hash cannot cover itself); ``True`` is the bundle hash external
+    pins use (spec amendment: the manifest is the very document the
+    reviewer approves, so an external pin that excludes it pins
+    nothing that matters). Everything else is identical:
 
     1. Every regular file under the root, recursively, excluding
-       ``manifest.toml`` itself, ``__pycache__`` directories,
-       ``*.pyc``, and hidden (``.``-prefixed) files and directories.
-    2. Symlinks — file OR directory — are rejected loudly (the spec
-       names files; this implementation extends the rejection to
-       directory symlinks, which could otherwise smuggle unhashed
-       content into the walk).
+       ``__pycache__`` directories, ``*.pyc``, and hidden
+       (``.``-prefixed) files and directories.
+    2. Symlinks — file OR directory — are rejected loudly (directory
+       symlinks could otherwise smuggle unhashed content).
     3. Paths must be UTF-8-encodable and NFC-normalized; anything
        else is rejected loudly rather than hashed ambiguously across
        platforms.
     4. Relative POSIX paths sorted lexicographically by UTF-8 bytes;
        per file: path bytes, NUL, 8-byte big-endian length, raw bytes.
-
-    Returns ``"sha256:" + 64 hex chars``.
     """
     root = Path(pack_root)
     if not root.is_dir():
@@ -455,7 +480,7 @@ def compute_content_hash(pack_root: str | Path) -> str:
                 continue  # sockets, fifos: not regular files
             if child.name.endswith(".pyc"):
                 continue
-            if rel == "manifest.toml":
+            if rel == "manifest.toml" and not include_manifest:
                 continue
             if unicodedata.normalize("NFC", rel) != rel:
                 violations.append(f"path not NFC-normalized: {rel!r}")
@@ -479,6 +504,71 @@ def compute_content_hash(pack_root: str | Path) -> str:
         h.update(len(data).to_bytes(8, "big"))
         h.update(data)
     return _HASH_PREFIX + h.hexdigest()
+
+
+def compute_content_hash(pack_root: str | Path) -> str:
+    """The spec §4 content hash over a pack directory, byte-exact.
+
+    PROVISIONAL — this function is the normative reference for every
+    recomputation site (loader, downstream CI, evolution gates).
+    ``manifest.toml`` is EXCLUDED (a hash cannot cover itself); see
+    :func:`_hash_pack_dir` for the full canonicalization, including
+    this implementation's amendments over the spec draft. This is the
+    hash the manifest's own ``[pack.integrity].content_hash`` pins —
+    internal consistency only, never authenticity. External pins use
+    :func:`compute_bundle_hash`.
+
+    Returns ``"sha256:" + 64 hex chars``.
+    """
+    return _hash_pack_dir(pack_root, include_manifest=False)
+
+
+def compute_bundle_hash(pack_root: str | Path) -> str:
+    """The bundle hash external pins use: the §4 walk WITHOUT the
+    manifest exclusion. PROVISIONAL.
+
+    Spec-review finding, accepted downstream: the content hash
+    excludes ``manifest.toml`` by necessity (self-reference), so an
+    external pin over it leaves the manifest — the very document a
+    reviewer approves, carrying risk classes, ``consumes``, and
+    ``authored_by`` — swappable without detection. ``[load.pins]``
+    entries, the evolution pack's proposal pins, and any resolver
+    verifying a fetched pack pin THIS hash instead. Same
+    canonicalization, same amendments, one file more.
+
+    Returns ``"sha256:" + 64 hex chars``.
+    """
+    return _hash_pack_dir(pack_root, include_manifest=True)
+
+
+def verify_bundle_hash(expected: str, pack_root: str | Path) -> None:
+    """Recompute the bundle hash over ``pack_root`` and compare to an
+    EXTERNAL pin. Raises :class:`PackManifestError` on mismatch.
+
+    PROVISIONAL. ``expected`` comes from outside the pack directory —
+    a ``[load.pins]`` entry, a proposal record, an approval surface —
+    which is what makes this an authenticity check rather than the
+    internal-consistency check :func:`verify_content_hash` performs.
+    """
+    if not expected.startswith(_HASH_PREFIX) or not re.fullmatch(
+        r"[0-9a-f]{64}", expected[len(_HASH_PREFIX):]
+    ):
+        raise PackManifestError(
+            source=str(pack_root),
+            violations=[
+                f"external pin {expected!r} must be 'sha256:' + 64 "
+                f"lowercase hex chars"
+            ],
+        )
+    actual = compute_bundle_hash(pack_root)
+    if actual != expected:
+        raise PackManifestError(
+            source=str(pack_root),
+            violations=[
+                f"bundle hash mismatch: external pin is {expected}, "
+                f"directory (manifest included) hashes to {actual}"
+            ],
+        )
 
 
 def verify_content_hash(

@@ -782,6 +782,18 @@ def _build_pack_loaded_payload(pack: Pack, settings_obj: BaseModel) -> dict:
         "policies": [f"{pack.name}.{p.name}" for p in pack.policies],
         "prompts": pack.prompt_manifest(),
         "settings": _canonical_settings_dump(settings_obj),
+        # v1.4: the declared gateway-capability surface (manifest spec
+        # Q8) — graph-readable, so decision surfaces and catalogs read
+        # a pack's declared outbound reach without importing it.
+        "capabilities": [
+            {
+                "provider": c.provider,
+                "capability": c.capability,
+                "risk_class": c.risk_class,
+                "credential_ref": c.credential_ref,
+            }
+            for c in getattr(pack, "capabilities", ())
+        ],
     }
 
 
