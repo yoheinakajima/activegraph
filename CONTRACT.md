@@ -7022,7 +7022,7 @@ here.
   optional-dependency skip that no leg exercises is a gate
   regression, not a neutral skip.
 
-# v1.3 — quality ratchets, native structured output, community surface (cycle in progress)
+# v1.3 — quality ratchets, native structured output, community surface, promote (released as v1.3.0, 2026-07-08)
 
 The first plan-first cycle after v1.2's merge-then-lock exception
 (`ROADMAP.md`, written 2026-07-03, is the scoping document). Phase 1

@@ -13,17 +13,28 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased] — v1.3.0
+## [v1.3.0] — 2026-07-08
 
-The agent-readiness release (in progress). Two arcs: the v1.3 cycle
-work locked in
+The agent-readiness release. Two arcs: the v1.3 cycle work locked in
 [CONTRACT.md § v1.3](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
 (#1 native structured output, #2 community surface — merged in PR #50
 but not changelogged at merge time; this section pays that debt), and
 the July 2026 agent-readiness upgrade arc driven by the downstream
-pack library's runtime evaluation (developer-experience surfacing,
-provider compatibility, the embedding seam, and the fork→test→promote
-design).
+pack library's runtime evaluation: **promote** — the missing third of
+fork → test → promote (#4, design-reviewed downstream before
+implementation) — plus developer-experience surfacing, provider
+compatibility (#3), and the embedding seam. Everything is additive;
+code pinned to 1.2.0 keeps working unchanged.
+
+### Migration
+
+No breaking changes. Two behavioral notes: LLM auth/invalid-request
+failures now fail immediately with `llm.auth_error` /
+`llm.request_error` instead of being retried under
+`llm.network_error` (custom code branching on reason codes may want
+the new ones); and decorating a handler whose signature cannot
+satisfy its calling convention now raises `TypeError` at the
+decorator line instead of failing at first invocation.
 
 ### Added
 

@@ -154,7 +154,7 @@ expired; the decisions are the maintainer's.
   only with a design doc that answers span-identity and
   replay-determinism questions.
 
-## Phase 6 — Agent-readiness arc (added 2026-07-08, in progress)
+## Phase 6 — Agent-readiness arc (added 2026-07-08; shipped in v1.3.0)
 
 Driven by the July 2026 agent-readiness evaluation run against 1.2.0
 by the downstream pack library, verified against source before
