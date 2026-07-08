@@ -358,8 +358,35 @@ def _short(v: Any) -> str:
     return repr(v)
 
 
+def _fmt_promote_applied(e: Event) -> str:
+    """CONTRACT v1.3 #4: one line naming the source run and the delta
+    counts; the delta events themselves follow as ordinary lines."""
+    p = e.payload
+    parts = []
+    n_created = len(p.get("objects_created", [])) + len(
+        p.get("relations_created", [])
+    )
+    n_patched = len(p.get("objects_patched", []))
+    n_removed = len(p.get("objects_removed", [])) + len(
+        p.get("relations_removed", [])
+    )
+    if n_created:
+        parts.append(f"+{n_created}")
+    if n_patched:
+        parts.append(f"~{n_patched}")
+    if n_removed:
+        parts.append(f"-{n_removed}")
+    counts = " ".join(parts) if parts else "empty delta"
+    return (
+        f'{_format_tag("promote.applied")}'
+        f'{p.get("from_run", "?")} -> here ({counts}) '
+        f'forked_at={p.get("forked_at_event", "?")}'
+    )
+
+
 _FORMATTERS = {
     "goal.created": _fmt_goal_created,
+    "promote.applied": _fmt_promote_applied,
     "object.created": _fmt_object_created,
     "object.removed": _fmt_object_removed,
     "relation.created": _fmt_relation_created,
@@ -446,6 +473,18 @@ def _fmt_replay(event: Event) -> str:
         body = f'{event.id} {t} "{p.get("goal", "")}"'
     elif t in ("behavior.started", "behavior.completed", "behavior.failed", "relation_behavior.started"):
         body = f'{event.id} {t} {p.get("behavior", "?")}'
+    elif t == "promote.applied":
+        n = (
+            len(p.get("objects_created", []))
+            + len(p.get("objects_patched", []))
+            + len(p.get("objects_removed", []))
+            + len(p.get("relations_created", []))
+            + len(p.get("relations_removed", []))
+        )
+        body = (
+            f'{event.id} {t} from {p.get("from_run", "?")} '
+            f'({_plural(n, "delta event")})'
+        )
     else:
         body = f"{event.id} {t}"
     return f'{_format_tag("replay.event")}{body}'
@@ -463,8 +502,54 @@ def _fmt_replay_ready() -> str:
 
 
 class Trace:
+    """Read-only facade over a run's event log, exposed as ``runtime.trace``.
+
+    Formatting methods (:meth:`lines`, :meth:`print`, :meth:`export`,
+    :meth:`causal_chain`) render the CONTRACT #18 trace format.
+    Structured accessors (:meth:`events`, :meth:`failures`) return the
+    underlying :class:`~activegraph.core.event.Event` objects for
+    programmatic use — picking an event id for
+    ``runtime.fork(at_event=...)``, or reading the full traceback out
+    of a ``behavior.failed`` payload.
+    """
+
     def __init__(self, graph: Graph) -> None:
         self._graph = graph
+
+    def events(self) -> list[Event]:
+        """The run's events, in log order, as :class:`Event` objects.
+
+        Equivalent to ``graph.events`` (a copy — mutating the returned
+        list changes nothing), surfaced here so trace consumers don't
+        need to reach for the graph or the store. Each event carries
+        the ``id`` that ``Runtime.fork``'s ``at_event=`` parameter
+        expects::
+
+            fork_point = rt.trace.events()[-1].id
+            fork = rt.fork(at_event=fork_point)
+
+        v1.3: new. Previously the only structured route was
+        ``runtime.graph.events``; an external evaluation read the
+        SQLite events table directly because neither surface was
+        discoverable from the trace.
+        """
+        return list(self._graph.events)
+
+    def failures(self) -> list[Event]:
+        """The run's ``behavior.failed`` events, in log order.
+
+        Each payload carries ``behavior``, ``event_id``,
+        ``exception_type``, ``message``, and — since v1.0.3 — the full
+        ``traceback`` string of the exception that failed the
+        behavior::
+
+            for failure in rt.trace.failures():
+                print(failure.payload["traceback"])
+
+        v1.3: new. The traceback was already recorded; this makes it
+        discoverable without filtering ``graph.events`` by hand.
+        """
+        return [e for e in self._graph.events if e.type == "behavior.failed"]
 
     def lines(self) -> list[str]:
         replayed = self._graph.replayed_ids

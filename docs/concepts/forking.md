@@ -71,6 +71,58 @@ post-fork behaviors run. The semantics — pack settings only,
 auditable event-log override, fail loud on typos — are documented in the
 [CLI reference](../reference/cli/).
 
+## The Python surface
+
+The same primitive is a first-class runtime method — the shape an
+agent uses to test a change against its own history before adopting
+it:
+
+```python
+from activegraph import Runtime
+
+rt = Runtime.load("sqlite:///assistant.db")
+
+# Pick a fork point: every event object carries the id that
+# at_event= expects (v1.3 — no need to read the store directly).
+fork_point = rt.trace.events()[-1].id
+
+fork = rt.fork(
+    at_event=fork_point,        # inclusive cutoff, a real event id
+    label="candidate-pack-test",
+    replay_llm_cache=True,      # serve the shared prefix from cache
+    replay_tool_cache=True,
+)
+
+# The fork is an independent Runtime: load a candidate pack into it,
+# run it, and compare against the parent.
+fork.load_pack(candidate_pack)
+fork.run_until_idle()
+
+diff = rt.diff(fork)            # structural: events + final state
+for d in diff.divergent_objects:
+    print(d.summary())
+```
+
+Two requirements, both enforced with structured errors:
+`fork()` needs a SQLite-backed runtime
+([`incompatible-runtime-state`](../reference/errors/incompatible-runtime-state.md)
+explains the migration path from Postgres or in-memory), and
+`at_event=` must be a real event id from the parent's log
+([`event-not-found-error`](../reference/errors/event-not-found-error.md)
+lists what was available). Forks of forks work the same way.
+
+`rt.diff(other)` is structural only — divergent objects, divergent
+relations, and the event partition (shared prefix, parent-only tail,
+fork-only tail). Semantic comparison is a behavior's job, not the
+runtime's.
+
+When the fork's results earn adoption, `rt.promote(fork)` applies
+its net structural delta back to the parent — atomically,
+fail-closed on conflicts with the parent's own post-fork work, and
+fully audited through a `promote.applied` marker event. The
+[Fork, test, promote](../guides/fork-test-promote.md) guide covers
+the complete loop.
+
 ## How the cache replays
 
 For events before the fork point, the cache serves recorded

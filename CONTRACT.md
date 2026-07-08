@@ -7022,7 +7022,7 @@ here.
   optional-dependency skip that no leg exercises is a gate
   regression, not a neutral skip.
 
-# v1.3 — quality ratchets, native structured output, community surface (cycle in progress)
+# v1.3 — quality ratchets, native structured output, community surface, promote (released as v1.3.0, 2026-07-08)
 
 The first plan-first cycle after v1.2's merge-then-lock exception
 (`ROADMAP.md`, written 2026-07-03, is the scoping document). Phase 1
@@ -7174,3 +7174,219 @@ v1.2 arc end-to-end, and adopters file product-grade issues).
 4. **CLA / DCO stays deferred** (ROADMAP Phase 4 DEFERRED restated):
    Apache 2.0 §5's implicit grant remains the contract at current
    volume.
+
+## v1.3 #3. Provider-boundary compatibility: wire names, exception taxonomy, reasoning-model parameters
+
+Three provider-boundary defects surfaced by the July 2026
+agent-readiness evaluation (run against activegraph 1.2.0 by the
+downstream pack library). All three fixes share one principle: **the
+runtime's canonical surface does not bend to provider wire formats** —
+translation happens at the provider boundary, in both directions.
+
+1. **Tool names are sanitized on the wire, canonical everywhere
+   else.** Pack-scoped tools carry dotted canonical names
+   (`diligence.fetch_company_docs`, v0.9 #9). Both shipped providers'
+   APIs enforce `^[a-zA-Z0-9_-]+$` on tool names, so every pack tool
+   offered to a model was a guaranteed request rejection — in both
+   providers. The fix rewrites `.` → `__` in outbound tool
+   definitions AND in echoed assistant tool-call turns (the
+   conversation the provider produced must re-validate on the next
+   turn), and reverse-maps returned tool calls through an explicit
+   per-request table (`activegraph/llm/wire.py`), never a blind
+   string replace. A sanitization collision (a literal `pack__tool`
+   registered alongside `pack.tool`) raises rather than dispatching
+   ambiguously. The event log, the tool registry, `get_tool()`, and
+   fixtures see only canonical names; recorded runs from v1.2 replay
+   byte-identically because non-dotted names pass through untouched.
+
+2. **The v0.6 #11 reason taxonomy opens for two terminal codes:
+   `llm.auth_error` and `llm.request_error`.** The closed taxonomy
+   classified every non-rate-limit provider failure as
+   `llm.network_error` — which is in the transient-retry set, so a
+   revoked API key was retried with exponential backoff before
+   failing, and the terminal error told the operator to check their
+   network. Auth failures (401/403-shaped) and invalid-request
+   failures (other 4xx: unknown model, rejected parameter) are
+   deterministic: identical bytes fail identically, so both new codes
+   are terminal — deliberately NOT added to
+   `_TRANSIENT_LLM_REASONS`. Classification prefers the SDK
+   exception's `status_code` and falls back to type-name heuristics;
+   anything unrecognized keeps the pre-v1.3 `llm.network_error`
+   classification and its retry behavior, so no failure shape gets
+   silently promoted from transient to terminal. Custom providers
+   that raise `llm.network_error` for everything keep working
+   unchanged.
+
+3. **OpenAI request parameters are family-aware.** The provider sent
+   `max_tokens` and `temperature` unconditionally; reasoning families
+   (`o1`/`o3`/`o4`/`gpt-5`) take `max_completion_tokens` and reject
+   non-default sampling parameters, so every call to the families the
+   provider itself claims to recognize (v1.0.2 #1) — and advertises
+   native structured output for (v1.3 #1) — was a guaranteed 400. The
+   family table is constructor-overridable
+   (`reasoning_model_prefixes=`), the pricing-table pattern. On
+   reasoning families the provider omits `temperature`/`top_p`
+   rather than translating them: silently mapping a sampling request
+   the model cannot honor would misrepresent the recorded call.
+
+Adjacent, same review, locked here for the record: `@tool` infers
+`input_schema` from the first parameter's Pydantic annotation when
+`input_schema=` is omitted (previously the model saw an empty
+parameters object while the function body plainly declared its
+shape). Explicit `input_schema=` always wins; unannotated and
+non-model-annotated tools are byte-identical to v1.2. And all six
+handler decorators validate the positional calling convention at
+decoration time (the v1.0.3 #2 precedent, extended from schema to
+signature).
+
+## v1.3 #4. Promote: the third of fork → test → promote
+
+Design-first (the v1.3 #1 pattern): the full design was written,
+sent for downstream review before implementation, amended per that
+review (2026-07-08), and lives in `promote-design.md` — this entry
+locks the decisions; the design doc carries the reasoning.
+
+1. **State application, not event replay.** `runtime.promote(fork)`
+   computes the fork's net structural delta three-way — parent state
+   at the recorded fork point (base) vs parent-now vs fork-now — and
+   applies it to the parent as ordinary, newly-emitted parent
+   events. Copying the fork's events (LLM/tool calls the parent
+   never made) into the parent's log would fabricate history; the
+   fork's log stays intact under its own run id, and the parent's
+   log records the adoption, which is what actually happened.
+   "State" is type + data (+ endpoints); versions and provenance are
+   bookkeeping. Object patches use `op="replace"` so post-promote
+   state is byte-equal to fork state.
+
+2. **Fail-closed, atomic, no semantic merge.** Fork-only changes
+   promote; parent-only changes are untouched; both-sides changes —
+   including identical concurrent edits and same-id both-created
+   collisions — raise `PromoteConflictError` before any mutation.
+   Referential integrity is part of the check (review amendment):
+   promoted relations with missing post-promote endpoints, and
+   promoted removals that would cascade away parent post-fork
+   relations, conflict. No `force=` flag: the escape hatch is
+   re-fork from the parent's current tip, which re-tests the change.
+
+3. **Quiescent apply; the marker is the reaction point** (review
+   amendment). Delta events append, project, and persist but never
+   enqueue for behavior matching — live (runtime flag during apply)
+   or on reload (`_requeue_unfired` skips `actor="promote:*"`).
+   Re-firing per delta event would duplicate side effects the fork
+   already processed and interleave new events into the atomic
+   block. The queue-visible `promote.applied` marker fires
+   subscribed behaviors once, after the full delta, seeing
+   post-promote state.
+
+4. **Plans are advisory; apply recomputes** (review amendment).
+   `dry_run=True` returns a `PromotePlan` that cannot be handed back
+   in; apply recomputes against parent-now, and `computed_against`
+   (parent tip event id at plan time) makes staleness detectable on
+   both the plan and the applied result.
+
+4b. **Strict replay projects promote blocks verbatim.** The marker
+   and its `promote:*` delta events are recorded runtime actions;
+   `_verify_replay` interleaves them at their recorded position
+   (projection-only) and excludes them from the re-derivation
+   comparison, since behaviors were quiescent when they landed.
+   KNOWN LIMITATION (v0.5 #7's posture): behavior output derived
+   from a `promote.applied` subscription is not re-derived, so
+   strict replay diverges on that combination.
+
+5. **Lineage from the store, one level at a time.** The runs table's
+   `parent_run_id` / `forked_at_event_id` row is the authority
+   (`PromoteLineageError` otherwise); grandchildren promote through
+   their own parent. SQLite-only in v1, the `fork()` precedent.
+   Fixing this exposed a store bug: `upsert_run`'s blind ON CONFLICT
+   overwrite nulled the lineage columns on every `Runtime.load`
+   (both stores); the columns are now COALESCE-protected.
+
+6. **Resolved review questions.** Per-entity provenance: fast-follow
+   (marker + intact fork log = two-hop auditability). Approval
+   integration: caller-side; the runtime stays domain-neutral.
+   Selective promote: deferred on correctness grounds — the fork was
+   tested as a whole, a partial promote is an untested state.
+
+Out of scope, unforeclosed: event-level promote with id remapping,
+Postgres-native promote, per-entity provenance in the marker.
+
+Post-release follow-up (v1.4, evolution-pack consumer sign-off):
+**4c. Apply validates the delta against the parent's pack schemas,
+pre-mutation.** Promote's hand-built events bypass `add_object`'s
+validation hook, so apply runs the parent's `_pack_object_validator`
+and `_pack_relation_validator` over the full delta before the marker
+is emitted: typed data violating a parent-loaded schema raises
+`PackSchemaViolation` with nothing applied; validated data is stored
+canonicalized exactly as `add_object` would store it; undeclared
+types keep v0.9 untyped semantics. This also catches version skew
+(fork ran pack v2, parent has v1) at the boundary.
+
+# v1.4 — agent-ecosystem cycle (in progress)
+
+Opened 2026-07-08 on top of the v1.3.0 release, driven by the pack
+manifest spec review and the evolution pack's consumer sign-off.
+(The v1.3 #4 addendum 4c above — promote apply-time schema
+validation — ships in this cycle too.)
+
+## v1.4 #1. Provisional pack-manifest validator
+
+One reference implementation instead of three drifting ones: the
+manifest spec's §4 hash canonicalization alone gets recomputed by
+this loader, downstream CI, and the evolution pack's gates.
+`activegraph/packs/manifest.py` ships, **PROVISIONAL**, as an opt-in
+API — `load_manifest` (parse + schema-validate, ALL violations in
+one `PackManifestError`, the Q1 answer), `verify_surface` (the
+loader-verifiable two-way check per the spec's identity mapping;
+`capabilities`/`consumes` deliberately excluded — imperative host
+wiring the loader cannot observe, spec Q8), and
+`compute_content_hash` / `verify_content_hash` (spec §4, byte-exact).
+
+Decisions locked here:
+
+1. **Provisional means provisional.** The spec stays DRAFT until the
+   vc extraction and the evolution pack have consumed it; one round
+   of breaking edits to this module is expected. It is importable
+   only from `activegraph.packs.manifest` — the top-level namespace
+   does not re-export it until the spec stabilizes.
+2. **No `load_pack` enforcement this cycle** (spec Q2
+   grandfathering): packs without manifests load exactly as before;
+   a pack WITH a manifest is validated only when the host calls the
+   validator. Loader warning is a later minor; error is 2.0
+   territory.
+3. **Hash amendments over the spec draft** (flagged in the Q5
+   review answer): directory symlinks are rejected like file
+   symlinks; non-UTF-8-encodable and non-NFC paths are rejected
+   loudly rather than hashed platform-ambiguously.
+4. **Loader alignment**: `load_prompts_from_dir` now skips hidden
+   files and symlinks — pathlib's glob matched both, so a prompt the
+   runtime loaded could previously be a file the §4 hash excluded
+   (unhashed load-bearing content). Nothing the loader reads may
+   escape the pin.
+5. **Version/range checks are syntactic** (PEP 440 shape) in the
+   provisional validator; semantic range resolution against the
+   running runtime is load-time enforcement, deferred with
+   enforcement itself.
+
+## v1.4 #2. Graph-backed pending approvals
+
+The pending-approval queue was in-memory only: fed by
+`ctx.propose_object`, invisible after `Runtime.load`, so a restart
+silently dropped every unresolved proposal (agent-readiness review
+item 7, deferred from v1.3). Now:
+
+1. **The event is the durable record.** `approval.proposed` carries
+   the full deferred payload (`data` joins `approval_id` /
+   `object_type` / `reason` / `pack`), so the log alone can
+   reconstruct what was proposed.
+2. **Load and fork rebuild the queue**: pending = proposed minus
+   granted, in proposal order; the approval-id counter reseeds past
+   every recorded id so fresh proposals can't collide. A reloaded
+   runtime can `approve()` a proposal made before the restart; a fork
+   inherits proposals still pending at its fork point.
+3. **Honest boundary**: proposals recorded before v1.4 lack `data`
+   in their events and cannot be reconstructed — they surface only in
+   the runtime instance that created them, exactly as before. No
+   migration rewrites history.
+
+Event-log compaction/retention is proposed separately in
+`compaction-design.md` (v1.4 #3 when its review lands).

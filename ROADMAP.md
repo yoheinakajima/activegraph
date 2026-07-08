@@ -154,6 +154,89 @@ expired; the decisions are the maintainer's.
   only with a design doc that answers span-identity and
   replay-determinism questions.
 
+## Phase 6 — Agent-readiness arc (added 2026-07-08; shipped in v1.3.0)
+
+Driven by the July 2026 agent-readiness evaluation run against 1.2.0
+by the downstream pack library, verified against source before
+scoping. Ships in v1.3.0 alongside Phases 1–2.
+
+- **DONE: DX surfacing.** `Trace.events()` / `Trace.failures()`,
+  registration-time handler-signature validation across all six
+  decorators (`activegraph/_signature.py`).
+- **DONE: provider-boundary compatibility** (CONTRACT v1.3 #3):
+  tool-name wire sanitization (both providers), the
+  `llm.auth_error` / `llm.request_error` taxonomy split,
+  reasoning-model parameter families, `@tool` input-schema
+  inference.
+- **DONE: `EmbeddingProvider` seam** + `HashEmbeddingProvider` test
+  double; retrieval/ranking stays in packs.
+- **DONE: `promote`** — the missing third of fork → test → promote.
+  Design reviewed downstream (2026-07-08), amended (quiescent apply,
+  referential-integrity conflicts, plan/apply staleness), locked as
+  CONTRACT v1.3 #4, and implemented: `Runtime.promote(fork,
+  dry_run=...)`, the `activegraph promote` CLI, the
+  [Fork, test, promote](docs/guides/fork-test-promote.md) guide, and
+  the `upsert_run` lineage-erasure store fix it surfaced.
+- **Expected inbound: pack-manifest spec review.** The manifest
+  format is being formalized downstream; loader-side validation
+  lands here as its own contract item when the draft arrives.
+- **DEFERRED, design-first: event-log compaction/retention.** An
+  always-on assistant accumulates events indefinitely on the
+  append-only log. Needs a design doc (snapshot events, archival
+  cutover, retention windows) before any implementation; not a
+  v1.3.0 blocker. **Normative input (evolution-pack sign-off,
+  2026-07-08): promoted-from fork logs are retention-pinned — a fork
+  run referenced by a `promote.applied` marker is not garbage;
+  two-hop provenance (promoted entity → marker → fork log) depends
+  on the fork's log outliving the trial.**
+- **DEFERRED: streaming provider protocol.** Additive
+  `complete_stream` seam; v1.3.x/v1.4 candidate.
+- **DEFERRED: graph-backed `pending_approvals()`.** The
+  `approval.proposed`/`approval.granted` events already exist in the
+  log; derive the pending queue from them on load instead of the
+  in-memory list. v1.3.x candidate.
+
+## Phase 7 — v1.4 cycle (opened 2026-07-08)
+
+Driven by the pack-manifest spec review and the evolution pack's two
+runtime asks (evolution-design §9). Shipped so far: the provisional
+manifest validator (CONTRACT v1.4 #1), promote apply-time schema
+validation (v1.3 #4 addendum 4c), graph-backed pending approvals
+(v1.4 #2), and the compaction design doc (proposed v1.4 #3).
+
+- **MUST, design published: event-log compaction/retention.**
+  [`compaction-design.md`](compaction-design.md) — snapshot events +
+  archive tier, pin set dominates policy (promoted-from fork logs
+  pinned per the evolution sign-off). Implementation after review.
+- **SHOULD: pack disable (deregistration).** The evolution pack's
+  rollback ask (§7.1 there). Full unload of imported Python code is
+  not honestly achievable; DEREGISTRATION is: `rt.disable_pack(name)`
+  removes the pack's behaviors, tools, and validators from the live
+  registries (the loader already tracks per-pack ownership), emits a
+  `pack.disabled` event for audit and boot-time exclusion, and leaves
+  pack-created state untouched. Small, high-value, v1.4.
+- **SHOULD, design-first: subprocess fork-trial isolation.** The
+  evolution pack's T5 ask. Fork isolation is already store-level
+  (run-scoped rows in the same file), so process isolation is
+  orchestration: a runtime helper that spawns a subprocess which
+  opens the store, forks, materializes the candidate pack from
+  artifacts (the evolution flow does this anyway), runs scenarios
+  under rlimits/timeout, and exits — the parent reads trial results
+  from the fork's run. The runtime provides subprocess + resource
+  caps; real syscall sandboxing (network denial) is host territory
+  and stays out of scope, stated plainly. Needs its own design doc
+  (artifact materialization contract, result schema). v1.4/v1.5.
+- **SHOULD, design-first: streaming provider protocol.** Additive
+  `complete_stream` seam. Deferred behind a design pass because
+  streaming interacts with replay determinism (what is the recorded
+  unit — chunks or the assembled response?) and the LLM cache; a
+  seam bolted on without answering that would be the first
+  non-replayable surface in the runtime.
+- **Expected inbound: manifest spec DRAFT-exit edits.** One round of
+  breaking edits to `activegraph.packs.manifest` once the vc
+  extraction and the evolution pack have consumed it; then top-level
+  export and load-time warning enforcement (spec Q2 schedule).
+
 ## FUTURE_IDEAS reconciliation
 
 Every `FUTURE_IDEAS.md` item was re-reviewed during this scoping

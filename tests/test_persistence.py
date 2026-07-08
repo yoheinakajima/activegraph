@@ -403,3 +403,78 @@ def test_large_log_save_and_load_under_two_seconds(tmp_path):
     # Soft target. Generous bound to avoid CI flakiness.
     assert write_secs < 5.0, f"write of {n} events took {write_secs:.2f}s"
     assert load_secs < 2.0, f"load of {n} events took {load_secs:.2f}s"
+
+
+class TestGraphBackedApprovals:
+    """v1.4: pending approvals survive Runtime.load (proposed minus
+    granted, rebuilt from the log)."""
+
+    def _runtime_with_gated_pack(self, path):
+        from pydantic import BaseModel
+
+        from activegraph import Graph, Runtime, behavior, clear_registry
+        from activegraph.packs import ObjectType, Pack, PackPolicy
+
+        clear_registry()
+
+        class Risky(BaseModel):
+            action: str
+
+        pack = Pack(
+            name="gated",
+            version="1.0",
+            object_types=(ObjectType(name="risky", schema=Risky),),
+            policies=(
+                PackPolicy(name="gate", requires_approval=("risky",)),
+            ),
+        )
+
+        @behavior(name="proposer", on=["goal.created"])
+        def proposer(event, graph, ctx):
+            ctx.propose_object("risky", {"action": "wipe"}, reason="test")
+
+        g = Graph()
+        rt = Runtime(g, persist_to=path)
+        rt.load_pack(pack)
+        rt.run_goal("go")
+        return rt
+
+    def test_pending_approval_survives_reload_and_approves(self, tmp_path):
+        from activegraph import Runtime
+
+        path = str(tmp_path / "run.db")
+        rt = self._runtime_with_gated_pack(path)
+        assert len(rt.pending_approvals()) == 1
+        aid = rt.pending_approvals()[0].id
+
+        loaded = Runtime.load(path, run_id=rt.run_id)
+        pending = loaded.pending_approvals()
+        assert [pa.id for pa in pending] == [aid]
+        assert pending[0].data == {"action": "wipe"}
+        assert pending[0].object_type == "risky"
+
+        obj_id = loaded.approve(aid, approved_by="owner")
+        assert loaded.graph.get_object(obj_id).data["action"] == "wipe"
+
+    def test_granted_approvals_do_not_reappear(self, tmp_path):
+        from activegraph import Runtime
+
+        path = str(tmp_path / "run.db")
+        rt = self._runtime_with_gated_pack(path)
+        aid = rt.pending_approvals()[0].id
+        rt.approve(aid, approved_by="owner")
+
+        loaded = Runtime.load(path, run_id=rt.run_id)
+        assert loaded.pending_approvals() == []
+        # And fresh proposals can't collide with the recorded id space.
+        new_id = loaded._add_pending_approval(  # noqa: SLF001
+            object_type="risky", data={"action": "again"}
+        )
+        assert new_id != aid
+
+    def test_fork_inherits_pending_approvals(self, tmp_path):
+        path = str(tmp_path / "run.db")
+        rt = self._runtime_with_gated_pack(path)
+        aid = rt.pending_approvals()[0].id
+        fork = rt.fork(at_event=rt.trace.events()[-1].id)
+        assert [pa.id for pa in fork.pending_approvals()] == [aid]

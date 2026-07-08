@@ -54,7 +54,9 @@ Added in v0.7:
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 import random as _random
 import time as _time
 import traceback
@@ -76,6 +78,7 @@ from activegraph.core.ids import IDGen
 from activegraph.core.view import View
 from activegraph.frame import Frame
 from activegraph.llm.cache import LLMCache
+from activegraph.llm.embedding import EmbeddingProvider
 from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.llm.provider import LLMProvider
 from activegraph.llm.types import LLMMessage, ToolCall
@@ -83,6 +86,12 @@ from activegraph.policy import Policy
 from activegraph.runtime.behavior_graph import BehaviorGraph
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, compute_diff
+from activegraph.runtime.promote import (
+    PromotePlan,
+    PromoteResult,
+    compute_promote_plan,
+    promote_warnings,
+)
 from activegraph.runtime.errors import ReplayDivergenceError
 from activegraph.runtime.queue import EventQueue
 from activegraph.runtime.registry import Registry
@@ -278,6 +287,10 @@ class Runtime:
         # False for the v1.3 cycle - native mode changes prompt hashes,
         # so flipping it must be a deliberate, cache-invalidating act.
         native_structured_output: bool = False,
+        # v1.3: embedding seam. The runtime holds it for packs (memory
+        # and retrieval capabilities read runtime.embedding_provider);
+        # the runtime itself never calls it.
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> None:
         self.graph = graph
         self.frame = frame
@@ -287,6 +300,14 @@ class Runtime:
         self.replay_strict = replay_strict
         # CONTRACT v0.6 #3: provider is set once at construction.
         self.llm_provider: Optional[LLMProvider] = llm_provider
+        # v1.3: second provider seam, same set-once convention. None
+        # means the application didn't configure one; packs degrade
+        # (e.g. lexical-only retrieval) or fail loud per their own
+        # contract.
+        self.embedding_provider: Optional[EmbeddingProvider] = embedding_provider
+        # CONTRACT v1.3 #4: raised only inside promote()'s apply phase
+        # so delta events skip behavior enqueueing (see _on_event).
+        self._promote_quiescent: bool = False
         # CONTRACT v1.3 #1: the opt-in lever plus the per-behavior
         # resolved modes ("native" | "prompt"), filled by
         # _ensure_registry. Runtime-local on purpose: behaviors are
@@ -467,6 +488,12 @@ class Runtime:
             "activegraph_events_emitted_total",
             {"event_type": event.type},
         )
+        # CONTRACT v1.3 #4: promote applies its delta quiescently —
+        # the events persist and project, but never enqueue for
+        # behavior matching. The promote.applied marker is emitted
+        # BEFORE this flag is raised, so it alone is queue-visible.
+        if self._promote_quiescent:
+            return
         # Don't enqueue our own lifecycle events for re-matching.
         # v0.7 adds `llm.*`, `tool.*`, `pattern.*`, `behavior.scheduled`
         # to the suppression list — they're internal to the runtime's
@@ -2115,7 +2142,16 @@ class Runtime:
     # ---------- v0.9: approval flow ----------
 
     def pending_approvals(self) -> list[Any]:
-        """List of currently-pending approvals (in creation order)."""
+        """List of currently-pending approvals (in creation order).
+
+        v1.4: graph-backed across restarts. ``approval.proposed``
+        events carry the full deferred payload, and ``Runtime.load`` /
+        ``fork()`` rebuild this queue from the log (proposed minus
+        granted), so a proposal survives a restart and can be approved
+        by the reloaded runtime. Proposals recorded before v1.4 lack
+        the payload data in their events and cannot be reconstructed —
+        they surface only in the runtime instance that created them.
+        """
         if self._pack_state is None:
             return []
         return list(self._pack_state.pending_approvals)
@@ -2147,7 +2183,10 @@ class Runtime:
             pack=owner_pack,
         )
         state.pending_approvals.append(pa)
-        # Emit an event so the trace shows the proposal.
+        # Emit an event so the trace shows the proposal. v1.4: the
+        # payload carries the full deferred data, so the pending queue
+        # is reconstructible from the log across Runtime.load — the
+        # event is the durable record, the in-memory list a cache.
         self.graph.emit(
             Event(
                 id=self.graph.ids.event(),
@@ -2157,6 +2196,7 @@ class Runtime:
                     "object_type": object_type,
                     "reason": reason,
                     "pack": owner_pack,
+                    "data": dict(data),
                 },
                 actor="runtime",
                 frame_id=self.frame.id if self.frame else None,
@@ -2349,6 +2389,7 @@ class Runtime:
         metrics: Optional[Metrics] = None,
         graph_store: Optional[GraphStore] = None,
         native_structured_output: bool = False,
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -2412,6 +2453,7 @@ class Runtime:
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
             metrics=metrics,
             native_structured_output=native_structured_output,
+            embedding_provider=embedding_provider,
         )
         # Make sure the run row exists (older files might predate it; in v0.5
         # they shouldn't, but be defensive).
@@ -2425,6 +2467,10 @@ class Runtime:
         # that started but never completed still lose their in-progress
         # work — that's the original tradeoff, unchanged.
         _requeue_unfired(rt, events)
+        # v1.4: rebuild the pending-approval queue from the log
+        # (approval.proposed minus approval.granted) so proposals
+        # survive restarts.
+        _rebuild_pending_approvals(rt, events)
 
         if replay_strict:
             _verify_replay(
@@ -2456,6 +2502,7 @@ class Runtime:
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
         graph_store: Optional[GraphStore] = None,
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> "Runtime":
         """Branch this run at `at_event` into an independent new run.
 
@@ -2508,6 +2555,14 @@ class Runtime:
                 ),
                 context={"current_store_kind": current_kind},
             )
+
+        # CONTRACT v1.3 #4: a fork cut must not slice a promote block.
+        # The marker plus its quiescent delta events are one atomic
+        # unit; a cutoff at the marker or mid-delta would give the
+        # child the marker (which IS requeue-eligible) with a partial
+        # delta — behaviors reacting to it would see entities that
+        # never landed.
+        _reject_mid_promote_block_fork(self.graph.events, at_event)
 
         new_run_id = self.graph.ids.run()
         SQLiteEventStore.fork_run(
@@ -2580,6 +2635,13 @@ class Runtime:
             # CONTRACT v1.3 #1: forks inherit the parent's mode posture
             # so pre-populated caches stay reachable.
             native_structured_output=self.native_structured_output,
+            # v1.3: forks inherit the embedding seam like the LLM
+            # provider — override per-fork to test a different embedder.
+            embedding_provider=(
+                embedding_provider
+                if embedding_provider is not None
+                else self.embedding_provider
+            ),
         )
         # CONTRACT v0.5 diff #8 (extended to fork in v0.6): events whose
         # behaviors never started get re-queued. For a fork at an early
@@ -2587,13 +2649,328 @@ class Runtime:
         # on the fork — without it, fork-then-run-until-idle would be a
         # no-op when there's no new seed event.
         _requeue_unfired(rt, events)
+        # v1.4: the fork inherits approvals still pending at the fork
+        # point, rebuilt from its copied log.
+        _rebuild_pending_approvals(rt, events)
         return rt
 
     def diff(self, other: "Runtime") -> Diff:
         return compute_diff(self.graph, other.graph, self.run_id, other.run_id)
 
+    def promote(
+        self, fork: "Runtime", *, dry_run: bool = False
+    ) -> Union[PromotePlan, PromoteResult]:
+        """Apply ``fork``'s net structural delta to this runtime.
+
+        The third piece of the fork → test → promote loop
+        (CONTRACT v1.3 #4; design in ``promote-design.md``). The
+        receiver is the destination (parent), the argument the source
+        — the ``rt.diff(fork)`` orientation.
+
+        The delta is computed three-way against this run's state at
+        the recorded fork point: fork-only changes are applied as
+        ordinary parent events; both-sides changes raise
+        :class:`~activegraph.runtime.exec_errors.PromoteConflictError`
+        before ANY mutation (fail-closed, atomic, no semantic merge);
+        this run's own post-fork work is left alone. Referential
+        integrity is part of the conflict check: promoted relations
+        with missing endpoints, and promoted removals that would
+        cascade away parent relations, both conflict.
+
+        ``dry_run=True`` returns the advisory
+        :class:`~activegraph.runtime.promote.PromotePlan` without
+        mutating anything. Apply always recomputes against the
+        parent's current state — a stale dry-run plan cannot be
+        handed back in; ``computed_against`` on the plan/result
+        records the parent tip event id the applied plan actually
+        saw.
+
+        Application is quiescent: the delta events append, project,
+        and persist, but do not fire behaviors — the single reaction
+        point is the ``promote.applied`` marker event, which is
+        queue-visible and fires subscribed behaviors once, after the
+        full delta is in place, seeing post-promote state. Pack loads
+        and settings overrides are never applied; they surface in
+        ``plan.warnings`` (adopting code is an explicit
+        ``load_pack``).
+
+        Requires both runtimes on the same SQLite store and ``fork``
+        to be a direct fork of this run per the store's lineage
+        records (:class:`~activegraph.runtime.exec_errors.PromoteLineageError`
+        otherwise; promote grandchildren one level at a time).
+        """
+        from activegraph.core.patch import Patch
+        from activegraph.runtime.exec_errors import (
+            PromoteConflictError,
+            PromoteLineageError,
+        )
+        from activegraph.store.sqlite import SQLiteEventStore
+
+        parent_store = self.graph.store
+        fork_store = fork.graph.store
+        if not isinstance(parent_store, SQLiteEventStore) or not isinstance(
+            fork_store, SQLiteEventStore
+        ):
+            from activegraph.runtime.config_errors import IncompatibleRuntimeState
+
+            kinds = (
+                f"parent: {type(parent_store).__name__ if parent_store else 'no store'}, "
+                f"fork: {type(fork_store).__name__ if fork_store else 'no store'}"
+            )
+            raise IncompatibleRuntimeState(
+                f"runtime.promote() requires both runtimes on a SQLite store ({kinds})",
+                what_failed=(
+                    f"runtime.promote() was called with {kinds}. Promote "
+                    f"verifies fork lineage from the store's runs table, "
+                    f"which requires the SQLite store on both sides."
+                ),
+                why=(
+                    "Lineage (parent_run_id, forked_at_event_id) is "
+                    "recorded durably by fork(), which itself requires a "
+                    "SQLite store (CONTRACT v0.8 #5). Promote trusts the "
+                    "store's records, not the caller's claim, so it has "
+                    "the same store requirement (CONTRACT v1.3 #4)."
+                ),
+                how_to_fix=(
+                    "Create the fork with runtime.fork() on a "
+                    "SQLite-backed runtime and promote between those two "
+                    "runtimes. For Postgres runs, migrate first:\n"
+                    "    activegraph migrate --from <url> --to sqlite:///runs.db"
+                ),
+                context={"stores": kinds},
+            )
+        if parent_store.path != fork_store.path:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=None,
+                detail=(
+                    f"the runs live in different stores "
+                    f"({parent_store.path!r} vs {fork_store.path!r})"
+                ),
+            )
+
+        record = fork_store.get_run()
+        if record is None or record.parent_run_id != self.run_id:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=record.parent_run_id if record else None,
+                detail=(
+                    f"the store records "
+                    f"{(record.parent_run_id if record else None)!r} as its "
+                    f"parent, not {self.run_id!r}"
+                ),
+            )
+        forked_at = record.forked_at_event_id
+        if not forked_at:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=record.parent_run_id,
+                detail="the store has no forked_at_event_id for this run",
+            )
+
+        warnings = promote_warnings(self, fork, forked_at_event=forked_at)
+        try:
+            plan = compute_promote_plan(
+                self.graph,
+                fork.graph,
+                forked_at_event=forked_at,
+                warnings=warnings,
+            )
+        except LookupError as e:
+            raise PromoteLineageError(
+                from_run=fork.run_id,
+                into_run=self.run_id,
+                recorded_parent=record.parent_run_id,
+                detail=str(e),
+            ) from e
+
+        if dry_run:
+            return plan
+        if plan.conflicts:
+            raise PromoteConflictError(
+                conflicts=plan.conflicts,
+                from_run=fork.run_id,
+                into_run=self.run_id,
+            )
+
+        # ---- pre-mutation schema validation (v1.3 follow-up) ----
+        # The delta is applied through hand-built events, which bypass
+        # add_object's pack-schema hook — so validate here, against
+        # THIS runtime's loaded packs, before anything mutates. Types
+        # no loaded pack declares pass through untyped, exactly like
+        # add_object (CONTRACT v0.9 #5 semantics); typed data that
+        # violates the parent's schema raises PackSchemaViolation with
+        # the parent byte-identical to before the call. Validated
+        # (canonicalized) data replaces the raw delta payload so a
+        # promoted object matches what add_object would have stored.
+        obj_validator = self.graph._pack_object_validator  # noqa: SLF001
+        if obj_validator is not None:
+            for o in list(plan.object_creates) + list(plan.object_patches):
+                o["data"] = obj_validator(o["type"], o["data"])
+        rel_validator = self.graph._pack_relation_validator  # noqa: SLF001
+        if rel_validator is not None:
+            created_types = {o["id"]: o["type"] for o in plan.object_creates}
+
+            def _endpoint_type(oid: str) -> Optional[str]:
+                if oid in created_types:
+                    return created_types[oid]
+                obj = self.graph.get_object(oid)
+                return obj.type if obj else None
+
+            for r in plan.relation_creates:
+                rel_validator(
+                    r["type"],
+                    _endpoint_type(r["source"]),
+                    _endpoint_type(r["target"]),
+                )
+
+        # ---- apply (marker first, then the delta, quiescently) ----
+
+        actor = f"promote:{fork.run_id}"
+        frame_id = self.frame.id if self.frame else None
+        marker = self.graph.emit(
+            Event(
+                id=self.graph.ids.event(),
+                type="promote.applied",
+                payload={
+                    "from_run": plan.from_run,
+                    "forked_at_event": plan.forked_at_event,
+                    "computed_against": plan.computed_against,
+                    "objects_created": [o["id"] for o in plan.object_creates],
+                    "objects_patched": [o["id"] for o in plan.object_patches],
+                    "objects_removed": list(plan.object_removes),
+                    "relations_created": [r["id"] for r in plan.relation_creates],
+                    "relations_removed": list(plan.relation_removes),
+                    "warnings": list(plan.warnings),
+                },
+                actor="runtime",
+                frame_id=frame_id,
+                caused_by=None,
+                timestamp=self.graph.clock.now(),
+            )
+        )
+
+        applied: list[str] = []
+
+        def _emit(type_: str, payload: dict[str, Any]) -> None:
+            ev = self.graph.emit(
+                Event(
+                    id=self.graph.ids.event(),
+                    type=type_,
+                    payload=payload,
+                    actor=actor,
+                    frame_id=frame_id,
+                    caused_by=marker.id,
+                    timestamp=self.graph.clock.now(),
+                )
+            )
+            applied.append(ev.id)
+
+        self._promote_quiescent = True
+        try:
+            # Order matters: explicit relation removals first (so the
+            # object-removal cascade below finds nothing left to touch
+            # — the orphaning_removal conflict guarantees every
+            # parent relation on a removed object is in this list),
+            # then object removals, creations, patches, and finally
+            # relation creations whose endpoints now all exist.
+            for rid in plan.relation_removes:
+                _emit("relation.removed", {"id": rid})
+            for oid in plan.object_removes:
+                _emit("object.removed", {"id": oid})
+            for o in plan.object_creates:
+                prov = self.graph._provenance(  # noqa: SLF001 — internal seam
+                    actor, marker.id, frame_id, []
+                )
+                _emit(
+                    "object.created",
+                    {
+                        "object": {
+                            "id": o["id"],
+                            "type": o["type"],
+                            "data": copy.deepcopy(o["data"]),
+                            "version": 1,
+                            "provenance": prov,
+                        },
+                        "id": o["id"],
+                    },
+                )
+            for o in plan.object_patches:
+                current = self.graph.get_object(o["id"])
+                assert current is not None  # plan guarantees presence
+                patch = Patch(
+                    id=self.graph.ids.patch(),
+                    target=o["id"],
+                    op="replace",
+                    value=copy.deepcopy(o["data"]),
+                    expected_version=current.version,
+                    proposed_by=actor,
+                    rationale=f"promoted from {fork.run_id}",
+                    evidence=[],
+                    status="applied",
+                    provenance=self.graph._provenance(  # noqa: SLF001
+                        actor, marker.id, frame_id, []
+                    ),
+                )
+                _emit(
+                    "patch.applied",
+                    {
+                        "patch": patch.to_dict(),
+                        "target": o["id"],
+                        "diff": _promote_data_diff(current.data, o["data"]),
+                    },
+                )
+            for r in plan.relation_creates:
+                prov = self.graph._provenance(  # noqa: SLF001
+                    actor, marker.id, frame_id, []
+                )
+                _emit(
+                    "relation.created",
+                    {
+                        "relation": {
+                            "id": r["id"],
+                            "source": r["source"],
+                            "target": r["target"],
+                            "type": r["type"],
+                            "data": copy.deepcopy(r["data"]),
+                            "provenance": prov,
+                        },
+                        "id": r["id"],
+                        "source": r["source"],
+                        "target": r["target"],
+                    },
+                )
+        finally:
+            self._promote_quiescent = False
+
+        # Promoted entities keep their fork-minted ids; bump this run's
+        # generators past them so future mints can't collide.
+        self.graph.ids.reseed_from_events(self.graph.events)
+
+        return PromoteResult(
+            plan=plan,
+            marker_event_id=marker.id,
+            applied_event_ids=applied,
+        )
+
 
 # ---------- helpers ----------
+
+
+def _promote_data_diff(
+    old: dict[str, Any], new: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Per-field {old, new} for a promote replace-patch, including
+    fields the replacement drops (rendered as new=None), so the trace
+    line shows the full change like any other patch.applied."""
+    out: dict[str, dict[str, Any]] = {}
+    for k in sorted(set(old) | set(new)):
+        if old.get(k) != new.get(k):
+            out[k] = {"old": old.get(k), "new": new.get(k)}
+    return out
 
 
 _BUDGET_REASON_MAP = {
@@ -2829,6 +3206,13 @@ def _requeue_unfired(rt: "Runtime", events: list[Event]) -> None:
             continue
         if e.id in fired_on:
             continue
+        # CONTRACT v1.3 #4: promote delta events were applied
+        # quiescently — never queued live, so never requeued either.
+        # The promote.applied marker itself (actor="runtime") stays
+        # requeue-eligible: it WAS queued, so a stop-before-drain
+        # legitimately recovers it here.
+        if (e.actor or "").startswith("promote:"):
+            continue
         rt._queue.push(e)  # noqa: SLF001 — internal seam by design
     if rt._queue:
         rt._idle_emitted = False
@@ -2858,11 +3242,29 @@ def _verify_replay(
     regardless of replay_llm_cache — otherwise we'd hit the live API.
     A live-rebuilt prompt whose hash doesn't match the recorded one is
     itself a divergence (decision-2 adjustment).
+
+    CONTRACT v1.3 #4: promote blocks — the ``promote.applied`` marker
+    plus its ``actor="promote:*"`` delta events — are recorded runtime
+    actions, not behavior output. They were applied quiescently in the
+    original run, so behaviors cannot re-derive them; strict replay
+    projects them verbatim at their recorded position (so later seeds
+    see post-promote state) and excludes them from the comparison
+    streams. KNOWN LIMITATION (mirrors v0.5 #7's posture): events a
+    behavior derived FROM a promote.applied subscription are recorded
+    but not re-derived, so strict replay diverges on runs that combine
+    ``replay_strict=True`` with marker-subscribed behaviors.
     """
 
     # Seed events: everything with no caused_by (goal.created, user-emitted
-    # bootstrap events). Behaviors re-derive everything else.
-    seed_events = [e for e in recorded_events if e.caused_by is None and not _is_lifecycle(e)]
+    # bootstrap events). Behaviors re-derive everything else. Promote
+    # markers have caused_by=None but are NOT seeds — see the docstring.
+    seed_events = [
+        e
+        for e in recorded_events
+        if e.caused_by is None
+        and not _is_lifecycle(e)
+        and not _is_promote_block(e)
+    ]
     if not seed_events:
         return  # nothing to verify
 
@@ -2901,28 +3303,70 @@ def _verify_replay(
     fresh_rt._strict_expected_hashes = list(expected_hashes)
     fresh_rt._ensure_registry()
 
-    # Replay seed events through emit so behaviors fire.
-    for e in seed_events:
-        new_id = fresh.ids.event()
-        replay_ev = Event(
-            id=new_id,
-            type=e.type,
-            payload=dict(e.payload),
-            actor=e.actor,
-            frame_id=e.frame_id,
-            caused_by=None,
-            timestamp=e.timestamp,
-        )
-        fresh.emit(replay_ev)
+    # Replay seed events through emit so behaviors fire, draining the
+    # queue wherever the RECORDED log shows derivation happened — a
+    # derived (caused_by != None) non-lifecycle event between two
+    # seeds means the original run drained between them, so the
+    # verify run must too, or the type streams interleave differently
+    # (the recorded goal1, derived1, goal2, derived2 order would
+    # replay as goal1, goal2, derived1, derived2). Promote-block
+    # events are projected quiescently (_replay_event: state only, no
+    # listeners, no queue) at their recorded positions, after any
+    # derivation that preceded them — the same posture the original
+    # apply used, so pre-promote behaviors see pre-promote state.
+    seed_ids = {e.id for e in seed_events}
+    derivation_pending = False
+    for e in recorded_events:
+        if _is_promote_block(e):
+            if derivation_pending:
+                fresh_rt.run_until_idle()
+                derivation_pending = False
+            fresh._replay_event(  # noqa: SLF001 — the load/fork seam
+                Event(
+                    id=fresh.ids.event(),
+                    type=e.type,
+                    payload=dict(e.payload),
+                    actor=e.actor,
+                    frame_id=e.frame_id,
+                    caused_by=None,
+                    timestamp=e.timestamp,
+                )
+            )
+            continue
+        if e.id in seed_ids:
+            if derivation_pending:
+                fresh_rt.run_until_idle()
+                derivation_pending = False
+            new_id = fresh.ids.event()
+            replay_ev = Event(
+                id=new_id,
+                type=e.type,
+                payload=dict(e.payload),
+                actor=e.actor,
+                frame_id=e.frame_id,
+                caused_by=None,
+                timestamp=e.timestamp,
+            )
+            fresh.emit(replay_ev)
+            continue
+        if not _is_lifecycle(e) and e.caused_by is not None:
+            derivation_pending = True
     fresh_rt.run_until_idle()
 
-    # Compare type-stream of non-lifecycle events.
+    # Compare type-stream of non-lifecycle events (promote blocks are
+    # projected verbatim on both sides, so both streams exclude them).
     rec_stream = [
         (e.id, e.type)
         for e in recorded_events
-        if not _is_lifecycle(e) and e.id not in non_replayable_llm_ids
+        if not _is_lifecycle(e)
+        and e.id not in non_replayable_llm_ids
+        and not _is_promote_block(e)
     ]
-    new_stream = [(e.id, e.type) for e in fresh.events if not _is_lifecycle(e)]
+    new_stream = [
+        (e.id, e.type)
+        for e in fresh.events
+        if not _is_lifecycle(e) and not _is_promote_block(e)
+    ]
     for i, (rec, new) in enumerate(zip(rec_stream, new_stream)):
         if rec[1] != new[1]:
             raise ReplayDivergenceError(
@@ -2961,3 +3405,116 @@ def _is_lifecycle(e: Event) -> bool:
         or e.type.startswith("relation_behavior.")
         or e.type.startswith("runtime.")
     )
+
+
+def _rebuild_pending_approvals(rt: "Runtime", events: list[Event]) -> None:
+    """Reconstruct the pending-approval queue from the event log. v1.4.
+
+    Pending = ``approval.proposed`` minus ``approval.granted``, in
+    proposal order. Only proposals whose events carry the deferred
+    ``data`` payload (v1.4+) are reconstructible; older events are
+    skipped but still advance the approval-id counter so fresh
+    proposals can't collide with recorded ids.
+    """
+    proposed: dict[str, dict[str, Any]] = {}
+    granted: set[str] = set()
+    max_n = 0
+    for e in events:
+        p = e.payload or {}
+        if e.type == "approval.proposed":
+            aid = str(p.get("approval_id", ""))
+            m = re.match(r"approval_(\d+)$", aid)
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+            if "data" in p:
+                proposed[aid] = p
+        elif e.type == "approval.granted":
+            granted.add(str(p.get("approval_id", "")))
+    pending = {k: v for k, v in proposed.items() if k not in granted}
+    if not pending and max_n == 0:
+        return
+    from activegraph.packs import PendingApproval
+    from activegraph.packs.loader import _ensure_pack_state
+
+    state = _ensure_pack_state(rt)
+    state._next_approval_n = max(state._next_approval_n, max_n + 1)
+    for aid, p in pending.items():
+        state.pending_approvals.append(
+            PendingApproval(
+                id=aid,
+                kind="object",
+                object_type=str(p.get("object_type", "")),
+                data=dict(p.get("data", {})),
+                reason=str(p.get("reason", "")),
+                pack=str(p.get("pack", "")),
+            )
+        )
+
+
+def _is_promote_block(e: Event) -> bool:
+    """True for the promote.applied marker and its quiescent delta
+    events (CONTRACT v1.3 #4) — recorded runtime actions that strict
+    replay projects verbatim rather than expecting behaviors to
+    re-derive."""
+    return e.type == "promote.applied" or (e.actor or "").startswith("promote:")
+
+
+def _reject_mid_promote_block_fork(events: list[Event], at_event: str) -> None:
+    """Raise when a fork cutoff would slice a promote block in half.
+
+    The cut is invalid iff any event AFTER the cutoff is a
+    ``promote:*`` delta whose marker sits at or before the cutoff —
+    the child would inherit the marker without its full delta,
+    breaking promote's atomicity in the fork (CONTRACT v1.3 #4).
+    Cutting before the marker (block fully excluded) or at the
+    block's last delta event (block fully included) is fine.
+    """
+    cut_idx: Optional[int] = None
+    for i, e in enumerate(events):
+        if e.id == at_event:
+            cut_idx = i
+            break
+    if cut_idx is None:
+        return  # unknown ids get the store's EventNotFoundError downstream
+    markers_before = {
+        e.id for e in events[: cut_idx + 1] if e.type == "promote.applied"
+    }
+    for e in events[cut_idx + 1 :]:
+        if (e.actor or "").startswith("promote:") and e.caused_by in markers_before:
+            from activegraph.runtime.config_errors import IncompatibleRuntimeState
+
+            marker_id = e.caused_by
+            block = [
+                ev.id
+                for ev in events
+                if (ev.actor or "").startswith("promote:")
+                and ev.caused_by == marker_id
+            ]
+            raise IncompatibleRuntimeState(
+                f"fork(at_event={at_event!r}) would slice the promote "
+                f"block anchored at {marker_id!r}",
+                what_failed=(
+                    f"The cutoff {at_event!r} falls inside a promote "
+                    f"block: marker {marker_id!r} plus its "
+                    f"{len(block)} delta event(s) are one atomic unit, "
+                    f"and the cut would give the fork the marker with "
+                    f"only part of the delta."
+                ),
+                why=(
+                    "Promote applies its delta quiescently and "
+                    "atomically (CONTRACT v1.3 #4). A fork whose log "
+                    "ends mid-block would requeue the marker on load "
+                    "and fire promote-subscribed behaviors against "
+                    "state the block never finished applying."
+                ),
+                how_to_fix=(
+                    f"Fork at the block's final event instead:\n"
+                    f"    rt.fork(at_event={block[-1]!r})\n"
+                    f"or at any event before the marker {marker_id!r}."
+                ),
+                context={
+                    "at_event": at_event,
+                    "marker": marker_id,
+                    "block_final_event": block[-1],
+                },
+            )

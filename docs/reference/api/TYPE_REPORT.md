@@ -8,8 +8,8 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 
 ## Summary
 
-- Allowlist modules: **41** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
-- Clean (mypy --strict passes): **41 / 41 (100.0%)**
+- Allowlist modules: **42** (driven by ``activegraph.__all__`` plus pack-level ``__all__``s)
+- Clean (mypy --strict passes): **42 / 42 (100.0%)**
 - Dirty (one or more findings): **0** (gap to 100% target: 0 modules)
 
 ## Clean modules (mypy --strict passes)
@@ -41,6 +41,7 @@ Classification: **clean** = mypy --strict reports zero errors against this modul
 - [x] ``activegraph.runtime.errors``
 - [x] ``activegraph.runtime.exec_errors``
 - [x] ``activegraph.runtime.patterns``
+- [x] ``activegraph.runtime.promote``
 - [x] ``activegraph.runtime.registration_errors``
 - [x] ``activegraph.runtime.runtime``
 - [x] ``activegraph.runtime.scheduler``

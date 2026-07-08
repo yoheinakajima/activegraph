@@ -12,7 +12,7 @@ How to fix:
   internal error location, and the full message above:
       https://github.com/yoheinakajima/activegraph/issues/new
 
-    framework version:   activegraph 1.2.0
+    framework version:   activegraph 1.3.0
     internal location:   activegraph/runtime/patterns.py:_eval_where (unknown comparison operator)
 
 More:

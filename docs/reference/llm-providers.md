@@ -107,7 +107,9 @@ by design: only *recognized* cross-provider mismatches fire.
 | Structured output | Instruction-based by default: schema + example instance embedded in the system prompt by [`build_system_prompt`](api/index.md); provider parses JSON via the shared `parse_structured_response` helper. Opt into native constrained decoding with `Runtime(native_structured_output=True)` — sends Messages API `output_config` on supported `claude-*` families | Same default path. Native mode sends Chat Completions `response_format={"type": "json_schema", ..., "strict": true}` on supported families (`gpt-4o`, `gpt-4.1`, `gpt-5`, `o3`, `o4`) |
 | `count_tokens()` | Server-side via `messages.count_tokens` (1 roundtrip per call when `budget.max_cost_usd` is set and no cache hit) | Client-side via `tiktoken` when available; char/4 heuristic fallback with a one-time debug log if tiktoken is missing |
 | Tool use | Supported (`Tool.to_definition()` emits Anthropic shape) | Supported. The provider translates framework/Anthropic-shaped tool definitions into OpenAI Chat Completions `function` tools and extracts returned `tool_calls` into the shared `ToolCall` shape |
-| Exception mapping | `llm.rate_limited` on 429-shaped errors; `llm.network_error` for everything else (timeouts, connection errors, **auth failures**) | Same mapping |
+| Tool-name wire rewriting (v1.3) | Pack-scoped canonical names (`pack.tool`) are outside the API's `[a-zA-Z0-9_-]` alphabet; the provider rewrites `.` → `__` on the wire and maps returned calls back, so the runtime and the event log only ever see canonical names | Same rewriting |
+| Exception mapping (v1.3) | `llm.rate_limited` on 429-shaped errors; `llm.auth_error` on 401/403-shaped errors (terminal, never retried); `llm.request_error` on other 4xx (terminal); `llm.network_error` for the rest (timeouts, connection errors, 5xx — retried) | Same mapping |
+| Reasoning-model parameters | n/a (`max_tokens` is universal) | `o1`/`o3`/`o4`/`gpt-5` families get `max_completion_tokens` and no `temperature`/`top_p` (the API rejects the GPT-4-era parameters). Override the family table with the `reasoning_model_prefixes=` kwarg |
 | Pricing | Family-prefix lookup; override with `pricing=` kwarg | Family-prefix lookup; override with `pricing=` kwarg |
 
 ## Native structured output (opt-in)
@@ -141,6 +143,41 @@ Three things to know before flipping the flag:
 in — construct it with `structured_output_mode="native"` to serve
 native-mode fixtures (the default `"prompt"` keeps every pre-v1.3
 fixture reachable unchanged).
+
+## Embedding providers (v1.3)
+
+`EmbeddingProvider` is the runtime's second provider seam, next to
+`LLMProvider`. The runtime **holds** one and never calls it — memory
+and retrieval capabilities live in packs, and the seam exists so
+every pack finds embeddings the same way instead of growing its own
+configuration channel:
+
+```python
+from activegraph import Runtime
+from activegraph.llm import EmbeddingProvider
+
+class MyEmbedder:                      # any object with the Protocol shape
+    default_model = "text-embedding-3-small"
+    def embed(self, *, texts, model):
+        ...                            # call your embedding API
+        return vectors                 # one list[float] per input text
+
+rt = Runtime(graph, embedding_provider=MyEmbedder())
+# Packs read rt.embedding_provider; None means "not configured" and
+# packs degrade (e.g. lexical-only retrieval) per their own contract.
+```
+
+Forks inherit the parent's embedding provider (override per-fork with
+`fork(embedding_provider=...)`); `Runtime.load(...,
+embedding_provider=...)` wires one at load time.
+
+The runtime ships exactly one implementation:
+`HashEmbeddingProvider`, a deterministic, dependency-free test double
+(token-hash buckets, L2-normalized). Its vectors reflect token
+overlap, not semantics — use it to test embedding plumbing offline;
+wire a real provider (OpenAI embeddings, Voyage, a local model) for
+retrieval quality. Real embedding implementations are deliberately
+not shipped in the runtime: no network dependencies, no API keys.
 
 ## Mixing with [`RecordedLLMProvider`](api/index.md)
 

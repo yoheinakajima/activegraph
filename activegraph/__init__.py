@@ -42,6 +42,11 @@ from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.policy import Policy
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, DivergentObject, DivergentRelation
+from activegraph.runtime.promote import (
+    PromoteConflict,
+    PromotePlan,
+    PromoteResult,
+)
 from activegraph.runtime.config_errors import (
     IncompatibleRuntimeState,
     InvalidArgumentType,
@@ -52,6 +57,8 @@ from activegraph.runtime.exec_errors import (
     ApprovalNotFoundError,
     InternalEvaluatorError,
     InvalidPatchLifecycleState,
+    PromoteConflictError,
+    PromoteLineageError,
     RuntimeContextRequiredError,
 )
 from activegraph.runtime.patterns import UnsupportedPatternError
@@ -190,6 +197,11 @@ __all__ = [
     "PendingApproval",
     "Policy",
     "PrometheusMetrics",
+    "PromoteConflict",
+    "PromoteConflictError",
+    "PromoteLineageError",
+    "PromotePlan",
+    "PromoteResult",
     "Relation",
     "RelationBehavior",
     "RegistrationError",
@@ -230,4 +242,4 @@ __all__ = [
     "tool",
 ]
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"

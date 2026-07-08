@@ -230,3 +230,120 @@ class InternalEvaluatorError(ExecutionError, ValueError):
             how_to_fix=how_to_fix,
             context=context,
         )
+
+
+class PromoteLineageError(ExecutionError, ValueError):
+    """The promote source is not a direct fork of the destination.
+
+    Fires from ``runtime.promote(fork)`` when the store's run records
+    say ``fork``'s run did not fork from this runtime's run — an
+    unrelated run, a grandchild (promote goes up one level at a
+    time), or a run whose fork point isn't in this parent's log.
+    CONTRACT v1.3 #4.
+    """
+
+    _doc_slug = "promote-lineage-error"
+
+    def __init__(
+        self,
+        *,
+        from_run: str,
+        into_run: str,
+        recorded_parent: Optional[str],
+        detail: str,
+    ) -> None:
+        self.from_run = from_run
+        self.into_run = into_run
+        self.recorded_parent = recorded_parent
+        ExecutionError.__init__(
+            self,
+            f"run {from_run!r} is not a direct fork of {into_run!r}",
+            what_failed=(
+                f"runtime.promote() was asked to promote run "
+                f"{from_run!r} into run {into_run!r}, but the store's "
+                f"lineage records disagree: {detail}"
+            ),
+            why=(
+                "Promote applies a fork's net delta three-way against "
+                "the parent's state at the recorded fork point, so the "
+                "source must be a DIRECT fork of the destination — the "
+                "runs table's parent_run_id / forked_at_event_id row is "
+                "the authority, not the caller's claim. Fork-of-fork "
+                "lineages promote one level at a time (CONTRACT v1.3 #4)."
+            ),
+            how_to_fix=(
+                "Check the lineage with:\n"
+                "    activegraph inspect <store> --runs\n"
+                "\n"
+                "For a grandchild fork, promote into its own parent "
+                "first, then promote that parent one level up. For an "
+                "unrelated run there is nothing to promote: fork from "
+                "the destination run and re-apply the change there."
+            ),
+            context={
+                "from_run": from_run,
+                "into_run": into_run,
+                "recorded_parent": recorded_parent,
+            },
+        )
+
+
+class PromoteConflictError(ExecutionError, ValueError):
+    """The fork's delta conflicts with the parent's own post-fork work.
+
+    Fires from ``runtime.promote(fork)`` before ANY mutation: one
+    conflict fails the whole promote (fail-closed, atomic — CONTRACT
+    v1.3 #4). Carries the full conflict list on ``.conflicts`` (the
+    same ``PromoteConflict`` records a ``dry_run`` plan exposes).
+    """
+
+    _doc_slug = "promote-conflict-error"
+
+    def __init__(self, *, conflicts: list[Any], from_run: str, into_run: str) -> None:
+        self.conflicts = list(conflicts)
+        self.from_run = from_run
+        self.into_run = into_run
+        preview = "\n".join(
+            f"    [{c.kind}] {c.entity} {c.id}: {c.detail}"
+            for c in self.conflicts[:8]
+        )
+        more = (
+            f"\n    ... and {len(self.conflicts) - 8} more"
+            if len(self.conflicts) > 8
+            else ""
+        )
+        ExecutionError.__init__(
+            self,
+            f"{len(self.conflicts)} conflict(s) block promoting "
+            f"{from_run!r} into {into_run!r}",
+            what_failed=(
+                f"runtime.promote() found {len(self.conflicts)} "
+                f"conflict(s) between the fork's delta and the parent's "
+                f"own changes since the fork point:\n{preview}{more}"
+            ),
+            why=(
+                "Promote is fail-closed and atomic: an entity changed on "
+                "both sides since the fork point (or a promoted relation/"
+                "removal that would break referential integrity) means a "
+                "human or a higher layer decides — the runtime does no "
+                "semantic merging, and nothing was applied "
+                "(CONTRACT v1.3 #4)."
+            ),
+            how_to_fix=(
+                "Inspect the full list first:\n"
+                "    plan = parent.promote(fork, dry_run=True)\n"
+                "    for c in plan.conflicts: print(c.kind, c.id, c.detail)\n"
+                "\n"
+                "The escape hatch is the loop itself, not a force flag: "
+                "fork again from the parent's current tip, re-apply the "
+                "candidate change there (caches make the shared prefix "
+                "cheap), and promote the fresh fork — that re-tests the "
+                "change against the parent's actual present."
+            ),
+            context={
+                "from_run": from_run,
+                "into_run": into_run,
+                "conflict_count": len(self.conflicts),
+                "conflict_kinds": sorted({c.kind for c in self.conflicts}),
+            },
+        )

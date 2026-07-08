@@ -184,6 +184,15 @@ def behavior(
         delay_n = _parse_aa(activate_after)
 
     def wrap(fn: Callable[..., None]) -> Behavior:
+        # v1.3: arity check at decoration time (see activegraph/_signature.py).
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("event", "graph", "ctx"),
+            decorator="@behavior",
+            allow_annotated_extras=True,
+        )
         b = Behavior(
             name=name or fn.__name__,
             fn=fn,
@@ -290,6 +299,15 @@ def llm_behavior(
     _validate_output_schema(output_schema)
 
     def wrap(fn: Callable[..., None]) -> LLMBehavior:
+        # v1.3: arity check at decoration time (see activegraph/_signature.py).
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("event", "graph", "ctx", "llm_output"),
+            decorator="@llm_behavior",
+            allow_annotated_extras=True,
+        )
         b = LLMBehavior(
             name=name or fn.__name__,
             fn=_llm_behavior_fn_placeholder,
@@ -357,6 +375,15 @@ def relation_behavior(
         delay_n = _parse_aa(activate_after)
 
     def wrap(fn: Callable[..., None]) -> RelationBehavior:
+        # v1.3: arity check at decoration time (see activegraph/_signature.py).
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("relation", "event", "graph", "ctx"),
+            decorator="@relation_behavior",
+            allow_annotated_extras=True,
+        )
         rb = RelationBehavior(
             name=name or fn.__name__,
             fn=fn,

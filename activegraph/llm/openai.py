@@ -110,6 +110,15 @@ class OpenAIProvider(LLMProvider):
     # permissive-default rule.
     _RECOGNIZED_PREFIXES: tuple[str, ...] = ("gpt-", "o1-", "o3-", "o4-")
 
+    # CONTRACT v1.3 #3: model families with reasoning-model request
+    # semantics — they take `max_completion_tokens` instead of
+    # `max_tokens` and reject non-default `temperature` / `top_p`.
+    # Before v1.3 the provider sent the GPT-4-era parameters
+    # unconditionally, so every call to these families was a
+    # guaranteed 400. Table-driven like the pricing table; override
+    # via the `reasoning_model_prefixes=` constructor kwarg.
+    _REASONING_MODEL_PREFIXES: tuple[str, ...] = ("o1", "o3", "o4", "gpt-5")
+
     def __init__(
         self,
         *,
@@ -117,6 +126,7 @@ class OpenAIProvider(LLMProvider):
         client: Any = None,
         pricing: Optional[Mapping[str, Mapping[str, str]]] = None,
         native_structured_output_models: Optional[tuple[str, ...]] = None,
+        reasoning_model_prefixes: Optional[tuple[str, ...]] = None,
     ) -> None:
         self._api_key_env = api_key_env
         self._client_override = client
@@ -125,6 +135,11 @@ class OpenAIProvider(LLMProvider):
             native_structured_output_models
             if native_structured_output_models is not None
             else self._NATIVE_STRUCTURED_OUTPUT_PREFIXES
+        )
+        self._reasoning_prefixes: tuple[str, ...] = (
+            reasoning_model_prefixes
+            if reasoning_model_prefixes is not None
+            else self._REASONING_MODEL_PREFIXES
         )
         self._client_cached: Any = None
         # One-time debug-level log when count_tokens falls back to the
@@ -172,6 +187,8 @@ class OpenAIProvider(LLMProvider):
         tools: Optional[list[dict[str, Any]]] = None,
         structured_output_mode: str = "prompt",
     ) -> LLMResponse:
+        from activegraph.llm.wire import build_tool_name_map
+
         client = self._client()
         openai_messages: list[dict[str, Any]] = []
         if system:
@@ -182,13 +199,24 @@ class OpenAIProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": openai_messages,
-            "max_tokens": int(max_tokens),
-            "temperature": float(temperature),
             "timeout": timeout_seconds,
         }
-        if top_p < 1.0:
-            kwargs["top_p"] = float(top_p)
+        if self._is_reasoning_model(model):
+            # CONTRACT v1.3 #3: reasoning families take
+            # max_completion_tokens and reject non-default temperature
+            # / top_p — omit both rather than send a guaranteed 400.
+            kwargs["max_completion_tokens"] = int(max_tokens)
+        else:
+            kwargs["max_tokens"] = int(max_tokens)
+            kwargs["temperature"] = float(temperature)
+            if top_p < 1.0:
+                kwargs["top_p"] = float(top_p)
+        # CONTRACT v1.3 #3: canonical (possibly pack-dotted) tool names
+        # are rewritten to the wire alphabet; returned calls map back
+        # through name_map so the runtime only ever sees canonical names.
+        name_map: Optional[dict[str, str]] = None
         if tools:
+            name_map = build_tool_name_map(tools)
             kwargs["tools"] = [_tool_definition_to_openai(t) for t in tools]
         if structured_output_mode == "native" and output_schema is not None:
             # CONTRACT v1.3 #1 #3: Chat Completions structured outputs.
@@ -225,7 +253,7 @@ class OpenAIProvider(LLMProvider):
         latency = time.monotonic() - t0
 
         text = _extract_text(raw)
-        tool_calls = _extract_tool_calls(raw)
+        tool_calls = _extract_tool_calls(raw, name_map=name_map)
         parsed: Any = None
         if output_schema is not None and not tool_calls:
             parsed = _parse_structured(text, output_schema)
@@ -313,6 +341,13 @@ class OpenAIProvider(LLMProvider):
         """
         return any(name.startswith(p) for p in self._RECOGNIZED_PREFIXES)
 
+    def _is_reasoning_model(self, model: str) -> bool:
+        """True when ``model`` belongs to a family with reasoning-model
+        request semantics (``max_completion_tokens``, fixed sampling
+        parameters). CONTRACT v1.3 #3.
+        """
+        return model.startswith(self._reasoning_prefixes)
+
     def supports_native_structured_output(self, model: str) -> bool:
         """True when ``model`` belongs to a family with structured-output
         support. CONTRACT v1.3 #1 #3.
@@ -373,6 +408,11 @@ def _message_to_openai(m: LLMMessage) -> dict[str, Any]:
             "content": m.content,
         }
     if m.role == "assistant" and m.tool_calls:
+        from activegraph.llm.wire import sanitize_tool_name
+
+        # Echoed tool calls carry canonical names in the event log;
+        # rewrite them the same way the definitions were, or the
+        # provider rejects the conversation it produced itself.
         return {
             "role": "assistant",
             "content": m.content or None,
@@ -381,7 +421,7 @@ def _message_to_openai(m: LLMMessage) -> dict[str, Any]:
                     "id": tc.id,
                     "type": "function",
                     "function": {
-                        "name": tc.name,
+                        "name": sanitize_tool_name(tc.name),
                         "arguments": json.dumps(tc.args, sort_keys=True),
                     },
                 }
@@ -392,7 +432,13 @@ def _message_to_openai(m: LLMMessage) -> dict[str, Any]:
 
 
 def _tool_definition_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
-    """Translate framework/Anthropic tool definitions to OpenAI tools."""
+    """Translate framework/Anthropic tool definitions to OpenAI tools.
+
+    Names are sanitized to the wire alphabet (CONTRACT v1.3 #3) —
+    pack-scoped dotted names would 400 verbatim.
+    """
+    from activegraph.llm.wire import sanitize_tool_name
+
     if tool.get("type") == "function" and isinstance(tool.get("function"), dict):
         fn = dict(tool["function"])
         parameters = fn.get("parameters")
@@ -401,7 +447,7 @@ def _tool_definition_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
         return {
             "type": "function",
             "function": {
-                "name": fn.get("name", ""),
+                "name": sanitize_tool_name(fn.get("name", "")),
                 "description": fn.get("description", ""),
                 "parameters": parameters or {"type": "object", "properties": {}},
             },
@@ -409,7 +455,7 @@ def _tool_definition_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": tool.get("name", ""),
+            "name": sanitize_tool_name(tool.get("name", "")),
             "description": tool.get("description", ""),
             "parameters": (
                 tool.get("parameters")
@@ -420,7 +466,11 @@ def _tool_definition_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _extract_tool_calls(raw: Any) -> list[ToolCall]:
+def _extract_tool_calls(
+    raw: Any, name_map: Optional[dict[str, str]] = None
+) -> list[ToolCall]:
+    from activegraph.llm.wire import restore_tool_name
+
     choices = getattr(raw, "choices", None) or []
     if not choices:
         return []
@@ -434,7 +484,7 @@ def _extract_tool_calls(raw: Any) -> list[ToolCall]:
     for call in raw_calls or []:
         call_id = _get(call, "id") or ""
         fn = _get(call, "function") or {}
-        name = _get(fn, "name") or ""
+        name = restore_tool_name(_get(fn, "name") or "", name_map)
         args_raw = _get(fn, "arguments") or {}
         if isinstance(args_raw, str):
             try:
@@ -456,15 +506,12 @@ def _get(obj: Any, key: str) -> Any:
 
 
 def _classify_provider_exception(e: Exception) -> str:
-    name = type(e).__name__.lower()
-    if "ratelimit" in name or "429" in str(e):
-        return "llm.rate_limited"
-    if "timeout" in name or "connect" in name:
-        return "llm.network_error"
-    # Auth failures (`AuthenticationError`, etc.) land here — CONTRACT
-    # v0.6 #11 taxonomy is closed; no `llm.auth_error` reason code,
-    # message preserved verbatim. See CONTRACT v1.0.1 #5.
-    return "llm.network_error"
+    # CONTRACT v1.3 #3: shared classification. Auth and invalid-request
+    # failures get their own terminal reason codes instead of the
+    # retried llm.network_error catch-all.
+    from activegraph.llm.wire import classify_provider_exception
+
+    return classify_provider_exception(e)
 
 
 def _retry_after_seconds(e: Exception) -> Optional[float]:

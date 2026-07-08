@@ -74,6 +74,19 @@ The body mutates the graph by calling `graph.add_object`,
 or emits arbitrary events via `graph.emit(type, payload)`. Each
 mutation lands as an event in the log; downstream behaviors react.
 
+The signature is validated at decoration time (v1.3): a handler
+that can't accept the three positional parameters — `def h(ctx)`,
+`def h(event, ctx)` — raises `TypeError` at the `@behavior` line
+instead of failing at first invocation with the error buried in a
+`behavior.failed` event. Extra parameters are allowed when the call
+can still succeed: give them defaults, or (in packs) annotate them
+with your settings class for keyword injection
+(`*, settings: MyPackSettings` — see
+[Authoring packs](../guides/authoring-packs.md)). The same check
+covers `@relation_behavior` (`(relation, event, graph, ctx)`),
+`@llm_behavior` (`(event, graph, ctx, llm_output)`), and `@tool`
+(`(args, ctx)`).
+
 ## The three behavior kinds
 
 - **Regular `@behavior`** (function or class) — the workhorse.

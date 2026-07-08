@@ -70,11 +70,32 @@ def tool(
     )
 
     def wrap(fn: Callable[..., Any]) -> Tool:
+        # v1.3: validate the (args, ctx) calling convention at
+        # decoration time so a wrong-arity tool fails at this line, not
+        # at first invocation inside a behavior. When input_schema= is
+        # omitted, infer it from the first parameter's Pydantic
+        # annotation so the model sees real parameters instead of an
+        # empty schema.
+        from activegraph._signature import (
+            infer_tool_input_schema,
+            validate_handler_signature,
+        )
+
+        validate_handler_signature(
+            fn,
+            expected_params=("args", "ctx"),
+            decorator="@tool",
+            allow_annotated_extras=False,
+        )
         t = Tool(
             name=name or fn.__name__,
             fn=fn,
             description=description,
-            input_schema=input_schema,
+            input_schema=(
+                input_schema
+                if input_schema is not None
+                else infer_tool_input_schema(fn)
+            ),
             output_schema=output_schema,
             cost_per_call=cost,
             timeout_seconds=float(timeout_seconds),

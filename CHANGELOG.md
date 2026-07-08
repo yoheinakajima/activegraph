@@ -13,6 +13,240 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.4
+
+Post-release work on top of v1.3.0, driven by the evolution pack's
+consumer sign-off and the pack-manifest spec review.
+
+### Added
+
+- **Provisional pack-manifest validator** (CONTRACT v1.4 #1).
+  `activegraph.packs.manifest` ships the reference implementation of
+  the pack manifest spec (activegraph-packs `docs/manifest-spec.md`,
+  DRAFT): `load_manifest` (parse + schema-validate, every violation
+  aggregated into one `PackManifestError`), `verify_surface` (two-way
+  manifest ↔ `Pack` check per the spec's identity mapping;
+  capabilities/consumes stay statically verified downstream), and
+  `compute_content_hash` / `verify_content_hash` (spec §4,
+  byte-exact, with runtime amendments: directory symlinks rejected
+  like file symlinks, non-UTF-8/non-NFC paths rejected loudly).
+  **PROVISIONAL** — importable only from `activegraph.packs.manifest`;
+  expect one round of breaking edits before the spec exits DRAFT.
+  `load_pack` does not enforce manifests this cycle (grandfathering).
+
+- **Promote apply-time schema validation** (CONTRACT v1.3 #4 addendum
+  4c). Promote's hand-built events bypass `add_object`'s pack-schema
+  hook; apply now runs the parent's object and relation validators
+  over the full delta pre-mutation. Typed data violating a
+  parent-loaded schema raises `PackSchemaViolation` with nothing
+  applied; valid typed data is stored canonicalized exactly as
+  `add_object` would store it; undeclared types keep v0.9 untyped
+  semantics. Catches fork/parent pack version skew at the boundary.
+
+- **Graph-backed pending approvals** (CONTRACT v1.4 #2). The
+  pending-approval queue was in-memory only and silently dropped on
+  restart. `approval.proposed` events now carry the full deferred
+  payload, and `Runtime.load` / `fork()` rebuild the queue from the
+  log (proposed minus granted, id counter reseeded), so a reloaded
+  runtime can `approve()` a proposal made before the restart and a
+  fork inherits proposals pending at its fork point. Proposals
+  recorded before v1.4 lack the payload in their events and are not
+  reconstructible (documented boundary; no history rewriting).
+- **Compaction/retention design published for review**
+  (`compaction-design.md`, proposed CONTRACT v1.4 #3): snapshot
+  events + archive tier, never deletion; a normative pin set that
+  retention policy can never override — promoted-from fork logs
+  (evolution-pack sign-off input), live lineage, replay-cache
+  dependence, pending machinery. Design only; implementation after
+  review.
+
+### Fixed
+
+- `load_prompts_from_dir` skips hidden files and symlinks. pathlib's
+  `glob("*.md")` matched both, so a prompt the runtime loaded could
+  be a file the manifest content hash excludes (hidden) or rejects
+  (symlink) — unhashed load-bearing content. Nothing the loader
+  reads may now escape the hash pin.
+
+## [v1.3.0] — 2026-07-08
+
+The agent-readiness release. Two arcs: the v1.3 cycle work locked in
+[CONTRACT.md § v1.3](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
+(#1 native structured output, #2 community surface — merged in PR #50
+but not changelogged at merge time; this section pays that debt), and
+the July 2026 agent-readiness upgrade arc driven by the downstream
+pack library's runtime evaluation: **promote** — the missing third of
+fork → test → promote (#4, design-reviewed downstream before
+implementation) — plus developer-experience surfacing, provider
+compatibility (#3), and the embedding seam. Everything is additive;
+code pinned to 1.2.0 keeps working unchanged.
+
+### Migration
+
+No breaking changes. Two behavioral notes: LLM auth/invalid-request
+failures now fail immediately with `llm.auth_error` /
+`llm.request_error` instead of being retried under
+`llm.network_error` (custom code branching on reason codes may want
+the new ones); and decorating a handler whose signature cannot
+satisfy its calling convention now raises `TypeError` at the
+decorator line instead of failing at first invocation.
+
+### Added
+
+- **`Runtime.promote(fork, dry_run=False)` — the third of
+  fork → test → promote** (CONTRACT v1.3 #4; design reviewed
+  downstream and locked in `promote-design.md`). Applies a fork's
+  net structural delta to its parent as ordinary, audited parent
+  events: three-way comparison against the parent's state at the
+  recorded fork point; fork-only changes promote, parent-only
+  changes are untouched, both-sides changes (including identical
+  concurrent edits) raise `PromoteConflictError` before any mutation
+  — fail-closed, atomic, no semantic merge, no `force=`. Referential
+  integrity conflicts (dangling promoted relations, removals that
+  would orphan parent relations) are part of the check. The delta
+  applies quiescently — behaviors react only to the single
+  queue-visible `promote.applied` marker event, never per delta
+  event, live or on reload. Dry-run plans are advisory (apply
+  recomputes against parent-now; `computed_against` records the tip
+  the plan saw). Lineage is verified from the store's runs table
+  (`PromoteLineageError`; grandchildren promote one level at a
+  time). Ships with the `activegraph promote` CLI command
+  (conflicts exit 5), a `[promote.applied]` trace rendering, and the
+  new [Fork, test, promote](https://docs.activegraph.ai/guides/fork-test-promote/)
+  guide. Strict replay (`replay_strict=True`) projects promote blocks
+  verbatim at their recorded position and excludes them from the
+  re-derivation comparison (behaviors were quiescent when they
+  landed); the marker-subscription re-derivation gap is a documented
+  known limitation in the v0.5 #7 tradition.
+
+### Fixed
+
+- **Promote warnings derive from the event logs, not live runtime
+  state.** `loaded_packs()` is empty on a `Runtime.load`-ed runtime
+  (packs are code), so the CLI promote path silently lost every
+  fork-only pack warning — the governance signal the design names —
+  and a live fork promoted into a reloaded parent false-positived.
+  Pack-load and settings-override warnings now read `pack.loaded` /
+  `pack.settings_overridden` events positionally from the fork tail.
+- **`activegraph promote` CLI hardening** (adversarial review):
+  mistyped run ids exit 3 with a clear message instead of inserting a
+  phantom run row and reporting a misleading lineage error; a
+  conflicted `--dry-run` exits 5 like a conflicted apply, so scripts
+  can gate on it; bare filesystem paths are a usage error (exit 2),
+  matching `inspect`/`fork`. Full CliRunner coverage added.
+- **Strict replay no longer falsely diverges on multi-goal runs.**
+  `_verify_replay` used to batch every seed event and drain once, so
+  a recorded `goal1, derived1, goal2, derived2` stream replayed as
+  `goal1, goal2, derived1, derived2` and diverged. The verify run now
+  drains the queue exactly where the recorded log shows derivation
+  happened, matching the original interleaving (also what lets
+  promote blocks project at their true positions).
+- **`fork(at_event=...)` rejects cutoffs that would slice a promote
+  block** (marker or mid-delta): the child would requeue the marker
+  against a partially-applied delta. The structured error names the
+  block's final event id as the valid cutoff.
+- **`upsert_run` no longer erases fork lineage on reload** (both
+  SQLite and Postgres stores; surfaced by promote). `Runtime.load`
+  upserts the run row with only `created_at`, and the blind
+  `ON CONFLICT` overwrite nulled `parent_run_id` /
+  `forked_at_event_id` / `label` on every reload — silently
+  destroying the lineage records `fork()` had written (and that
+  `promote()` verifies against). The three columns now get the same
+  `COALESCE` protection `goal` / `frame_id` already had.
+- **Pack-scoped tool names no longer break provider function calling**
+  (CONTRACT v1.3 #3). Canonical dotted names (`diligence.fetch_docs`)
+  are outside both providers' `[a-zA-Z0-9_-]` tool-name alphabet, so
+  every pack tool offered to a model was a guaranteed request
+  rejection. Names are now rewritten (`.` → `__`) in outbound tool
+  definitions and echoed assistant tool-call turns, and returned calls
+  reverse-map through an explicit per-request table
+  (`activegraph/llm/wire.py`) — the runtime, event log, and fixtures
+  only ever see canonical names. Non-dotted names are byte-identical
+  on the wire, so recorded v1.2 runs replay unchanged.
+- **`OpenAIProvider` no longer 400s on reasoning-model families**
+  (CONTRACT v1.3 #3). `o1`/`o3`/`o4`/`gpt-5` models get
+  `max_completion_tokens` and omit `temperature`/`top_p` (the API
+  rejects the GPT-4-era parameters); other families are unchanged.
+  Family table overridable via the `reasoning_model_prefixes=`
+  constructor kwarg.
+- **Auth and invalid-request failures are terminal, not retried**
+  (CONTRACT v1.3 #3). New reason codes `llm.auth_error` (401/403 —
+  bad or revoked API key) and `llm.request_error` (other 4xx —
+  unknown model, rejected parameter) split out of the
+  `llm.network_error` catch-all, which sits in the transient-retry
+  set — so a revoked key was previously retried with exponential
+  backoff and then reported as a network problem. Unrecognized
+  exception shapes keep the `llm.network_error` classification and
+  its retry behavior.
+
+### Added
+
+- `EmbeddingProvider` protocol + `HashEmbeddingProvider` test double
+  (`activegraph.llm`): the runtime's second provider seam, next to
+  `LLMProvider`. `Runtime(embedding_provider=...)` /
+  `Runtime.load(..., embedding_provider=...)` hold one for packs
+  (memory/retrieval capabilities read `runtime.embedding_provider`);
+  forks inherit it and can override per-fork. The runtime never calls
+  it itself, ships no real embedding implementation (no network deps,
+  no keys), and `None` remains the not-configured signal packs degrade
+  against. `HashEmbeddingProvider` is a deterministic, dependency-free
+  double for testing embedding plumbing offline.
+- `@tool` infers `input_schema` from the first parameter's Pydantic
+  annotation when `input_schema=` is omitted
+  (`def fetch(args: FetchArgs, ctx)` → the model sees `FetchArgs`'s
+  JSON schema instead of an empty parameters object, and the runtime
+  validates arguments before invocation). Explicit `input_schema=`
+  wins; unannotated or non-model-annotated tools are unchanged.
+- `Trace.events()` and `Trace.failures()`: structured accessors on
+  `runtime.trace`. `events()` returns the run's events as `Event`
+  objects in log order — the discoverable way to pick an event id for
+  `runtime.fork(at_event=...)` (an external evaluation previously had
+  to read the SQLite events table directly). `failures()` returns the
+  run's `behavior.failed` events, whose payloads have carried the full
+  exception `traceback` since v1.0.3 — now documented and reachable
+  without filtering `graph.events` by hand. See the
+  [debugging cookbook](https://docs.activegraph.ai/cookbook/debugging/).
+- Registration-time handler-signature validation: `@behavior`,
+  `@relation_behavior`, `@llm_behavior`, and `@tool` (both the global
+  and pack-scoped decorators) now raise `TypeError` at decoration time
+  when the function cannot accept the decorator's positional calling
+  convention — e.g. a 2-arg `@behavior` handler or a 1-arg `@tool`.
+  Previously these registered fine and failed at first invocation with
+  the `TypeError` buried in a `behavior.failed` event. The check is
+  permissive where the call can still succeed: `*args`/`**kwargs`,
+  extras with defaults, and the pack settings-injection pattern
+  (annotated extras, e.g. `*, settings: MyPackSettings`) all pass.
+  Callables without an inspectable signature are skipped. Same
+  precedent as `output_schema=` strict validation (CONTRACT v1.0.3 #2).
+- **Native structured-output mode, opt-in** (CONTRACT v1.3 #1; PR #50).
+  `Runtime(native_structured_output=True)` resolves a per-behavior
+  mode at registration time as a pure function of the flag, the
+  provider's capability claim (`supports_native_structured_output`,
+  additive and `getattr`-guarded like the v1.0.2 provider methods),
+  the resolved model, and an offline schema pre-flight
+  (`activegraph/llm/native.py`). `AnthropicProvider` sends the
+  Messages API `output_config` JSON-schema format; `OpenAIProvider`
+  sends Chat Completions `response_format` with `strict: true`. Both
+  gate by table-driven model-family allowlists with constructor
+  overrides (the pricing-table pattern). Prompt-mode calls stay
+  byte-identical to v1.2: the `structured_output_mode` kwarg is passed
+  only when native mode resolved. The mode contributes to prompt
+  hashes and fixture payloads only when native (omit-when-absent), so
+  every pre-v1.3 hash and fixture is untouched; a record-vs-replay
+  mode flip raises the existing `ReplayDivergenceError`.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1) with a
+  public-by-design reporting model: conduct reports go through the
+  public channels (GitHub issues, X `@yoheinakajima`) rather than a
+  private inbox the single maintainer cannot commit to staffing
+  (CONTRACT v1.3 #2, revised in PR #50).
+
+### Changed
+
+- `CONTRIBUTING.md`: the direct-PR exemption extends from docs-only
+  changes to no-behavior-change fixes anywhere (no test behavior
+  change, no public signature change, no CONTRACT surface)
+  (CONTRACT v1.3 #2).
+
 ## [v1.2.0] — 2026-07-03
 
 The GraphStore release: the materialized graph projection becomes a

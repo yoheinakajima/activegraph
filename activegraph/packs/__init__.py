@@ -502,6 +502,13 @@ def load_prompts_from_dir(path: Union[str, Path]) -> tuple[PackPrompt, ...]:
 
     out: dict[str, PackPrompt] = {}
     for md_path in sorted(p.glob("*.md")):
+        # v1.4: skip hidden files and symlinks. pathlib's glob matches
+        # both, but the manifest spec's content hash (§4) excludes
+        # hidden files and rejects symlinks — a prompt the loader
+        # reads MUST be a file the hash pins, or approval surfaces
+        # would review a different byte set than the runtime loads.
+        if md_path.name.startswith(".") or md_path.is_symlink():
+            continue
         prompt = _load_one_prompt(md_path)
         if prompt.name in out:
             raise PackPromptLoadError(
@@ -682,6 +689,15 @@ def behavior(
         delay_n = _parse_aa(activate_after)
 
     def wrap(fn: Callable[..., None]) -> Behavior:
+        # v1.3: arity check at decoration time (see activegraph/_signature.py).
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("event", "graph", "ctx"),
+            decorator="@behavior",
+            allow_annotated_extras=True,
+        )
         b = Behavior(
             name=name or fn.__name__,
             fn=fn,
@@ -745,6 +761,15 @@ def llm_behavior(
         delay_n = _parse_aa(activate_after)
 
     def wrap(fn: Callable[..., None]) -> LLMBehavior:
+        # v1.3: arity check at decoration time (see activegraph/_signature.py).
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("event", "graph", "ctx", "llm_output"),
+            decorator="@llm_behavior",
+            allow_annotated_extras=True,
+        )
         b = LLMBehavior(
             name=name or fn.__name__,
             fn=_llm_behavior_fn_placeholder,
@@ -809,6 +834,15 @@ def relation_behavior(
         delay_n = _parse_aa(activate_after)
 
     def wrap(fn: Callable[..., None]) -> RelationBehavior:
+        # v1.3: arity check at decoration time (see activegraph/_signature.py).
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("relation", "event", "graph", "ctx"),
+            decorator="@relation_behavior",
+            allow_annotated_extras=True,
+        )
         rb = RelationBehavior(
             name=name or fn.__name__,
             fn=fn,
@@ -854,11 +888,29 @@ def tool(
     from decimal import Decimal
 
     def wrap(fn: Callable[..., Any]) -> Tool:
+        # v1.3: arity check at decoration time, plus input_schema
+        # inference from the first parameter's Pydantic annotation when
+        # input_schema= is omitted (see activegraph/_signature.py).
+        from activegraph._signature import (
+            infer_tool_input_schema,
+            validate_handler_signature,
+        )
+
+        validate_handler_signature(
+            fn,
+            expected_params=("args", "ctx"),
+            decorator="@tool",
+            allow_annotated_extras=False,
+        )
         t = Tool(
             name=name or fn.__name__,
             fn=fn,
             description=description,
-            input_schema=input_schema,
+            input_schema=(
+                input_schema
+                if input_schema is not None
+                else infer_tool_input_schema(fn)
+            ),
             output_schema=output_schema,
             cost_per_call=Decimal(str(cost_per_call)),
             timeout_seconds=timeout_seconds,
