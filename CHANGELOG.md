@@ -13,6 +13,24 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.6
+
+### Added
+
+- **Recorded-segment replay: confirmed expressible, worked example
+  added** (evolution stage 3's consumer use case). `run_forked_trial`
+  as shipped in v1.5.0 covers it with no interface extension: the
+  recorded segment IS the fork's history, so the scenario reads the
+  recorded inputs back from `rt.trace.events()`, re-injects each as a
+  fresh event (fresh id, `actor="trial.replay"`), and drains — the
+  candidate's behaviors process the segment in order inside the
+  child, and failures + counts read back from the fork's run in the
+  store. Worked example now in `trial-isolation-design.md` §2b;
+  executable proof in
+  `tests/test_sandbox_trial.py::test_recorded_segment_replay_inside_the_trial`.
+  The design doc's stale "design for review" status header updated to
+  reflect that v1.5.0 shipped it.
+
 ## [v1.5.0] — 2026-07-08
 
 The designs-become-code release: the two v1.4 design docs (trial
