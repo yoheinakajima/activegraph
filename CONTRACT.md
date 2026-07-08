@@ -7320,3 +7320,49 @@ is emitted: typed data violating a parent-loaded schema raises
 canonicalized exactly as `add_object` would store it; undeclared
 types keep v0.9 untyped semantics. This also catches version skew
 (fork ran pack v2, parent has v1) at the boundary.
+
+# v1.4 — agent-ecosystem cycle (in progress)
+
+Opened 2026-07-08 on top of the v1.3.0 release, driven by the pack
+manifest spec review and the evolution pack's consumer sign-off.
+(The v1.3 #4 addendum 4c above — promote apply-time schema
+validation — ships in this cycle too.)
+
+## v1.4 #1. Provisional pack-manifest validator
+
+One reference implementation instead of three drifting ones: the
+manifest spec's §4 hash canonicalization alone gets recomputed by
+this loader, downstream CI, and the evolution pack's gates.
+`activegraph/packs/manifest.py` ships, **PROVISIONAL**, as an opt-in
+API — `load_manifest` (parse + schema-validate, ALL violations in
+one `PackManifestError`, the Q1 answer), `verify_surface` (the
+loader-verifiable two-way check per the spec's identity mapping;
+`capabilities`/`consumes` deliberately excluded — imperative host
+wiring the loader cannot observe, spec Q8), and
+`compute_content_hash` / `verify_content_hash` (spec §4, byte-exact).
+
+Decisions locked here:
+
+1. **Provisional means provisional.** The spec stays DRAFT until the
+   vc extraction and the evolution pack have consumed it; one round
+   of breaking edits to this module is expected. It is importable
+   only from `activegraph.packs.manifest` — the top-level namespace
+   does not re-export it until the spec stabilizes.
+2. **No `load_pack` enforcement this cycle** (spec Q2
+   grandfathering): packs without manifests load exactly as before;
+   a pack WITH a manifest is validated only when the host calls the
+   validator. Loader warning is a later minor; error is 2.0
+   territory.
+3. **Hash amendments over the spec draft** (flagged in the Q5
+   review answer): directory symlinks are rejected like file
+   symlinks; non-UTF-8-encodable and non-NFC paths are rejected
+   loudly rather than hashed platform-ambiguously.
+4. **Loader alignment**: `load_prompts_from_dir` now skips hidden
+   files and symlinks — pathlib's glob matched both, so a prompt the
+   runtime loaded could previously be a file the §4 hash excluded
+   (unhashed load-bearing content). Nothing the loader reads may
+   escape the pin.
+5. **Version/range checks are syntactic** (PEP 440 shape) in the
+   provisional validator; semantic range resolution against the
+   running runtime is load-time enforcement, deferred with
+   enforcement itself.

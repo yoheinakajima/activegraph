@@ -184,7 +184,11 @@ scoping. Ships in v1.3.0 alongside Phases 1–2.
   always-on assistant accumulates events indefinitely on the
   append-only log. Needs a design doc (snapshot events, archival
   cutover, retention windows) before any implementation; not a
-  v1.3.0 blocker.
+  v1.3.0 blocker. **Normative input (evolution-pack sign-off,
+  2026-07-08): promoted-from fork logs are retention-pinned — a fork
+  run referenced by a `promote.applied` marker is not garbage;
+  two-hop provenance (promoted entity → marker → fork log) depends
+  on the fork's log outliving the trial.**
 - **DEFERRED: streaming provider protocol.** Additive
   `complete_stream` seam; v1.3.x/v1.4 candidate.
 - **DEFERRED: graph-backed `pending_approvals()`.** The

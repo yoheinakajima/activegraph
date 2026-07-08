@@ -20,6 +20,20 @@ consumer sign-off and the pack-manifest spec review.
 
 ### Added
 
+- **Provisional pack-manifest validator** (CONTRACT v1.4 #1).
+  `activegraph.packs.manifest` ships the reference implementation of
+  the pack manifest spec (activegraph-packs `docs/manifest-spec.md`,
+  DRAFT): `load_manifest` (parse + schema-validate, every violation
+  aggregated into one `PackManifestError`), `verify_surface` (two-way
+  manifest ↔ `Pack` check per the spec's identity mapping;
+  capabilities/consumes stay statically verified downstream), and
+  `compute_content_hash` / `verify_content_hash` (spec §4,
+  byte-exact, with runtime amendments: directory symlinks rejected
+  like file symlinks, non-UTF-8/non-NFC paths rejected loudly).
+  **PROVISIONAL** — importable only from `activegraph.packs.manifest`;
+  expect one round of breaking edits before the spec exits DRAFT.
+  `load_pack` does not enforce manifests this cycle (grandfathering).
+
 - **Promote apply-time schema validation** (CONTRACT v1.3 #4 addendum
   4c). Promote's hand-built events bypass `add_object`'s pack-schema
   hook; apply now runs the parent's object and relation validators
@@ -28,6 +42,14 @@ consumer sign-off and the pack-manifest spec review.
   applied; valid typed data is stored canonicalized exactly as
   `add_object` would store it; undeclared types keep v0.9 untyped
   semantics. Catches fork/parent pack version skew at the boundary.
+
+### Fixed
+
+- `load_prompts_from_dir` skips hidden files and symlinks. pathlib's
+  `glob("*.md")` matched both, so a prompt the runtime loaded could
+  be a file the manifest content hash excludes (hidden) or rejects
+  (symlink) — unhashed load-bearing content. Nothing the loader
+  reads may now escape the hash pin.
 
 ## [v1.3.0] — 2026-07-08
 

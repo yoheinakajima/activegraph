@@ -502,6 +502,13 @@ def load_prompts_from_dir(path: Union[str, Path]) -> tuple[PackPrompt, ...]:
 
     out: dict[str, PackPrompt] = {}
     for md_path in sorted(p.glob("*.md")):
+        # v1.4: skip hidden files and symlinks. pathlib's glob matches
+        # both, but the manifest spec's content hash (§4) excludes
+        # hidden files and rejects symlinks — a prompt the loader
+        # reads MUST be a file the hash pins, or approval surfaces
+        # would review a different byte set than the runtime loads.
+        if md_path.name.startswith(".") or md_path.is_symlink():
+            continue
         prompt = _load_one_prompt(md_path)
         if prompt.name in out:
             raise PackPromptLoadError(
