@@ -137,6 +137,16 @@ def _resolve_scenario(
 
 def main() -> None:
     job = json.loads(sys.stdin.read())
+
+    # Preflight (v1.7): a null job that only proves the child could
+    # START — i.e. that importing activegraph under the sandbox env
+    # succeeded, which happens before this function even runs. Reaching
+    # here at all means the heavy import chain worked; echo the marker
+    # and exit clean. No fork, no store, no candidate touched.
+    if job.get("preflight"):
+        print(json.dumps({"preflight": "ok"}), flush=True)
+        raise SystemExit(0)
+
     fork_run_id = str(job["fork_run_id"])
     initial = int(job.get("initial_events", 0))
     _apply_rlimits(job.get("limits", {}))

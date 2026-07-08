@@ -277,6 +277,31 @@ store resolves in favor of the store.
   child's environment has made a choice the runtime cannot unmake.
   The helper never forwards the parent's environment wholesale
   (explicit allow-list env pass-through, default empty).
+- **Environment vs. code location are two separate channels** (v1.7,
+  the Replit soak fix). The env allow-list — `PATH`, `HOME`, `LANG`,
+  plus explicit `env_passthrough` — is a *security* control and
+  stays closed: no ambient parent env (secrets, API keys, platform
+  vars like `REPLIT_*`) crosses into a child running hostile code.
+  But a child must still be able to import `activegraph` and its
+  deps, and on some platforms (Replit, Nix) the package is
+  discoverable only via a platform env var the allow-list correctly
+  strips — so a naive child dies at import before it can do anything.
+  The resolution keeps the boundary closed and makes code discovery
+  an *explicit* input instead of an ambient one: the parent resolves
+  the `sys.path` entries that make its OWN code importable
+  (`activegraph.__file__`'s root first, then its real `sys.path`
+  dirs) and passes them to the child as a computed `PYTHONPATH`.
+  Code locations are not secrets; a computed `PYTHONPATH` widens
+  nothing that the env allow-list protects. The child can therefore
+  import `activegraph` on any box where the parent could, without
+  the allow-list growing a single entry. `preflight()` spawns a
+  null-job child to verify this end to end at boot, so a broken
+  sandbox env fails loud instead of surfacing as an opaque `crashed`
+  on the first real trial. Relatedly, the child's stderr is PIPED,
+  never `DEVNULL`: a crash before the child can write its report
+  tail (import failure, rlimit setup) carries its real cause back
+  into `TrialReport.detail` — the pre-execution gate must never
+  swallow its own failure cause.
 - **Windows**: rlimits are POSIX; on Windows the memory/CPU nets
   degrade to wall-clock + budgets, stated in the API docs rather
   than emulated badly.

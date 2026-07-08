@@ -8,14 +8,20 @@ run is byte-untouched no matter what the candidate does.
 
 from __future__ import annotations
 
+import functools
+import os
+
 import pytest
 
 from activegraph import Graph, Runtime, behavior, clear_registry
+from activegraph import sandbox
 from activegraph.packs.manifest import compute_bundle_hash, compute_content_hash
 from activegraph.sandbox import (
     PackSource,
+    SandboxStartupError,
     TrialLimits,
     TrialReport,
+    preflight,
     run_forked_trial,
 )
 
@@ -488,3 +494,107 @@ def test_extra_pack_bundle_mismatch_fails_materialization(tmp_path):
     fork = Runtime.load(path, run_id=report.fork_run_id, behaviors=[])
     assert not [e for e in fork.graph.events if e.type == "pack.loaded"]
     _parent_untouched(path, parent_run, n_parent)
+
+
+# ------------------- diagnosability + startup channel (v1.7 soak fix)
+
+def _bare_env():
+    """The closed allow-list env WITHOUT the package-path channel — the
+    restricted shape a platform like Replit leaves after stripping its
+    own discovery var (REPLIT_PYTHONPATH)."""
+    return {k: os.environ[k] for k in ("PATH", "HOME", "LANG") if k in os.environ}
+
+
+def test_child_import_crash_surfaces_the_cause_in_detail(tmp_path, monkeypatch):
+    # Fix 1: a child that dies BEFORE _report (here: cannot import
+    # activegraph) must carry its real cause in TrialReport.detail, not
+    # an opaque "exited N with no report tail". We reproduce the import
+    # death faithfully: strip the code channel and skip site.py (-S),
+    # exactly the restricted env the soak hit.
+    path, parent_run, tip, n_parent = _parent_store(tmp_path)
+    root, bundle = _candidate_dir(tmp_path)
+
+    monkeypatch.setattr(sandbox, "_child_env", lambda limits: _bare_env())
+    orig_run_child = sandbox._run_child
+    monkeypatch.setattr(
+        sandbox,
+        "_run_child",
+        functools.partial(orig_run_child, python_flags=("-S",)),
+    )
+
+    report = run_forked_trial(
+        path,
+        parent_run_id=parent_run,
+        at_event=tip,
+        pack_source=PackSource(root_dir=str(root), expected_bundle_hash=bundle),
+        scenario="scenario.py",
+    )
+    assert report.outcome == "crashed"
+    # The actual exception reached the report, not an opaque string.
+    assert "ModuleNotFoundError" in report.detail
+    assert "activegraph" in report.detail
+    # The fork still exists and the parent is untouched — a broken
+    # sandbox env is diagnosable, not destructive.
+    Runtime.load(path, run_id=report.fork_run_id, behaviors=[])
+    _parent_untouched(path, parent_run, n_parent)
+
+
+def test_preflight_succeeds_on_a_working_env():
+    # Returns None (no raise) when a child can start under the sandbox
+    # env — the normal case on any box where the parent imports fine.
+    assert preflight(timeout=30.0) is None
+
+
+def test_preflight_fails_loud_with_the_cause_on_a_restricted_env():
+    # Fix 2 diagnosability: when a child cannot even import activegraph,
+    # preflight raises with the real cause rather than letting the first
+    # real trial report an opaque crash.
+    with pytest.raises(SandboxStartupError) as excinfo:
+        sandbox._preflight_with(_bare_env(), python_flags=("-S",), timeout=30.0)
+    assert "ModuleNotFoundError" in str(excinfo.value)
+
+
+def test_explicit_code_channel_rescues_a_restricted_child():
+    # THE fix: the parent-resolved PYTHONPATH channel lets a child start
+    # in an env whose DEFAULT path cannot find activegraph — without
+    # widening the allow-list. Bare (-S) fails; the same interpreter
+    # with the computed channel starts clean.
+    with pytest.raises(SandboxStartupError):
+        sandbox._preflight_with(_bare_env(), python_flags=("-S",), timeout=30.0)
+    # _child_env adds only the code channel; still -S, still no ambient
+    # discovery var — the child imports activegraph purely via the
+    # explicit channel.
+    assert (
+        sandbox._preflight_with(
+            sandbox._child_env(TrialLimits()),
+            python_flags=("-S",),
+            timeout=30.0,
+        )
+        is None
+    )
+
+
+def test_env_allow_list_stays_closed_secrets_do_not_leak(monkeypatch):
+    # The channel fix must not widen the boundary: an ambient secret
+    # never crosses into the child, and only the code path is added.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-leak")
+    monkeypatch.setenv("REPLIT_PYTHONPATH", "/nix/ambient/should-not-cross")
+    env = sandbox._child_env(TrialLimits())
+    assert "OPENAI_API_KEY" not in env
+    assert "REPLIT_PYTHONPATH" not in env
+    assert set(env) <= {"PATH", "HOME", "LANG", "PYTHONPATH"}
+    # PYTHONPATH is the computed channel, and it makes activegraph's
+    # root discoverable.
+    import activegraph
+    from pathlib import Path
+
+    ag_root = str(Path(activegraph.__file__).resolve().parent.parent)
+    assert ag_root in env["PYTHONPATH"].split(os.pathsep)
+
+
+def test_env_passthrough_still_forwards_named_vars(monkeypatch):
+    # The one explicit opt-in still works, and composes with the channel.
+    monkeypatch.setenv("MY_TRIAL_FLAG", "1")
+    env = sandbox._child_env(TrialLimits(env_passthrough=("MY_TRIAL_FLAG",)))
+    assert env["MY_TRIAL_FLAG"] == "1"
+    assert "PYTHONPATH" in env

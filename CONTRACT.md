@@ -7493,6 +7493,32 @@ trial. The scenario still resolves inside the candidate's root only.
 Pinned by `test_extra_packs_enable_cross_pack_interaction_trials`
 and `test_extra_pack_bundle_mismatch_fails_materialization`.
 
+Post-release addendum (v1.7, a downstream soak surfaced two defects):
+**1c. Environment and code location are two separate channels, and
+the child never swallows its own startup failure.** (i) The env
+allow-list stays CLOSED and is a security control: only `PATH`,
+`HOME`, `LANG`, plus explicit `env_passthrough`, cross into the
+child — no ambient parent env (secrets, platform vars like
+`REPLIT_*`). (ii) Code location is an EXPLICIT channel, not an
+ambient one: the child's `PYTHONPATH` is COMPUTED by the parent from
+its own resolved `sys.path` (the `activegraph.__file__` root first,
+then real `sys.path` dirs), never forwarded from ambient env, so the
+child imports the same code the parent can on any platform —
+including those (Replit, Nix) whose package discovery the allow-list
+correctly strips — without the allow-list widening. Code locations
+are not secrets; this fixes the restricted-env break without eroding
+the boundary. (iii) The child's stderr is PIPED, never `DEVNULL`: a
+crash before it can write its report tail (module-import failure,
+rlimit setup) folds its real cause into `TrialReport.detail` rather
+than reporting an opaque "exited N with no report tail". (iv)
+`preflight()` spawns a null-job child to verify a child can START
+under the sandbox env and raises `SandboxStartupError` with the
+cause if not, so consumers fail loud at boot. Pinned by
+`test_child_import_crash_surfaces_the_cause_in_detail`,
+`test_preflight_fails_loud_with_the_cause_on_a_restricted_env`,
+`test_explicit_code_channel_rescues_a_restricted_child`, and
+`test_env_allow_list_stays_closed_secrets_do_not_leak`.
+
 ## v1.5 #2. Compaction phase 1: snapshot + archive tier + the pin set
 
 Implements phase 1 of `compaction-design.md`. The design doc carries
