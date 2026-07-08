@@ -122,6 +122,13 @@ class PromoteResult:
     marker_event_id: str
     applied_event_ids: list[str] = field(default_factory=list)
 
+    @property
+    def computed_against(self) -> str:
+        """The parent tip event id the applied plan was computed
+        against (design §3, review amendment #3). Delegates to the
+        plan; surfaced here so results record it directly."""
+        return self.plan.computed_against
+
 
 # ---- normalization ---------------------------------------------------------
 
@@ -346,11 +353,17 @@ def compute_promote_plan(
     return plan
 
 
-def promote_warnings(parent_rt: Any, fork_rt: Any) -> list[str]:
+def promote_warnings(
+    parent_rt: Any, fork_rt: Any, *, forked_at_event: str
+) -> list[str]:
     """Adjacent state promote surfaces but never applies (design §5).
 
     Currently: packs loaded in the fork but not the parent, and
-    fork-side ``pack.settings_overridden`` events (``fork --set``).
+    fork-tail ``pack.settings_overridden`` events (``fork --set``).
+    Fork-only-ness is positional — everything after ``forked_at_event``
+    in the fork's log is the fork's own — never an event-id membership
+    check: ids are scoped to a run (CONTRACT #12), so the same id can
+    name different events on the two sides.
     """
     warnings: list[str] = []
     parent_packs = {
@@ -366,14 +379,25 @@ def promote_warnings(parent_rt: Any, fork_rt: Any) -> list[str]:
                 f"parent.load_pack(...) explicitly if the promoted state "
                 f"depends on it"
             )
+    in_tail = False
     for e in fork_rt.graph.events:
-        if e.type == "pack.settings_overridden" and e.id not in (
-            ev.id for ev in parent_rt.graph.events
-        ):
-            payload = e.payload or {}
-            warnings.append(
-                f"fork carries a settings override "
-                f"({payload.get('key', '?')}={payload.get('value', '?')}) "
-                f"that promote does not transfer"
-            )
+        if not in_tail:
+            if e.id == forked_at_event:
+                in_tail = True
+            continue
+        if e.type != "pack.settings_overridden":
+            continue
+        payload = e.payload or {}
+        assignments = payload.get("assignments") or []
+        rendered = (
+            ", ".join(str(a) for a in assignments)
+            if assignments
+            else str(payload.get("overrides", "?"))
+        )
+        warnings.append(
+            f"fork carries a settings override for pack "
+            f"{payload.get('pack', '?')} ({rendered}) that promote does "
+            f"not transfer; re-apply it on the parent explicitly if the "
+            f"promoted state depends on it"
+        )
     return warnings

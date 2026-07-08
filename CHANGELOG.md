@@ -55,6 +55,17 @@ design).
 
 ### Fixed
 
+- **Strict replay no longer falsely diverges on multi-goal runs.**
+  `_verify_replay` used to batch every seed event and drain once, so
+  a recorded `goal1, derived1, goal2, derived2` stream replayed as
+  `goal1, goal2, derived1, derived2` and diverged. The verify run now
+  drains the queue exactly where the recorded log shows derivation
+  happened, matching the original interleaving (also what lets
+  promote blocks project at their true positions).
+- **`fork(at_event=...)` rejects cutoffs that would slice a promote
+  block** (marker or mid-delta): the child would requeue the marker
+  against a partially-applied delta. The structured error names the
+  block's final event id as the valid cutoff.
 - **`upsert_run` no longer erases fork lineage on reload** (both
   SQLite and Postgres stores; surfaced by promote). `Runtime.load`
   upserts the run row with only `created_at`, and the blind

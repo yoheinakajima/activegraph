@@ -2538,6 +2538,14 @@ class Runtime:
                 context={"current_store_kind": current_kind},
             )
 
+        # CONTRACT v1.3 #4: a fork cut must not slice a promote block.
+        # The marker plus its quiescent delta events are one atomic
+        # unit; a cutoff at the marker or mid-delta would give the
+        # child the marker (which IS requeue-eligible) with a partial
+        # delta — behaviors reacting to it would see entities that
+        # never landed.
+        _reject_mid_promote_block_fork(self.graph.events, at_event)
+
         new_run_id = self.graph.ids.run()
         SQLiteEventStore.fork_run(
             store.path,
@@ -2742,7 +2750,7 @@ class Runtime:
                 detail="the store has no forked_at_event_id for this run",
             )
 
-        warnings = promote_warnings(self, fork)
+        warnings = promote_warnings(self, fork, forked_at_event=forked_at)
         try:
             plan = compute_promote_plan(
                 self.graph,
@@ -3243,13 +3251,24 @@ def _verify_replay(
     fresh_rt._strict_expected_hashes = list(expected_hashes)
     fresh_rt._ensure_registry()
 
-    # Replay seed events through emit so behaviors fire. Promote-block
-    # events are interleaved at their recorded positions but projected
-    # quiescently (_replay_event: state only, no listeners, no queue) —
-    # the same posture the original apply used.
+    # Replay seed events through emit so behaviors fire, draining the
+    # queue wherever the RECORDED log shows derivation happened — a
+    # derived (caused_by != None) non-lifecycle event between two
+    # seeds means the original run drained between them, so the
+    # verify run must too, or the type streams interleave differently
+    # (the recorded goal1, derived1, goal2, derived2 order would
+    # replay as goal1, goal2, derived1, derived2). Promote-block
+    # events are projected quiescently (_replay_event: state only, no
+    # listeners, no queue) at their recorded positions, after any
+    # derivation that preceded them — the same posture the original
+    # apply used, so pre-promote behaviors see pre-promote state.
     seed_ids = {e.id for e in seed_events}
+    derivation_pending = False
     for e in recorded_events:
         if _is_promote_block(e):
+            if derivation_pending:
+                fresh_rt.run_until_idle()
+                derivation_pending = False
             fresh._replay_event(  # noqa: SLF001 — the load/fork seam
                 Event(
                     id=fresh.ids.event(),
@@ -3262,19 +3281,24 @@ def _verify_replay(
                 )
             )
             continue
-        if e.id not in seed_ids:
+        if e.id in seed_ids:
+            if derivation_pending:
+                fresh_rt.run_until_idle()
+                derivation_pending = False
+            new_id = fresh.ids.event()
+            replay_ev = Event(
+                id=new_id,
+                type=e.type,
+                payload=dict(e.payload),
+                actor=e.actor,
+                frame_id=e.frame_id,
+                caused_by=None,
+                timestamp=e.timestamp,
+            )
+            fresh.emit(replay_ev)
             continue
-        new_id = fresh.ids.event()
-        replay_ev = Event(
-            id=new_id,
-            type=e.type,
-            payload=dict(e.payload),
-            actor=e.actor,
-            frame_id=e.frame_id,
-            caused_by=None,
-            timestamp=e.timestamp,
-        )
-        fresh.emit(replay_ev)
+        if not _is_lifecycle(e) and e.caused_by is not None:
+            derivation_pending = True
     fresh_rt.run_until_idle()
 
     # Compare type-stream of non-lifecycle events (promote blocks are
@@ -3337,3 +3361,64 @@ def _is_promote_block(e: Event) -> bool:
     replay projects verbatim rather than expecting behaviors to
     re-derive."""
     return e.type == "promote.applied" or (e.actor or "").startswith("promote:")
+
+
+def _reject_mid_promote_block_fork(events: list[Event], at_event: str) -> None:
+    """Raise when a fork cutoff would slice a promote block in half.
+
+    The cut is invalid iff any event AFTER the cutoff is a
+    ``promote:*`` delta whose marker sits at or before the cutoff —
+    the child would inherit the marker without its full delta,
+    breaking promote's atomicity in the fork (CONTRACT v1.3 #4).
+    Cutting before the marker (block fully excluded) or at the
+    block's last delta event (block fully included) is fine.
+    """
+    cut_idx: Optional[int] = None
+    for i, e in enumerate(events):
+        if e.id == at_event:
+            cut_idx = i
+            break
+    if cut_idx is None:
+        return  # unknown ids get the store's EventNotFoundError downstream
+    markers_before = {
+        e.id for e in events[: cut_idx + 1] if e.type == "promote.applied"
+    }
+    for e in events[cut_idx + 1 :]:
+        if (e.actor or "").startswith("promote:") and e.caused_by in markers_before:
+            from activegraph.runtime.config_errors import IncompatibleRuntimeState
+
+            marker_id = e.caused_by
+            block = [
+                ev.id
+                for ev in events
+                if (ev.actor or "").startswith("promote:")
+                and ev.caused_by == marker_id
+            ]
+            raise IncompatibleRuntimeState(
+                f"fork(at_event={at_event!r}) would slice the promote "
+                f"block anchored at {marker_id!r}",
+                what_failed=(
+                    f"The cutoff {at_event!r} falls inside a promote "
+                    f"block: marker {marker_id!r} plus its "
+                    f"{len(block)} delta event(s) are one atomic unit, "
+                    f"and the cut would give the fork the marker with "
+                    f"only part of the delta."
+                ),
+                why=(
+                    "Promote applies its delta quiescently and "
+                    "atomically (CONTRACT v1.3 #4). A fork whose log "
+                    "ends mid-block would requeue the marker on load "
+                    "and fire promote-subscribed behaviors against "
+                    "state the block never finished applying."
+                ),
+                how_to_fix=(
+                    f"Fork at the block's final event instead:\n"
+                    f"    rt.fork(at_event={block[-1]!r})\n"
+                    f"or at any event before the marker {marker_id!r}."
+                ),
+                context={
+                    "at_event": at_event,
+                    "marker": marker_id,
+                    "block_final_event": block[-1],
+                },
+            )

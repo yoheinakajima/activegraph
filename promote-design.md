@@ -98,8 +98,11 @@ result = parent_rt.promote(fork_rt)               # apply atomically
 
 Preconditions, all fail-loud with the house structured errors:
 
-1. Same SQLite store for both runtimes (`IncompatibleRuntimeState`,
-   the `fork()` precedent).
+1. Same SQLite store for both runtimes. A missing or non-SQLite
+   store raises `IncompatibleRuntimeState` (the `fork()` precedent);
+   two runtimes on *different* SQLite stores raise
+   `PromoteLineageError` — that failure is about the runs' recorded
+   relationship, not the store kind.
 2. `fork_rt`'s run is a **direct fork** of `parent_rt`'s run — the
    store's `runs` table already records `parent_run_id` and
    `forked_at_event_id` per fork, so lineage is verified from
@@ -229,6 +232,13 @@ Replaying the parent's log reproduces promoted state with no special
 cases, because promoted state *is* ordinary events. `trace.lines()`
 gets a `[promote.applied]` rendering (one line, counts + source run).
 
+**Fork cuts respect the block.** `fork(at_event=...)` rejects a
+cutoff at the marker or mid-delta (`IncompatibleRuntimeState`, naming
+the block's final event id): a child log ending mid-block would
+requeue the marker against a partially-applied delta, breaking
+promote's atomicity in the fork. Cutting before the marker or at the
+block's last event is fine.
+
 **Strict replay** (`replay_strict=True`) treats the promote block the
 same way the live apply did: the marker and its `promote:*` delta
 events are recorded runtime actions, projected verbatim at their
@@ -249,8 +259,11 @@ atomicity on a mixed clean+conflicted plan; lineage rejection
 pack loads and `--set` overrides; causal chain from promoted object
 to marker event; replay of a log containing a promote; fork-of-fork
 promoted up one level then the other; trace snapshot of the promoted
-block; `Diff` of parent vs fork being `is_identical`-equivalent for
-promoted entities after promote.
+block; `Diff` of parent vs fork after promote showing **no data
+divergence** for promoted entities — version counters may still
+differ, because versions are bookkeeping, not state (a promoted
+create restarts at version 1; a promoted patch is one replace,
+however many patches the fork took to get there).
 
 Added with the review amendments: a behavior registered on
 `object.created` does **not** fire during apply while one registered

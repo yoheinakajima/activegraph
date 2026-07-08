@@ -536,3 +536,133 @@ def test_strict_replay_still_catches_real_divergence_after_promote(tmp_path):
         Runtime.load(
             str(tmp_path / "run.db"), run_id=parent.run_id, replay_strict=True
         )
+
+
+# ------------------------- review-workflow follow-up coverage --------
+
+
+def test_settings_override_in_fork_tail_surfaces_correctly(tmp_path):
+    # The `fork --set` event shape is {pack, overrides, assignments};
+    # detection is positional (fork tail), never event-id membership.
+    from activegraph.core.event import Event
+
+    parent = _parent(tmp_path)
+    fork = _fork_at_tip(parent)
+    fork.graph.emit(
+        Event(
+            id=fork.graph.ids.event(),
+            type="pack.settings_overridden",
+            payload={
+                "pack": "diligence",
+                "overrides": {"confidence_threshold_for_review": 0.9},
+                "assignments": ["diligence.confidence_threshold_for_review=0.9"],
+            },
+            actor="runtime",
+            frame_id=None,
+            caused_by=fork.trace.events()[-1].id,
+            timestamp=fork.graph.clock.now(),
+        )
+    )
+    fork.graph.add_object("note", {"text": "x"})
+    # The parent advancing past the fork point must not suppress the
+    # warning (ids are run-scoped; same id can exist on both sides).
+    parent.graph.add_object("decoy", {"n": 1})
+
+    plan = parent.promote(fork, dry_run=True)
+    override_warnings = [w for w in plan.warnings if "settings override" in w]
+    assert len(override_warnings) == 1
+    assert "diligence" in override_warnings[0]
+    assert "confidence_threshold_for_review=0.9" in override_warnings[0]
+    assert "?=?" not in override_warnings[0]
+
+
+def test_both_removed_is_a_conflict(tmp_path):
+    parent = _parent(tmp_path)
+    task = _task_id(parent)
+    fork = _fork_at_tip(parent)
+    fork.graph.remove_object(task)
+    parent.graph.remove_object(task)
+
+    with pytest.raises(PromoteConflictError) as exc:
+        parent.promote(fork)
+    assert "removed on both sides" in exc.value.conflicts[0].detail
+
+
+def test_promote_rejects_truly_unrelated_run_same_store(tmp_path):
+    parent = _parent(tmp_path)
+    unrelated_graph = Graph(ids=IDGen(), clock=FrozenClock())
+    unrelated = Runtime(
+        unrelated_graph, persist_to=str(tmp_path / "run.db")
+    )
+    unrelated.run_goal("independent")
+    with pytest.raises(PromoteLineageError):
+        parent.promote(unrelated)
+
+
+def test_promote_rejects_cross_store_runs(tmp_path):
+    parent_a = _parent(tmp_path, name="a.db")
+    parent_b = _parent(tmp_path, name="b.db")
+    fork_b = _fork_at_tip(parent_b)
+    with pytest.raises(PromoteLineageError, match="different stores"):
+        parent_a.promote(fork_b)
+
+
+def test_result_records_computed_against_directly(tmp_path):
+    parent = _parent(tmp_path)
+    tip = parent.trace.events()[-1].id
+    fork = _fork_at_tip(parent)
+    fork.graph.add_object("note", {"text": "x"})
+    result = parent.promote(fork)
+    assert result.computed_against == tip
+
+
+def test_diff_after_promote_diverges_only_in_version_bookkeeping(tmp_path):
+    # Design §7 (as amended): post-promote, parent vs fork diff shows
+    # no data divergence for promoted entities — version counters may
+    # differ because they are bookkeeping, not state.
+    parent = _parent(tmp_path)
+    task = _task_id(parent)
+    fork = _fork_at_tip(parent)
+    fork.graph.add_object("note", {"text": "x"})
+    fork.graph.patch_object(task, {"status": "done"})
+    parent.promote(fork)
+
+    diff = parent.diff(fork)
+    assert not diff.divergent_relations
+    for d in diff.divergent_objects:
+        assert d.in_parent is not None and d.in_fork is not None
+        a = {k: v for k, v in d.in_parent.items() if k != "version"}
+        b = {k: v for k, v in d.in_fork.items() if k != "version"}
+        assert a == b, f"{d.id} diverges beyond version bookkeeping"
+
+
+def test_fork_cannot_slice_a_promote_block(tmp_path):
+    parent = _parent(tmp_path)
+    fork = _fork_at_tip(parent)
+    fork.graph.add_object("note", {"text": "a"})
+    fork.graph.add_object("note", {"text": "b"})
+    result = parent.promote(fork)
+    parent.run_until_idle()
+
+    # Cutting at the marker or mid-delta slices the atomic block.
+    with pytest.raises(IncompatibleRuntimeState, match="slice the promote"):
+        parent.fork(at_event=result.marker_event_id)
+    with pytest.raises(IncompatibleRuntimeState, match="slice the promote"):
+        parent.fork(at_event=result.applied_event_ids[0])
+    # The block's final event is a valid cut (block fully included).
+    ok = parent.fork(at_event=result.applied_event_ids[-1])
+    assert ok.graph.get_object("note#2") is not None
+
+
+def test_strict_replay_of_multi_goal_run_no_longer_diverges(tmp_path):
+    # Pre-existing fragility fixed by the drain-where-recorded rule:
+    # goal1, derived1, goal2, derived2 used to replay as
+    # goal1, goal2, derived1, derived2 and falsely diverge.
+    parent = _parent(tmp_path)
+    parent.run_goal("second goal")
+    parent.graph.store.flush() if hasattr(parent.graph.store, "flush") else None
+
+    loaded = Runtime.load(
+        str(tmp_path / "run.db"), run_id=parent.run_id, replay_strict=True
+    )
+    assert len([o for o in loaded.graph.all_objects() if o.type == "task"]) == 2
