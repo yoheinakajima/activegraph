@@ -13,6 +13,49 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.3.0
+
+The agent-readiness release (in progress). Two arcs: the v1.3 cycle
+work locked in
+[CONTRACT.md § v1.3](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
+(#1 native structured output, #2 community surface — merged in PR #50
+but not changelogged at merge time; this section pays that debt), and
+the July 2026 agent-readiness upgrade arc driven by the downstream
+pack library's runtime evaluation (developer-experience surfacing,
+provider compatibility, the embedding seam, and the fork→test→promote
+design).
+
+### Added
+
+- **Native structured-output mode, opt-in** (CONTRACT v1.3 #1; PR #50).
+  `Runtime(native_structured_output=True)` resolves a per-behavior
+  mode at registration time as a pure function of the flag, the
+  provider's capability claim (`supports_native_structured_output`,
+  additive and `getattr`-guarded like the v1.0.2 provider methods),
+  the resolved model, and an offline schema pre-flight
+  (`activegraph/llm/native.py`). `AnthropicProvider` sends the
+  Messages API `output_config` JSON-schema format; `OpenAIProvider`
+  sends Chat Completions `response_format` with `strict: true`. Both
+  gate by table-driven model-family allowlists with constructor
+  overrides (the pricing-table pattern). Prompt-mode calls stay
+  byte-identical to v1.2: the `structured_output_mode` kwarg is passed
+  only when native mode resolved. The mode contributes to prompt
+  hashes and fixture payloads only when native (omit-when-absent), so
+  every pre-v1.3 hash and fixture is untouched; a record-vs-replay
+  mode flip raises the existing `ReplayDivergenceError`.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1) with a
+  public-by-design reporting model: conduct reports go through the
+  public channels (GitHub issues, X `@yoheinakajima`) rather than a
+  private inbox the single maintainer cannot commit to staffing
+  (CONTRACT v1.3 #2, revised in PR #50).
+
+### Changed
+
+- `CONTRIBUTING.md`: the direct-PR exemption extends from docs-only
+  changes to no-behavior-change fixes anywhere (no test behavior
+  change, no public signature change, no CONTRACT surface)
+  (CONTRACT v1.3 #2).
+
 ## [v1.2.0] — 2026-07-03
 
 The GraphStore release: the materialized graph projection becomes a
