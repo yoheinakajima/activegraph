@@ -7366,3 +7366,27 @@ Decisions locked here:
    provisional validator; semantic range resolution against the
    running runtime is load-time enforcement, deferred with
    enforcement itself.
+
+## v1.4 #2. Graph-backed pending approvals
+
+The pending-approval queue was in-memory only: fed by
+`ctx.propose_object`, invisible after `Runtime.load`, so a restart
+silently dropped every unresolved proposal (agent-readiness review
+item 7, deferred from v1.3). Now:
+
+1. **The event is the durable record.** `approval.proposed` carries
+   the full deferred payload (`data` joins `approval_id` /
+   `object_type` / `reason` / `pack`), so the log alone can
+   reconstruct what was proposed.
+2. **Load and fork rebuild the queue**: pending = proposed minus
+   granted, in proposal order; the approval-id counter reseeds past
+   every recorded id so fresh proposals can't collide. A reloaded
+   runtime can `approve()` a proposal made before the restart; a fork
+   inherits proposals still pending at its fork point.
+3. **Honest boundary**: proposals recorded before v1.4 lack `data`
+   in their events and cannot be reconstructed — they surface only in
+   the runtime instance that created them, exactly as before. No
+   migration rewrites history.
+
+Event-log compaction/retention is proposed separately in
+`compaction-design.md` (v1.4 #3 when its review lands).

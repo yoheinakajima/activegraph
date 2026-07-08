@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import random as _random
 import time as _time
 import traceback
@@ -2141,7 +2142,16 @@ class Runtime:
     # ---------- v0.9: approval flow ----------
 
     def pending_approvals(self) -> list[Any]:
-        """List of currently-pending approvals (in creation order)."""
+        """List of currently-pending approvals (in creation order).
+
+        v1.4: graph-backed across restarts. ``approval.proposed``
+        events carry the full deferred payload, and ``Runtime.load`` /
+        ``fork()`` rebuild this queue from the log (proposed minus
+        granted), so a proposal survives a restart and can be approved
+        by the reloaded runtime. Proposals recorded before v1.4 lack
+        the payload data in their events and cannot be reconstructed —
+        they surface only in the runtime instance that created them.
+        """
         if self._pack_state is None:
             return []
         return list(self._pack_state.pending_approvals)
@@ -2173,7 +2183,10 @@ class Runtime:
             pack=owner_pack,
         )
         state.pending_approvals.append(pa)
-        # Emit an event so the trace shows the proposal.
+        # Emit an event so the trace shows the proposal. v1.4: the
+        # payload carries the full deferred data, so the pending queue
+        # is reconstructible from the log across Runtime.load — the
+        # event is the durable record, the in-memory list a cache.
         self.graph.emit(
             Event(
                 id=self.graph.ids.event(),
@@ -2183,6 +2196,7 @@ class Runtime:
                     "object_type": object_type,
                     "reason": reason,
                     "pack": owner_pack,
+                    "data": dict(data),
                 },
                 actor="runtime",
                 frame_id=self.frame.id if self.frame else None,
@@ -2453,6 +2467,10 @@ class Runtime:
         # that started but never completed still lose their in-progress
         # work — that's the original tradeoff, unchanged.
         _requeue_unfired(rt, events)
+        # v1.4: rebuild the pending-approval queue from the log
+        # (approval.proposed minus approval.granted) so proposals
+        # survive restarts.
+        _rebuild_pending_approvals(rt, events)
 
         if replay_strict:
             _verify_replay(
@@ -2631,6 +2649,9 @@ class Runtime:
         # on the fork — without it, fork-then-run-until-idle would be a
         # no-op when there's no new seed event.
         _requeue_unfired(rt, events)
+        # v1.4: the fork inherits approvals still pending at the fork
+        # point, rebuilt from its copied log.
+        _rebuild_pending_approvals(rt, events)
         return rt
 
     def diff(self, other: "Runtime") -> Diff:
@@ -3384,6 +3405,50 @@ def _is_lifecycle(e: Event) -> bool:
         or e.type.startswith("relation_behavior.")
         or e.type.startswith("runtime.")
     )
+
+
+def _rebuild_pending_approvals(rt: "Runtime", events: list[Event]) -> None:
+    """Reconstruct the pending-approval queue from the event log. v1.4.
+
+    Pending = ``approval.proposed`` minus ``approval.granted``, in
+    proposal order. Only proposals whose events carry the deferred
+    ``data`` payload (v1.4+) are reconstructible; older events are
+    skipped but still advance the approval-id counter so fresh
+    proposals can't collide with recorded ids.
+    """
+    proposed: dict[str, dict[str, Any]] = {}
+    granted: set[str] = set()
+    max_n = 0
+    for e in events:
+        p = e.payload or {}
+        if e.type == "approval.proposed":
+            aid = str(p.get("approval_id", ""))
+            m = re.match(r"approval_(\d+)$", aid)
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+            if "data" in p:
+                proposed[aid] = p
+        elif e.type == "approval.granted":
+            granted.add(str(p.get("approval_id", "")))
+    pending = {k: v for k, v in proposed.items() if k not in granted}
+    if not pending and max_n == 0:
+        return
+    from activegraph.packs import PendingApproval
+    from activegraph.packs.loader import _ensure_pack_state
+
+    state = _ensure_pack_state(rt)
+    state._next_approval_n = max(state._next_approval_n, max_n + 1)
+    for aid, p in pending.items():
+        state.pending_approvals.append(
+            PendingApproval(
+                id=aid,
+                kind="object",
+                object_type=str(p.get("object_type", "")),
+                data=dict(p.get("data", {})),
+                reason=str(p.get("reason", "")),
+                pack=str(p.get("pack", "")),
+            )
+        )
 
 
 def _is_promote_block(e: Event) -> bool:

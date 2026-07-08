@@ -43,6 +43,23 @@ consumer sign-off and the pack-manifest spec review.
   `add_object` would store it; undeclared types keep v0.9 untyped
   semantics. Catches fork/parent pack version skew at the boundary.
 
+- **Graph-backed pending approvals** (CONTRACT v1.4 #2). The
+  pending-approval queue was in-memory only and silently dropped on
+  restart. `approval.proposed` events now carry the full deferred
+  payload, and `Runtime.load` / `fork()` rebuild the queue from the
+  log (proposed minus granted, id counter reseeded), so a reloaded
+  runtime can `approve()` a proposal made before the restart and a
+  fork inherits proposals pending at its fork point. Proposals
+  recorded before v1.4 lack the payload in their events and are not
+  reconstructible (documented boundary; no history rewriting).
+- **Compaction/retention design published for review**
+  (`compaction-design.md`, proposed CONTRACT v1.4 #3): snapshot
+  events + archive tier, never deletion; a normative pin set that
+  retention policy can never override — promoted-from fork logs
+  (evolution-pack sign-off input), live lineage, replay-cache
+  dependence, pending machinery. Design only; implementation after
+  review.
+
 ### Fixed
 
 - `load_prompts_from_dir` skips hidden files and symlinks. pathlib's
