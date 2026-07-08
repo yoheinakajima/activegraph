@@ -463,8 +463,54 @@ def _fmt_replay_ready() -> str:
 
 
 class Trace:
+    """Read-only facade over a run's event log, exposed as ``runtime.trace``.
+
+    Formatting methods (:meth:`lines`, :meth:`print`, :meth:`export`,
+    :meth:`causal_chain`) render the CONTRACT #18 trace format.
+    Structured accessors (:meth:`events`, :meth:`failures`) return the
+    underlying :class:`~activegraph.core.event.Event` objects for
+    programmatic use — picking an event id for
+    ``runtime.fork(at_event=...)``, or reading the full traceback out
+    of a ``behavior.failed`` payload.
+    """
+
     def __init__(self, graph: Graph) -> None:
         self._graph = graph
+
+    def events(self) -> list[Event]:
+        """The run's events, in log order, as :class:`Event` objects.
+
+        Equivalent to ``graph.events`` (a copy — mutating the returned
+        list changes nothing), surfaced here so trace consumers don't
+        need to reach for the graph or the store. Each event carries
+        the ``id`` that ``Runtime.fork``'s ``at_event=`` parameter
+        expects::
+
+            fork_point = rt.trace.events()[-1].id
+            fork = rt.fork(at_event=fork_point)
+
+        v1.3: new. Previously the only structured route was
+        ``runtime.graph.events``; an external evaluation read the
+        SQLite events table directly because neither surface was
+        discoverable from the trace.
+        """
+        return list(self._graph.events)
+
+    def failures(self) -> list[Event]:
+        """The run's ``behavior.failed`` events, in log order.
+
+        Each payload carries ``behavior``, ``event_id``,
+        ``exception_type``, ``message``, and — since v1.0.3 — the full
+        ``traceback`` string of the exception that failed the
+        behavior::
+
+            for failure in rt.trace.failures():
+                print(failure.payload["traceback"])
+
+        v1.3: new. The traceback was already recorded; this makes it
+        discoverable without filtering ``graph.events`` by hand.
+        """
+        return [e for e in self._graph.events if e.type == "behavior.failed"]
 
     def lines(self) -> list[str]:
         replayed = self._graph.replayed_ids

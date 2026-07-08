@@ -79,6 +79,29 @@ the [error catalog](../reference/errors/llm-behavior-error.md) has
 per-reason recovery prose. The [`failure-model`](../concepts/failure-model.md)
 page covers why these are events rather than escaped exceptions.
 
+### Get the full traceback in Python
+
+Every `behavior.failed` payload carries the complete traceback of
+the exception that failed the behavior (recorded since v1.0.3).
+`runtime.trace.failures()` (v1.3) returns those events directly:
+
+```python
+for failure in rt.trace.failures():
+    p = failure.payload
+    print(f"{p['behavior']} failed on {p['event_id']}:")
+    print(p["traceback"])
+```
+
+This is the fastest loop while developing a pack: run the goal,
+print `rt.trace.failures()`, fix, rerun. The one-line trace entry
+(`[behavior.failed] name: TypeError: ...`) stays terse by design —
+the traceback lives in the payload, not the trace format.
+
+`rt.trace.events()` is the companion accessor: the run's events as
+objects, in log order — the usual way to pick an event id for
+`rt.fork(at_event=...)` or to filter by type without parsing trace
+lines.
+
 ## Walk the causal chain
 
 Every event carries `caused_by` — the id of the event that

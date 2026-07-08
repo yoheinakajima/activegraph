@@ -27,6 +27,27 @@ design).
 
 ### Added
 
+- `Trace.events()` and `Trace.failures()`: structured accessors on
+  `runtime.trace`. `events()` returns the run's events as `Event`
+  objects in log order — the discoverable way to pick an event id for
+  `runtime.fork(at_event=...)` (an external evaluation previously had
+  to read the SQLite events table directly). `failures()` returns the
+  run's `behavior.failed` events, whose payloads have carried the full
+  exception `traceback` since v1.0.3 — now documented and reachable
+  without filtering `graph.events` by hand. See the
+  [debugging cookbook](https://docs.activegraph.ai/cookbook/debugging/).
+- Registration-time handler-signature validation: `@behavior`,
+  `@relation_behavior`, `@llm_behavior`, and `@tool` (both the global
+  and pack-scoped decorators) now raise `TypeError` at decoration time
+  when the function cannot accept the decorator's positional calling
+  convention — e.g. a 2-arg `@behavior` handler or a 1-arg `@tool`.
+  Previously these registered fine and failed at first invocation with
+  the `TypeError` buried in a `behavior.failed` event. The check is
+  permissive where the call can still succeed: `*args`/`**kwargs`,
+  extras with defaults, and the pack settings-injection pattern
+  (annotated extras, e.g. `*, settings: MyPackSettings`) all pass.
+  Callables without an inspectable signature are skipped. Same
+  precedent as `output_schema=` strict validation (CONTRACT v1.0.3 #2).
 - **Native structured-output mode, opt-in** (CONTRACT v1.3 #1; PR #50).
   `Runtime(native_structured_output=True)` resolves a per-behavior
   mode at registration time as a pure function of the flag, the

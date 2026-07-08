@@ -70,6 +70,17 @@ def tool(
     )
 
     def wrap(fn: Callable[..., Any]) -> Tool:
+        # v1.3: validate the (args, ctx) calling convention at
+        # decoration time so a wrong-arity tool fails at this line, not
+        # at first invocation inside a behavior.
+        from activegraph._signature import validate_handler_signature
+
+        validate_handler_signature(
+            fn,
+            expected_params=("args", "ctx"),
+            decorator="@tool",
+            allow_annotated_extras=False,
+        )
         t = Tool(
             name=name or fn.__name__,
             fn=fn,
