@@ -7390,3 +7390,32 @@ item 7, deferred from v1.3). Now:
 
 Event-log compaction/retention is proposed separately in
 `compaction-design.md` (v1.4 #3 when its review lands).
+
+## v1.4 #3. disable_pack: deregistration, honestly not unload
+
+The evolution pack's rollback ask (its design §7.1): live unload of
+imported Python code is not achievable and this contract does not
+pretend otherwise. What ships is DEREGISTRATION with a precise
+boundary:
+
+1. **`runtime.disable_pack(name)` stops the pack NOW.** Its
+   behaviors leave the registry, its tools leave the tool registry
+   (canonical and globally-exported short names both), its typed
+   object/relation schemas stop enforcing (types revert to v0.9
+   untyped semantics), its gating policies stop gating, and the
+   short-name maps are RECOMPUTED so an ambiguity the pack caused
+   resolves rather than leaving a stale sentinel.
+2. **State is untouched; memory is not reclaimed.** Objects the pack
+   created remain (disabling code never rewrites history); the code
+   objects stay in memory, inert — restart to evict, and boot-time
+   pack loading keys off the log.
+3. **`pack.disabled` is an event** (queue-visible like
+   `pack.loaded`), carrying the deregistered surface, so hosts'
+   boot loaders and audit trails read it from the log.
+4. **Idempotent, loud, reversible.** Second disable returns False
+   and emits nothing; a never-loaded name raises PackNotFoundError;
+   re-enable is `load_pack` again (which clears the disabled flag —
+   `state.disabled_packs` exists for exactly this bookkeeping).
+
+This upgrades downstream's v1 rollback from "boot-time exclusion
+plus restart" to "stops firing now, restart to evict memory."

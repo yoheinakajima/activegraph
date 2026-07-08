@@ -20,6 +20,28 @@ consumer sign-off and the pack-manifest spec review.
 
 ### Added
 
+- **`runtime.disable_pack(name)`** (CONTRACT v1.4 #3) — the evolution
+  pack's rollback primitive. Deregisters a loaded pack's behaviors,
+  tools, typed schemas, and gating policies from the live registries
+  (short-name ambiguities recompute rather than staling), emits a
+  queue-visible `pack.disabled` event with the deregistered surface,
+  leaves pack-created state untouched, and is idempotent. Honestly
+  not unload: code objects stay in memory, inert — restart to evict.
+  Re-enable is `load_pack` again.
+- **Bundle hash** (`compute_bundle_hash` / `verify_bundle_hash` in
+  `activegraph.packs.manifest`, CONTRACT v1.4 #1 amendment): the §4
+  walk WITHOUT the manifest exclusion, for EXTERNAL pins. The
+  manifest-internal `content_hash` necessarily excludes itself, which
+  left external pins blind to manifest swaps — risk classes,
+  `consumes`, `authored_by` are all in the manifest. `[load.pins]`,
+  evolution proposal pins, and resolvers pin the bundle hash.
+- **`Pack.capabilities`** (manifest spec Q8, runtime half; CONTRACT
+  v1.4 #1 amendment): declarative `CapabilityDecl` tuple validated at
+  construction, two-way checked by `verify_surface` (including
+  risk-class agreement), recorded in the `pack.loaded` payload so
+  decision surfaces read declared outbound reach from the graph.
+  Registration stays imperative host wiring; the gateway-side check
+  is downstream's half.
 - **Provisional pack-manifest validator** (CONTRACT v1.4 #1).
   `activegraph.packs.manifest` ships the reference implementation of
   the pack manifest spec (activegraph-packs `docs/manifest-spec.md`,

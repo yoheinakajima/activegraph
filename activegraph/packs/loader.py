@@ -240,6 +240,8 @@ def load_pack_into_runtime(
 
     state.loaded_packs[pack.name] = pack
     state.pack_settings[pack.name] = settings_obj
+    # v1.4: re-loading is how a disabled pack comes back.
+    state.disabled_packs.discard(pack.name)
 
     # behaviors: wrap with typed-settings injection, rename to canonical
     canonical_to_pack_behavior: dict[str, Any] = {}
@@ -258,6 +260,9 @@ def load_pack_into_runtime(
     for t in pack.tools:
         canonical = f"{pack.name}.{t.name}"
         renamed = _rename_tool(t, canonical)
+        # v1.4: ownership stamp, symmetric with behaviors — this is
+        # what disable_pack filters on.
+        renamed._pack_owner = pack.name  # type: ignore[attr-defined]
         rt._pack_tools.append(renamed)
         state.tool_owners[canonical] = pack.name
         _add_short_name(state.tool_short_to_canonical, t.name, canonical)
@@ -336,6 +341,10 @@ class PackRuntimeState:
         # pending approvals
         self.pending_approvals: list[PendingApproval] = []
         self._next_approval_n: int = 1
+        # v1.4: packs deregistered by runtime.disable_pack. Names stay
+        # here so a second disable is an idempotent no-op instead of a
+        # not-loaded error; load_pack clears the flag on re-load.
+        self.disabled_packs: set[str] = set()
 
 
 def _ensure_pack_state(rt: "Runtime") -> PackRuntimeState:
