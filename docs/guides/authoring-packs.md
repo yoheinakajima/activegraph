@@ -587,6 +587,19 @@ types, behavior names, tool names, or policy names raises
 identifier. **Conflict detection runs before any state mutation** —
 a failed `load_pack` leaves the runtime unchanged.
 
+### Disabling a pack (v1.4)
+
+`runtime.disable_pack(name)` deregisters a loaded pack **now**: its
+behaviors stop matching, its tools stop resolving, its typed schemas
+stop enforcing (the types revert to untyped semantics), and a
+queue-visible `pack.disabled` event records the deregistered surface
+for audit and boot-time loaders. What it deliberately does not do:
+touch pack-created state (history is never rewritten) or reclaim
+memory (Python cannot honestly unload imported code — restart to
+evict). Idempotent — a second disable returns `False`; a never-loaded
+name raises `PackNotFoundError`. Re-enable by calling `load_pack`
+again.
+
 ---
 
 ## 13. The `pack.loaded` event

@@ -18,8 +18,10 @@ from pydantic import BaseModel
 from activegraph.packs import ObjectType, Pack
 from activegraph.packs.manifest import (
     PackManifestError,
+    compute_bundle_hash,
     compute_content_hash,
     load_manifest,
+    verify_bundle_hash,
     verify_content_hash,
     verify_surface,
 )
@@ -132,8 +134,22 @@ def _pack(object_types=("meeting",)):
 
 
 def test_surface_check_passes_on_agreement(tmp_path):
+    from activegraph.packs.manifest import CapabilityDecl
+
     m = load_manifest(_write_pack(tmp_path))
-    verify_surface(m, _pack())  # no raise
+    pack = Pack(
+        name="meeting_notes",
+        version="0.1.0",
+        object_types=_pack().object_types,
+        capabilities=(
+            CapabilityDecl(
+                provider="meeting",
+                capability="export_summary",
+                risk_class="medium",
+            ),
+        ),
+    )
+    verify_surface(m, pack)  # no raise
 
 
 def test_surface_check_catches_both_directions(tmp_path):
@@ -245,3 +261,148 @@ def test_prompt_loader_skips_hidden_and_symlinked_files(tmp_path):
 
     prompts = load_prompts_from_dir(d)
     assert [pr.name for pr in prompts] == ["real"]
+
+
+# ------------------------------------------- bundle hash (v1.4.0)
+
+
+def test_bundle_hash_includes_the_manifest(tmp_path):
+    root = _write_pack(tmp_path)
+    content = compute_content_hash(root)
+    bundle = compute_bundle_hash(root)
+    assert bundle != content
+
+    # A manifest-only edit — the approve-then-swap vector — moves the
+    # bundle hash and leaves the content hash untouched.
+    (root / "manifest.toml").write_text(
+        GOOD_MANIFEST.replace('risk_class = "medium"', 'risk_class = "low"')
+    )
+    assert compute_content_hash(root) == content
+    assert compute_bundle_hash(root) != bundle
+
+
+def test_bundle_hash_is_byte_exact(tmp_path):
+    root = _write_pack(tmp_path)
+    h = hashlib.sha256()
+    for rel in sorted([b"__init__.py", b"manifest.toml"]):
+        data = (root / rel.decode()).read_bytes()
+        h.update(rel)
+        h.update(b"\x00")
+        h.update(len(data).to_bytes(8, "big"))
+        h.update(data)
+    assert compute_bundle_hash(root) == "sha256:" + h.hexdigest()
+
+
+def test_verify_bundle_hash_detects_manifest_swap(tmp_path):
+    root = _write_pack(tmp_path)
+    pin = compute_bundle_hash(root)
+    verify_bundle_hash(pin, root)  # no raise
+
+    (root / "manifest.toml").write_text(
+        GOOD_MANIFEST.replace("[fixtures]", "consumes = []\n\n[fixtures]")
+    )
+    with pytest.raises(PackManifestError, match="bundle hash mismatch"):
+        verify_bundle_hash(pin, root)
+
+
+def test_verify_bundle_hash_rejects_malformed_pin(tmp_path):
+    root = _write_pack(tmp_path)
+    with pytest.raises(PackManifestError, match="external pin"):
+        verify_bundle_hash("md5:abcd", root)
+
+
+def test_bundle_hash_shares_the_walk_rules(tmp_path):
+    root = _write_pack(tmp_path)
+    baseline = compute_bundle_hash(root)
+    (root / ".hidden").write_text("x")
+    (root / "cached.pyc").write_bytes(b"\x00")
+    assert compute_bundle_hash(root) == baseline
+    os.symlink(tmp_path / "nowhere", root / "bad_link")
+    with pytest.raises(PackManifestError, match="symlink"):
+        compute_bundle_hash(root)
+
+
+# --------------------------------- Pack.capabilities (v1.4.0, Q8)
+
+
+def test_pack_capabilities_field_validates_and_lands_in_pack_loaded(tmp_path):
+    from activegraph import Graph, Runtime, clear_registry
+    from activegraph.packs import PackValidationError
+    from activegraph.packs.manifest import CapabilityDecl
+
+    clear_registry()
+    cap = CapabilityDecl(
+        provider="meeting", capability="export_summary", risk_class="medium"
+    )
+    pack = Pack(name="meeting_notes", version="0.1.0", capabilities=(cap,))
+
+    rt = Runtime(Graph())
+    rt.load_pack(pack)
+    loaded_event = next(
+        e for e in rt.graph.events if e.type == "pack.loaded"
+    )
+    assert loaded_event.payload["capabilities"] == [
+        {
+            "provider": "meeting",
+            "capability": "export_summary",
+            "risk_class": "medium",
+            "credential_ref": "",
+        }
+    ]
+
+    with pytest.raises(PackValidationError, match="risk_class"):
+        Pack(
+            name="bad",
+            version="0.1.0",
+            capabilities=(
+                CapabilityDecl(
+                    provider="x", capability="y", risk_class="extreme"
+                ),
+            ),
+        )
+    with pytest.raises(PackValidationError, match="CapabilityDecl"):
+        Pack(name="bad", version="0.1.0", capabilities=({"provider": "x"},))
+
+
+def test_surface_check_covers_capabilities_two_way(tmp_path):
+    from activegraph.packs.manifest import CapabilityDecl
+
+    m = load_manifest(_write_pack(tmp_path))  # declares meeting.export_summary/medium
+
+    # Agreement passes.
+    ok = _pack()
+    ok = Pack(
+        name="meeting_notes",
+        version="0.1.0",
+        object_types=ok.object_types,
+        capabilities=(
+            CapabilityDecl(
+                provider="meeting",
+                capability="export_summary",
+                risk_class="medium",
+            ),
+        ),
+    )
+    verify_surface(m, ok)
+
+    # Pack silent about a declared capability.
+    with pytest.raises(PackManifestError) as exc:
+        verify_surface(m, _pack())
+    assert any("not on Pack" in v for v in exc.value.violations)
+
+    # Risk-class relabel is caught.
+    relabeled = Pack(
+        name="meeting_notes",
+        version="0.1.0",
+        object_types=_pack().object_types,
+        capabilities=(
+            CapabilityDecl(
+                provider="meeting",
+                capability="export_summary",
+                risk_class="low",
+            ),
+        ),
+    )
+    with pytest.raises(PackManifestError) as exc:
+        verify_surface(m, relabeled)
+    assert any("risk_class mismatch" in v for v in exc.value.violations)

@@ -2044,6 +2044,137 @@ class Runtime:
             return []
         return list(self._pack_state.loaded_packs.values())
 
+    def disable_pack(self, name: str) -> bool:
+        """Deregister a loaded pack: its behaviors stop firing NOW.
+
+        CONTRACT v1.4 #3. The pack's behaviors, tools, typed-object
+        schemas, relation specs, gating policies, and settings are
+        removed from this runtime's live registries and the registry
+        is rebuilt — nothing pack-owned matches another event from
+        this call onward. What deliberately does NOT happen:
+
+        - **State is untouched.** Objects and relations the pack
+          created remain; disabling code never rewrites history.
+        - **Memory is not reclaimed.** Python cannot honestly unload
+          imported code; the objects stay in memory, inert. Restart
+          to evict (hosts doing boot-time pack loading key off the
+          ``pack.disabled`` event this method emits).
+        - **Pending approvals remain pending** — resolvable or not,
+          they are recorded state, not registry state.
+
+        Emits ``pack.disabled`` (queue-visible, like ``pack.loaded``)
+        with the deregistered surface, so behaviors and boot loaders
+        can react from the log. Idempotent: disabling an
+        already-disabled pack returns ``False`` and emits nothing.
+        Re-enabling is ``load_pack`` again (which clears the disabled
+        flag). Raises
+        :class:`~activegraph.packs.PackNotFoundError` for a name this
+        runtime never loaded.
+
+        Returns ``True`` when the pack was live and is now disabled.
+        """
+        from activegraph.packs import PackNotFoundError
+        from activegraph.packs.loader import AMBIGUOUS
+
+        state = self._pack_state
+        if state is None or name not in state.loaded_packs:
+            if state is not None and name in state.disabled_packs:
+                return False  # idempotent second disable
+            loaded = tuple(state.loaded_packs.keys()) if state else ()
+            raise PackNotFoundError(name, installed=loaded)
+
+        pack = state.loaded_packs.pop(name)
+        state.pack_settings.pop(name, None)
+
+        removed_behaviors = sorted(
+            c for c, owner in state.behavior_owners.items() if owner == name
+        )
+        removed_tools = sorted(
+            c for c, owner in state.tool_owners.items() if owner == name
+        )
+        removed_object_types = sorted(
+            t for t, owner in state.object_type_owners.items() if owner == name
+        )
+        removed_relation_types = sorted(
+            t
+            for t, owner in state.relation_type_owners.items()
+            if owner == name
+        )
+        for c in removed_behaviors:
+            state.behavior_owners.pop(c, None)
+        for c in removed_tools:
+            state.tool_owners.pop(c, None)
+        for t in removed_object_types:
+            state.object_type_owners.pop(t, None)
+            state.object_type_schemas.pop(t, None)
+        for t in removed_relation_types:
+            state.relation_type_owners.pop(t, None)
+            state.relation_type_specs.pop(t, None)
+        for c in [
+            c for c, owner in state.policy_owners.items() if owner == name
+        ]:
+            state.policy_owners.pop(c, None)
+        prefix = f"{name}."
+        for otype in list(state.gated_object_types):
+            remaining = [
+                p
+                for p in state.gated_object_types[otype]
+                if not p.startswith(prefix)
+            ]
+            if remaining:
+                state.gated_object_types[otype] = remaining
+            else:
+                del state.gated_object_types[otype]
+
+        # Short-name maps: recompute from the surviving canonicals —
+        # removal can RESOLVE an ambiguity, not just delete entries.
+        def _rebuild_shorts(owners: dict[str, str]) -> dict[str, str]:
+            shorts: dict[str, str] = {}
+            for canonical in owners:
+                short = canonical.split(".", 1)[1]
+                shorts[short] = (
+                    AMBIGUOUS if short in shorts else canonical
+                )
+            return shorts
+
+        state.behavior_short_to_canonical = _rebuild_shorts(
+            state.behavior_owners
+        )
+        state.tool_short_to_canonical = _rebuild_shorts(state.tool_owners)
+
+        self._pack_behaviors = [
+            b
+            for b in self._pack_behaviors
+            if getattr(b, "_pack_owner", None) != name
+        ]
+        self._pack_tools = [
+            t
+            for t in self._pack_tools
+            if getattr(t, "_pack_owner", None) != name
+        ]
+        state.disabled_packs.add(name)
+        self._ensure_registry()
+
+        self.graph.emit(
+            Event(
+                id=self.graph.ids.event(),
+                type="pack.disabled",
+                payload={
+                    "name": name,
+                    "version": pack.version,
+                    "behaviors": removed_behaviors,
+                    "tools": removed_tools,
+                    "object_types": removed_object_types,
+                    "relation_types": removed_relation_types,
+                },
+                actor="runtime",
+                frame_id=self.frame.id if self.frame else None,
+                caused_by=None,
+                timestamp=self.graph.clock.now(),
+            )
+        )
+        return True
+
     def get_behavior(self, name: str) -> Any:
         """Look up a registered behavior by canonical or short name.
 

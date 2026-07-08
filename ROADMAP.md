@@ -199,22 +199,20 @@ scoping. Ships in v1.3.0 alongside Phases 1–2.
 ## Phase 7 — v1.4 cycle (opened 2026-07-08)
 
 Driven by the pack-manifest spec review and the evolution pack's two
-runtime asks (evolution-design §9). Shipped so far: the provisional
-manifest validator (CONTRACT v1.4 #1), promote apply-time schema
-validation (v1.3 #4 addendum 4c), graph-backed pending approvals
-(v1.4 #2), and the compaction design doc (proposed v1.4 #3).
+runtime asks (evolution-design §9). Shipped in v1.4.0: the
+provisional manifest validator with bundle hash and Pack.capabilities
+(CONTRACT v1.4 #1 + amendments), promote apply-time schema validation
+(v1.3 #4 addendum 4c), graph-backed pending approvals (v1.4 #2),
+disable_pack (v1.4 #3), and two designs for review
+(compaction-design.md, trial-isolation-design.md).
 
 - **MUST, design published: event-log compaction/retention.**
   [`compaction-design.md`](compaction-design.md) — snapshot events +
   archive tier, pin set dominates policy (promoted-from fork logs
   pinned per the evolution sign-off). Implementation after review.
-- **SHOULD: pack disable (deregistration).** The evolution pack's
-  rollback ask (§7.1 there). Full unload of imported Python code is
-  not honestly achievable; DEREGISTRATION is: `rt.disable_pack(name)`
-  removes the pack's behaviors, tools, and validators from the live
-  registries (the loader already tracks per-pack ownership), emits a
-  `pack.disabled` event for audit and boot-time exclusion, and leaves
-  pack-created state untouched. Small, high-value, v1.4.
+- **DONE (v1.4.0): pack disable (deregistration).** Shipped as
+  CONTRACT v1.4 #3 — `rt.disable_pack(name)`, honest not-unload
+  boundary stated in the contract.
 - **SHOULD, design-first: subprocess fork-trial isolation.** The
   evolution pack's T5 ask. Fork isolation is already store-level
   (run-scoped rows in the same file), so process isolation is

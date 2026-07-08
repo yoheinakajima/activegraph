@@ -13,13 +13,58 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased] — v1.4
+## [v1.4.0] — 2026-07-08
 
-Post-release work on top of v1.3.0, driven by the evolution pack's
-consumer sign-off and the pack-manifest spec review.
+The manifest-and-rollback release, cut fast because PyPI 1.3.0
+predates three commits downstream CI depends on (the manifest
+validator, promote apply-time validation, graph-backed approvals).
+Everything additive on 1.3.0; packs pinned `>=1.3,<2.0` keep working
+unchanged. Driven by the evolution pack's consumer sign-off and the
+pack-manifest spec review; two design docs published for review
+(`compaction-design.md`, `trial-isolation-design.md` — the
+subprocess-trial and compaction implementations land after review;
+streaming stays design-first behind its replay-unit question, ROADMAP
+Phase 7).
+
+### Migration
+
+No breaking changes. Notes: the provisional
+`activegraph.packs.manifest` API remains importable only from its
+module path and may take one round of breaking edits before the spec
+exits DRAFT; external pack pins should move from the content hash to
+the new bundle hash (the content hash cannot cover `manifest.toml`).
 
 ### Added
 
+- **Subprocess fork-trial isolation design published for review**
+  (`trial-isolation-design.md`): parent-side fork, fresh-interpreter
+  child, artifact materialization pinned by the bundle hash, result
+  schema where the store is the record, and an honest-limits section
+  (crash/state isolation, not a security sandbox; syscall/network
+  confinement is host territory). Design only; the evolution pack's
+  T5 ask.
+- **`runtime.disable_pack(name)`** (CONTRACT v1.4 #3) — the evolution
+  pack's rollback primitive. Deregisters a loaded pack's behaviors,
+  tools, typed schemas, and gating policies from the live registries
+  (short-name ambiguities recompute rather than staling), emits a
+  queue-visible `pack.disabled` event with the deregistered surface,
+  leaves pack-created state untouched, and is idempotent. Honestly
+  not unload: code objects stay in memory, inert — restart to evict.
+  Re-enable is `load_pack` again.
+- **Bundle hash** (`compute_bundle_hash` / `verify_bundle_hash` in
+  `activegraph.packs.manifest`, CONTRACT v1.4 #1 amendment): the §4
+  walk WITHOUT the manifest exclusion, for EXTERNAL pins. The
+  manifest-internal `content_hash` necessarily excludes itself, which
+  left external pins blind to manifest swaps — risk classes,
+  `consumes`, `authored_by` are all in the manifest. `[load.pins]`,
+  evolution proposal pins, and resolvers pin the bundle hash.
+- **`Pack.capabilities`** (manifest spec Q8, runtime half; CONTRACT
+  v1.4 #1 amendment): declarative `CapabilityDecl` tuple validated at
+  construction, two-way checked by `verify_surface` (including
+  risk-class agreement), recorded in the `pack.loaded` payload so
+  decision surfaces read declared outbound reach from the graph.
+  Registration stays imperative host wiring; the gateway-side check
+  is downstream's half.
 - **Provisional pack-manifest validator** (CONTRACT v1.4 #1).
   `activegraph.packs.manifest` ships the reference implementation of
   the pack manifest spec (activegraph-packs `docs/manifest-spec.md`,
