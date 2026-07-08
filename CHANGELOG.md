@@ -41,6 +41,22 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   (covers explicit relation removal, `remove_object` cascade through
   a relation into shared state, and the promote marker's payload);
   sentence added to `promote-design.md` §4.
+- **Loader-side manifest validation, warning tier** (CONTRACT
+  v1.6 #1 — the Q2 schedule's clock starts). When a `manifest.toml`
+  is discoverable at the pack root (best-effort: the pack's
+  component modules resolved via `sys.modules`, walked up while
+  inside the package), `load_pack` runs `load_manifest` +
+  `verify_surface` and emits ONE structured stdlib-`logging` WARNING
+  per (pack, version, manifest path) per process on the
+  `activegraph.packs.manifest` logger, carrying the full
+  `violations` list and `reason="pack.manifest_invalid"`. The pack
+  loads regardless — never an error before 2.0, and a bug in the
+  tier itself degrades to DEBUG, not a load failure. Absent
+  manifest: silent. Hash verification stays host/CI territory (the
+  loader never re-hashes a pack directory on the load path). Tests
+  cover both tiers: clean manifest silent, absent manifest silent,
+  surface drift warns once and still loads, malformed TOML warns and
+  still loads.
 
 ## [v1.5.0] — 2026-07-08
 

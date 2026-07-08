@@ -7527,3 +7527,44 @@ the reasoning; this entry locks what shipped and where phase 1 stops:
    grained compaction of parents with live children (cutoff above
    the child's fork point) is a design call deliberately not made
    here: phase 1 refuses the whole operation instead.
+
+# v1.6 — closing-the-loop cycle (in progress)
+
+Opened 2026-07-08 on top of the v1.5.0 release. Small by design:
+downstream-facing confirmations (recorded-segment replay expressible
+as shipped — worked example in `trial-isolation-design.md` §2b; the
+fork-tail-removal pattern pinned as v1.3 #4 addendum 4d above) plus
+the manifest validator's promised warning tier.
+
+## v1.6 #1. Loader-side manifest validation, warning tier
+
+The Q2 schedule's Q2-2026 step, starting the clock the spec review
+asked for: violations become *visible* at `load_pack` long before
+they can become errors (not before 2.0).
+
+1. **When a `manifest.toml` is discoverable at the pack root**,
+   `load_pack` runs `load_manifest` + `verify_surface` against the
+   live `Pack` and, on any violation, emits ONE structured stdlib
+   `logging` WARNING per (pack name, version, manifest path) per
+   process on the `activegraph.packs.manifest` logger — carrying
+   `pack`, `pack_version`, `manifest_path`, the full `violations`
+   list, and `reason="pack.manifest_invalid"` as record fields (the
+   v0.8 structured-log conventions). The pack loads regardless: the
+   tier never raises, never blocks, and a bug in the tier itself
+   degrades to a DEBUG line, not a load failure.
+2. **Absent manifest: silent.** No manifest is not a violation in
+   1.x. Pack-root discovery is best-effort — the defining modules of
+   the pack's components (behaviors, tools, settings schema, object
+   types) are resolved via `sys.modules` and walked up while inside
+   the package; a pack whose manifest cannot be found this way is
+   treated as manifest-less.
+3. **Hash verification stays host/CI territory.** The tier checks
+   schema + surface agreement only; it never re-hashes the pack
+   directory on the load path (`content_hash` is validated for
+   shape by `load_manifest`, not recomputed). Content/bundle hash
+   enforcement remains `verify_bundle_hash` at trial/adoption
+   boundaries and downstream CI, unchanged from v1.4 #1.
+4. **The 2.0 boundary, restated**: this tier hardening into an
+   error is a MAJOR-version event. Until then the loader's contract
+   is warn-and-load, and consumers may rely on a violating pack
+   still loading.

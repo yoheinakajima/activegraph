@@ -6,6 +6,15 @@ problem (mismatch, symlink in the walk, non-NFC path). Raised by the
 **provisional** validator in `activegraph.packs.manifest`
 (CONTRACT v1.4 #1); `load_pack` does not enforce manifests yet.
 
+Since v1.6, `load_pack` runs this validation as a **warning tier**
+(CONTRACT v1.6 #1): when a `manifest.toml` is discoverable at the
+pack root, violations are logged as one structured WARNING per pack
+per process on the `activegraph.packs.manifest` logger — the record
+carries the full `violations` list and
+`reason="pack.manifest_invalid"` — and the pack loads anyway. A
+missing manifest stays silent. This never becomes an error before
+activegraph 2.0.
+
 Every violation is collected and raised together — `.violations` is
 the full list — so one fix pass suffices, matching `load_pack`'s
 pre-mutation posture.

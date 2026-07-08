@@ -27,6 +27,9 @@ from __future__ import annotations
 import copy
 import inspect
 import json
+import logging
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from pydantic import BaseModel, ValidationError
@@ -309,7 +312,112 @@ def load_pack_into_runtime(
             timestamp=rt.graph.clock.now(),
         )
     )
+
+    # ---- 6. manifest warning tier (CONTRACT v1.6 #1) ----------------------
+    _warn_on_manifest_violations(pack)
     return True
+
+
+# --------------------------------------------- manifest warning tier
+# CONTRACT v1.6 #1: when a manifest.toml is discoverable next to the
+# pack's defining modules, load_pack runs load_manifest +
+# verify_surface and WARNs on violations — structured, once per pack
+# per process, never an error before 2.0. Absent manifest: silent.
+# Hash verification (content/bundle) stays host/CI territory: the
+# loader never re-hashes a pack directory on the hot path.
+
+_manifest_log = logging.getLogger("activegraph.packs.manifest")
+
+# (pack name, pack version, manifest path) triples already validated
+# this process — clean or not, the tier runs once per pack.
+_manifest_checked: set[tuple[str, str, str]] = set()
+
+
+def _locate_pack_manifest(pack: Pack) -> Optional[Path]:
+    """Best-effort pack-root discovery: resolve the modules that define
+    the pack's components and walk up (while still inside the package)
+    looking for a sibling ``manifest.toml``. Returns None when the
+    pack has no discoverable manifest — which is not a violation.
+    """
+    components: list[Any] = [getattr(b, "fn", None) for b in pack.behaviors]
+    components += [getattr(t, "fn", None) for t in pack.tools]
+    if pack.settings_schema is not EmptySettings:
+        components.append(pack.settings_schema)
+    components += [ot.schema for ot in pack.object_types]
+
+    seen_modules: set[str] = set()
+    for comp in components:
+        mod_name = getattr(comp, "__module__", None)
+        if not mod_name or mod_name == "__main__" or mod_name in seen_modules:
+            continue
+        seen_modules.add(mod_name)
+        mod_file = getattr(sys.modules.get(mod_name), "__file__", None)
+        if not mod_file:
+            continue
+        directory = Path(mod_file).resolve().parent
+        while True:
+            candidate = directory / "manifest.toml"
+            if candidate.is_file():
+                return candidate
+            # Stop once we step outside the package: the manifest
+            # lives at the pack root, and the pack root is a package.
+            if not (directory / "__init__.py").is_file():
+                break
+            if directory.parent == directory:
+                break
+            directory = directory.parent
+    return None
+
+
+def _warn_on_manifest_violations(pack: Pack) -> None:
+    """The warning tier itself. Never raises: a broken manifest (or a
+    bug in discovery) must not break ``load_pack`` before 2.0.
+    """
+    try:
+        manifest_path = _locate_pack_manifest(pack)
+        if manifest_path is None:
+            return  # no manifest: silent, per the Q2 schedule
+        key = (pack.name, pack.version, str(manifest_path))
+        if key in _manifest_checked:
+            return
+        _manifest_checked.add(key)
+        from activegraph.packs.manifest import (
+            PackManifestError,
+            load_manifest,
+            verify_surface,
+        )
+
+        try:
+            manifest = load_manifest(manifest_path)
+            verify_surface(manifest, pack)
+        except PackManifestError as err:
+            _manifest_log.warning(
+                "pack %s@%s: manifest.toml found at %s but validation "
+                "failed with %d violation(s). The pack still loads — "
+                "this stays a warning until activegraph 2.0. First "
+                "violation: %s",
+                pack.name,
+                pack.version,
+                manifest_path,
+                len(err.violations),
+                err.violations[0] if err.violations else "",
+                extra={
+                    "pack": pack.name,
+                    "pack_version": pack.version,
+                    "manifest_path": str(manifest_path),
+                    "violations": list(err.violations),
+                    "reason": "pack.manifest_invalid",
+                },
+            )
+    except Exception:
+        # The tier is advisory; discovery/IO surprises are debug noise,
+        # not load failures.
+        _manifest_log.debug(
+            "manifest warning tier errored for pack %s@%s",
+            pack.name,
+            pack.version,
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------- state
