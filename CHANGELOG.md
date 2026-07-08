@@ -13,6 +13,40 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.7
+
+### Added
+
+- **`extra_packs` on `run_forked_trial`: cross-pack interaction
+  trials, opt-in** (CONTRACT v1.5 #1 addendum 1b — the gap the first
+  consumer flagged). The default is and stays candidate-only
+  isolation: the child loads nothing but the candidate. Each
+  `extra_packs` entry is a `PackSource` materialized in the child by
+  the identical chain the candidate goes through (bundle hash before
+  import, manifest schema, two-way surface check — no trust
+  shortcut) and loaded, in order, before the candidate; any extra
+  pack failing a pin is `materialization_failed` for the whole
+  trial. Scenario resolution stays inside the candidate's root.
+  Loading-scope statement + consumer-endorsed patterns
+  (pinned-driver scenario, marker-object sweep) added to
+  `trial-isolation-design.md` §2b/§2c.
+
+### Documentation
+
+- **Retention's offline contract ruled per-RUN, not per-file**
+  (CONTRACT v1.5 #2 addendum 2b, a downstream confirm-request).
+  Retiring a finished fork while the parent run holds a live runtime
+  on the same SQLite file is sanctioned — WAL + `run_id`-scoped
+  statements + single-statement autocommit appends + one short
+  `BEGIN IMMEDIATE` archive transaction; the rule protects against
+  the SAME-run case (verified: `compact` under an attached runtime
+  collides on `UNIQUE(id, run_id)`). Caveats stated in the
+  docstrings: `pins` → archive is check-then-act (don't race
+  pin-creating operations against retirement of that run), and an
+  oversized archive move can outlast a concurrent writer's busy
+  timeout (`OperationalError`, never corruption). Regression test
+  `test_retire_fork_per_run_while_parent_runtime_is_live`.
+
 ## [v1.6.0] — 2026-07-08
 
 The closing-the-loop release: two downstream-facing confirmations

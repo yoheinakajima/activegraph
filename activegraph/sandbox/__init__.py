@@ -137,6 +137,7 @@ def run_forked_trial(
     scenario: str = "",
     limits: TrialLimits = TrialLimits(),
     label: str = "trial",
+    extra_packs: tuple[PackSource, ...] = (),
 ) -> TrialReport:
     """Fork the parent at ``at_event`` and trial the candidate pack in
     a fresh subprocess. CONTRACT v1.5 #1.
@@ -145,10 +146,21 @@ def run_forked_trial(
     ``fork()`` semantics (lineage recorded, promote-block cut guard);
     the child receives only the fork's run id. ``scenario`` is
     ``"relative/path.py"`` or ``"relative/path.py::func"`` inside the
-    pack root — the function (default ``main``) is called with the
-    fork's ``Runtime`` and drives the trial; empty means just
-    ``run_until_idle()``. The scenario contract is
+    CANDIDATE's pack root — the function (default ``main``) is called
+    with the fork's ``Runtime`` and drives the trial; empty means
+    just ``run_until_idle()``. The scenario contract is
     ``def main(rt): ...``.
+
+    **The default is candidate-only isolation**: the child loads
+    nothing but the candidate, so the trial exercises it apart from
+    every other pack's behaviors. ``extra_packs`` is the opt-in for
+    cross-pack interaction trials (CONTRACT v1.5 #1 addendum 1b):
+    each entry is materialized in the child exactly like the
+    candidate — bundle hash verified before import, manifest schema
+    + two-way surface check when required — and loaded, in order,
+    BEFORE the candidate. Any extra pack failing its pins is
+    ``materialization_failed`` for the whole trial; the scenario
+    still resolves inside the candidate's root only.
 
     Deterministic and key-free by default (``max_llm_calls=0``, empty
     environment pass-through). Returns a :class:`TrialReport`; never
@@ -171,6 +183,14 @@ def run_forked_trial(
         "pack_root": str(Path(pack_source.root_dir).resolve()),
         "expected_bundle_hash": pack_source.expected_bundle_hash,
         "manifest_required": pack_source.manifest_required,
+        "extra_packs": [
+            {
+                "pack_root": str(Path(p.root_dir).resolve()),
+                "expected_bundle_hash": p.expected_bundle_hash,
+                "manifest_required": p.manifest_required,
+            }
+            for p in extra_packs
+        ],
         "scenario": scenario,
         "limits": {
             "max_rss_bytes": limits.max_rss_bytes,

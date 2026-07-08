@@ -365,3 +365,126 @@ def test_recorded_segment_replay_inside_the_trial(tmp_path):
     ]
     assert replies == ["hello", "what's on today?", "thanks"]
     _parent_untouched(path, parent_run, n_parent)
+
+
+# ----------------------------------------- extra_packs (addendum 1b)
+
+TRUSTED_PACK_INIT = '''
+from activegraph.packs import Pack, behavior
+
+
+@behavior(name="context_builder", on=["goal.created"])
+def context_builder(event, graph, ctx):
+    graph.add_object("context", {"topic": event.payload.get("goal", "")})
+
+
+pack = Pack(name="trusted_helper", version="0.1.0", behaviors=(context_builder,))
+'''
+
+TRUSTED_MANIFEST = MANIFEST_TEMPLATE.replace(
+    'name = "trial_candidate"', 'name = "trusted_helper"'
+).replace('behaviors = ["greeter"]', 'behaviors = ["context_builder"]')
+
+INTERACTING_CANDIDATE_INIT = '''
+from activegraph.packs import Pack, behavior
+
+
+@behavior(name="annotator", on=["object.created"])
+def annotator(event, graph, ctx):
+    obj = event.payload.get("object", {})
+    if obj.get("type") == "context":
+        graph.add_object("annotation", {"about": obj["data"]["topic"]})
+
+
+pack = Pack(name="trial_candidate", version="0.1.0", behaviors=(annotator,))
+'''
+
+
+def _trusted_dir(tmp_path):
+    root = tmp_path / "trusted_helper"
+    root.mkdir()
+    (root / "__init__.py").write_text(TRUSTED_PACK_INIT)
+    content = compute_content_hash(root)
+    (root / "manifest.toml").write_text(
+        TRUSTED_MANIFEST.format(content_hash=content)
+    )
+    return root, compute_bundle_hash(root)
+
+
+def test_extra_packs_enable_cross_pack_interaction_trials(tmp_path):
+    # Addendum 1b: the trusted pack's behavior produces the context
+    # object; the CANDIDATE reacts to it. Neither alone produces the
+    # annotation — the trial is genuinely cross-pack.
+    path, parent_run, tip, n_parent = _parent_store(tmp_path)
+    trusted_root, trusted_bundle = _trusted_dir(tmp_path)
+    root = tmp_path / "trial_candidate"
+    root.mkdir()
+    (root / "__init__.py").write_text(INTERACTING_CANDIDATE_INIT)
+    (root / "scenario.py").write_text(
+        'def main(rt):\n    rt.run_goal("cross-pack trial")\n'
+    )
+    annotator_manifest = MANIFEST_TEMPLATE.replace(
+        'behaviors = ["greeter"]', 'behaviors = ["annotator"]'
+    )
+    (root / "manifest.toml").write_text(
+        annotator_manifest.format(content_hash=compute_content_hash(root))
+    )
+    bundle = compute_bundle_hash(root)
+
+    report = run_forked_trial(
+        path,
+        parent_run_id=parent_run,
+        at_event=tip,
+        pack_source=PackSource(root_dir=str(root), expected_bundle_hash=bundle),
+        scenario="scenario.py",
+        extra_packs=(
+            PackSource(
+                root_dir=str(trusted_root),
+                expected_bundle_hash=trusted_bundle,
+            ),
+        ),
+    )
+    assert report.outcome == "completed", report.detail
+    fork = Runtime.load(path, run_id=report.fork_run_id, behaviors=[])
+    contexts = [o for o in fork.graph.all_objects() if o.type == "context"]
+    annotations = [
+        o for o in fork.graph.all_objects() if o.type == "annotation"
+    ]
+    assert [c.data["topic"] for c in contexts] == ["cross-pack trial"]
+    assert [a.data["about"] for a in annotations] == ["cross-pack trial"]
+    # Both packs loaded, trusted FIRST, then the candidate.
+    loaded = [
+        e.payload["name"]
+        for e in fork.graph.events
+        if e.type == "pack.loaded"
+    ]
+    assert loaded == ["trusted_helper", "trial_candidate"]
+    _parent_untouched(path, parent_run, n_parent)
+
+
+def test_extra_pack_bundle_mismatch_fails_materialization(tmp_path):
+    # An extra pack is pinned exactly like the candidate: a wrong
+    # bundle hash refuses the WHOLE trial before anything imports.
+    path, parent_run, tip, n_parent = _parent_store(tmp_path)
+    trusted_root, _ = _trusted_dir(tmp_path)
+    root, bundle = _candidate_dir(tmp_path)
+
+    report = run_forked_trial(
+        path,
+        parent_run_id=parent_run,
+        at_event=tip,
+        pack_source=PackSource(root_dir=str(root), expected_bundle_hash=bundle),
+        scenario="scenario.py",
+        extra_packs=(
+            PackSource(
+                root_dir=str(trusted_root),
+                expected_bundle_hash="sha256:" + "2" * 64,
+            ),
+        ),
+    )
+    assert report.outcome == "materialization_failed"
+    assert "bundle hash mismatch" in report.detail
+    assert report.events_appended == 0
+    fork = Runtime.load(path, run_id=report.fork_run_id, behaviors=[])
+    assert not [e for e in fork.graph.events if e.type == "pack.loaded"]
+    _parent_untouched(path, parent_run, n_parent)

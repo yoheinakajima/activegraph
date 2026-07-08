@@ -7479,6 +7479,20 @@ carries the reasoning, this entry locks the deltas and boundaries:
    trials plus cross-store promote remain the follow-on design if
    consumers need hard separation.
 
+Post-release addendum (v1.7, closing the gap the first consumer
+flagged): **1b. `extra_packs` — cross-pack interaction trials,
+opt-in.** The default is and stays candidate-only isolation: the
+child loads nothing but the candidate. `run_forked_trial(...,
+extra_packs=(PackSource(...), ...))` is the sanctioned path for
+loading additional trusted packs into the child: each entry is
+materialized by the IDENTICAL chain the candidate goes through
+(bundle hash before import, manifest schema, two-way surface check —
+no trust shortcut) and loaded, in order, before the candidate; any
+extra pack failing a pin is `materialization_failed` for the whole
+trial. The scenario still resolves inside the candidate's root only.
+Pinned by `test_extra_packs_enable_cross_pack_interaction_trials`
+and `test_extra_pack_bundle_mismatch_fails_materialization`.
+
 ## v1.5 #2. Compaction phase 1: snapshot + archive tier + the pin set
 
 Implements phase 1 of `compaction-design.md`. The design doc carries
