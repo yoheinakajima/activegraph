@@ -13,6 +13,34 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.5
+
+The designs-become-code cycle: the two v1.4 design docs
+(trial isolation, compaction) turn into runtime primitives.
+
+### Added
+
+- **Subprocess fork-trial isolation** (CONTRACT v1.5 #1;
+  `trial-isolation-design.md` implemented as scoped).
+  `activegraph.sandbox.run_forked_trial(store, parent_run_id=...,
+  at_event=..., pack_source=..., scenario=..., limits=...)`: the
+  parent forks (child never gets fork authority), a fresh-interpreter
+  child materializes the candidate from artifacts pinned by the
+  bundle hash (`verify_bundle_hash` before any import, then manifest
+  + two-way surface check — the first end-to-end consumer of the
+  manifest chain), and runs the scenario under three independent nets
+  (rlimits, parent-side wall-clock kill, runtime budgets).
+  Key-freedom is structural: the child configures no LLM provider.
+  Outcomes are a closed set; the store is the record — the parent
+  re-reads the fork run and the stdout tail never overrides it.
+  Honest limits carried into the API docs: crash/state isolation,
+  not a security sandbox; syscall/network confinement stays host
+  territory; the shared-SQLite-file caveat is stated. Seven
+  deterministic key-free tests, including a candidate that blows
+  each budget, one that hard-crashes the child, and one whose
+  undeclared surface is refused before load — every failure case
+  re-proves the parent run is byte-untouched.
+
 ## [v1.4.0] — 2026-07-08
 
 The manifest-and-rollback release, cut fast because PyPI 1.3.0

@@ -7419,3 +7419,50 @@ boundary:
 
 This upgrades downstream's v1 rollback from "boot-time exclusion
 plus restart" to "stops firing now, restart to evict memory."
+
+# v1.5 — designs-become-code cycle (in progress)
+
+Opened 2026-07-08 on the fresh v1.4.0. The two published designs
+(trial isolation, compaction) turn into code, in dependency order for
+the downstream assistant.
+
+## v1.5 #1. Subprocess fork-trial isolation
+
+Implements `trial-isolation-design.md` as scoped; the design doc
+carries the reasoning, this entry locks the deltas and boundaries:
+
+1. **The parent forks; the child never gets fork authority.**
+   `run_forked_trial` creates the fork in-process with full `fork()`
+   semantics (lineage, promote-block cut guard) and hands the child
+   only the fork's run id via a JSON job spec on stdin.
+2. **Fresh interpreter, allow-list environment.** `sys.executable -m
+   activegraph.sandbox._child`; only PATH/PYTHONPATH/HOME/LANG plus
+   an explicit `env_passthrough` allow-list cross the boundary —
+   parent API keys don't leak into candidate code by default.
+3. **Materialization is pin-first**: `verify_bundle_hash` (the v1.4
+   external pin, manifest included) BEFORE any import, then
+   `load_manifest`, then import, then `verify_surface` against the
+   live Pack — the trial child is the first end-to-end consumer of
+   the manifest chain. The pack module must expose exactly one
+   module-level `Pack` matching the manifest name.
+4. **Three independent nets**: rlimits (RLIMIT_AS + RLIMIT_CPU,
+   POSIX; on Windows the other two nets hold — stated, not
+   emulated), parent-side wall-clock kill, and the runtime's own
+   budgets in the child. `MemoryError` under RLIMIT_AS classifies as
+   `limits_exceeded`, not a crash.
+5. **Key-freedom is structural**: the v1 child configures no LLM
+   provider; `max_llm_calls=0` (default) therefore needs no budget
+   dimension — an LLM-calling candidate fails loud at registration.
+6. **The store is the record.** Outcomes are a closed set
+   (`completed | scenario_failed | limits_exceeded |
+   materialization_failed | crashed` — `crashed` is the one addition
+   over the design draft, for children that die without a parseable
+   tail). The parent re-reads events-appended and behavior-failure
+   counts from the fork's run after exit; the stdout tail never
+   overrides the store.
+7. **Honest limits restated as contract**: crash/state isolation,
+   not a security sandbox. Syscall/network confinement is host
+   territory; the shared-SQLite-file caveat (a hostile child could
+   open the file directly) is stated, not solved — scratch-store
+   trials plus cross-store promote remain the follow-on design if
+   consumers need hard separation.
