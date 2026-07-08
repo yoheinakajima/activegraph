@@ -154,6 +154,44 @@ expired; the decisions are the maintainer's.
   only with a design doc that answers span-identity and
   replay-determinism questions.
 
+## Phase 6 — Agent-readiness arc (added 2026-07-08, in progress)
+
+Driven by the July 2026 agent-readiness evaluation run against 1.2.0
+by the downstream pack library, verified against source before
+scoping. Ships in v1.3.0 alongside Phases 1–2.
+
+- **DONE: DX surfacing.** `Trace.events()` / `Trace.failures()`,
+  registration-time handler-signature validation across all six
+  decorators (`activegraph/_signature.py`).
+- **DONE: provider-boundary compatibility** (CONTRACT v1.3 #3):
+  tool-name wire sanitization (both providers), the
+  `llm.auth_error` / `llm.request_error` taxonomy split,
+  reasoning-model parameter families, `@tool` input-schema
+  inference.
+- **DONE: `EmbeddingProvider` seam** + `HashEmbeddingProvider` test
+  double; retrieval/ranking stays in packs.
+- **MUST, design-first: `promote`** — the missing third of
+  fork → test → promote. Design published for review in
+  [`promote-design.md`](promote-design.md) (proposed CONTRACT
+  v1.3 #4): state-level delta application, three-way structural
+  conflict detection, fail-closed, atomic, no semantic merge.
+  Implementation starts after downstream review of the conflict
+  semantics.
+- **Expected inbound: pack-manifest spec review.** The manifest
+  format is being formalized downstream; loader-side validation
+  lands here as its own contract item when the draft arrives.
+- **DEFERRED, design-first: event-log compaction/retention.** An
+  always-on assistant accumulates events indefinitely on the
+  append-only log. Needs a design doc (snapshot events, archival
+  cutover, retention windows) before any implementation; not a
+  v1.3.0 blocker.
+- **DEFERRED: streaming provider protocol.** Additive
+  `complete_stream` seam; v1.3.x/v1.4 candidate.
+- **DEFERRED: graph-backed `pending_approvals()`.** The
+  `approval.proposed`/`approval.granted` events already exist in the
+  log; derive the pending queue from them on load instead of the
+  in-memory list. v1.3.x candidate.
+
 ## FUTURE_IDEAS reconciliation
 
 Every `FUTURE_IDEAS.md` item was re-reviewed during this scoping
