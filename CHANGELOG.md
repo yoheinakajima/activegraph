@@ -25,8 +25,40 @@ pack library's runtime evaluation (developer-experience surfacing,
 provider compatibility, the embedding seam, and the fork→test→promote
 design).
 
+### Added
+
+- **`Runtime.promote(fork, dry_run=False)` — the third of
+  fork → test → promote** (CONTRACT v1.3 #4; design reviewed
+  downstream and locked in `promote-design.md`). Applies a fork's
+  net structural delta to its parent as ordinary, audited parent
+  events: three-way comparison against the parent's state at the
+  recorded fork point; fork-only changes promote, parent-only
+  changes are untouched, both-sides changes (including identical
+  concurrent edits) raise `PromoteConflictError` before any mutation
+  — fail-closed, atomic, no semantic merge, no `force=`. Referential
+  integrity conflicts (dangling promoted relations, removals that
+  would orphan parent relations) are part of the check. The delta
+  applies quiescently — behaviors react only to the single
+  queue-visible `promote.applied` marker event, never per delta
+  event, live or on reload. Dry-run plans are advisory (apply
+  recomputes against parent-now; `computed_against` records the tip
+  the plan saw). Lineage is verified from the store's runs table
+  (`PromoteLineageError`; grandchildren promote one level at a
+  time). Ships with the `activegraph promote` CLI command
+  (conflicts exit 5), a `[promote.applied]` trace rendering, and the
+  new [Fork, test, promote](https://docs.activegraph.ai/guides/fork-test-promote/)
+  guide.
+
 ### Fixed
 
+- **`upsert_run` no longer erases fork lineage on reload** (both
+  SQLite and Postgres stores; surfaced by promote). `Runtime.load`
+  upserts the run row with only `created_at`, and the blind
+  `ON CONFLICT` overwrite nulled `parent_run_id` /
+  `forked_at_event_id` / `label` on every reload — silently
+  destroying the lineage records `fork()` had written (and that
+  `promote()` verifies against). The three columns now get the same
+  `COALESCE` protection `goal` / `frame_id` already had.
 - **Pack-scoped tool names no longer break provider function calling**
   (CONTRACT v1.3 #3). Canonical dotted names (`diligence.fetch_docs`)
   are outside both providers' `[a-zA-Z0-9_-]` tool-name alphabet, so

@@ -116,6 +116,13 @@ relations, and the event partition (shared prefix, parent-only tail,
 fork-only tail). Semantic comparison is a behavior's job, not the
 runtime's.
 
+When the fork's results earn adoption, `rt.promote(fork)` applies
+its net structural delta back to the parent — atomically,
+fail-closed on conflicts with the parent's own post-fork work, and
+fully audited through a `promote.applied` marker event. The
+[Fork, test, promote](../guides/fork-test-promote.md) guide covers
+the complete loop.
+
 ## How the cache replays
 
 For events before the fork point, the cache serves recorded

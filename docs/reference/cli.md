@@ -177,6 +177,40 @@ Exits: 0 on success, 3 if either run doesn't exist.
 
 ---
 
+## `promote`
+
+Apply a fork's net structural delta to its parent
+(CONTRACT v1.3 #4; see the
+[Fork, test, promote](../guides/fork-test-promote.md) guide).
+
+```
+activegraph promote <url> --run-id <parent> --from-run <fork> [--dry-run] [--json]
+```
+
+| Flag | Meaning |
+|------|---------|
+| `<url>` | Store URL (SQLite). Required positional. |
+| `--run-id <run>` | Destination (parent) run. Required. |
+| `--from-run <run>` | Source (fork) run — must be a direct fork of the parent per the store's lineage records. Required. |
+| `--dry-run` | Compute and print the plan (including conflicts) without applying anything. |
+| `--json` | Machine-readable output. |
+
+Fail-closed and atomic: any conflict between the fork's delta and
+the parent's own post-fork changes aborts with nothing applied.
+Warnings (fork-only pack loads, settings overrides) inform but do
+not block — promote never adopts code.
+
+**JSON shape**: `{from_run, into_run, forked_at_event,
+computed_against, dry_run, objects_created, objects_patched,
+objects_removed, relations_created, relations_removed, conflicts,
+warnings}` plus `marker_event_id` and `applied_event_ids` after a
+real apply.
+
+Exits: 0 on success (including a clean dry run), 3 when a run
+doesn't exist or lineage doesn't hold, 5 on conflicts.
+
+---
+
 ## `export-trace`
 
 Export a run's trace as `text` or `jsonl`.

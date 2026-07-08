@@ -118,6 +118,7 @@ plugins:
           - concepts/forking.md: Branch any run at any event into an independent fork; structurally diff the fork against the parent.
           - concepts/failure-model.md: A behavior failure is a `behavior.failed` event, not an exception; exceptions live at runtime entry points only.
         Guides:
+          - guides/fork-test-promote.md: The self-modification loop — fork a run, test a candidate change against replayed history, promote the delta back.
           - guides/operating-in-production.md: Running Active Graph as a production service — observability, persistence, policies, budgets.
           - guides/authoring-packs.md: Authoring a pack — object types, behaviors, tools, prompts, and policies bundled for a domain.
           - guides/using-falkordb.md: Backing the materialized graph projection with FalkorDB — connection modes, env vars, and Cypher inspection.
@@ -231,6 +232,7 @@ nav:
       - Forking: concepts/forking.md
       - Failure model: concepts/failure-model.md
   - Guides:
+      - Fork, test, promote: guides/fork-test-promote.md
       - Operating in production: guides/operating-in-production.md
       - Authoring packs: guides/authoring-packs.md
       - Using the FalkorDB graph store: guides/using-falkordb.md
@@ -287,6 +289,8 @@ nav:
           - InvalidPatchLifecycleState: reference/errors/invalid-patch-lifecycle-state.md
           - PackSchemaViolation: reference/errors/pack-schema-violation.md
           - InternalEvaluatorError: reference/errors/internal-evaluator-error.md
+          - PromoteLineageError: reference/errors/promote-lineage-error.md
+          - PromoteConflictError: reference/errors/promote-conflict-error.md
   - About:
       - Changelog: about/changelog.md
       - Publishing a release: about/publishing.md

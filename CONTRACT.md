@@ -7238,3 +7238,65 @@ non-model-annotated tools are byte-identical to v1.2. And all six
 handler decorators validate the positional calling convention at
 decoration time (the v1.0.3 #2 precedent, extended from schema to
 signature).
+
+## v1.3 #4. Promote: the third of fork → test → promote
+
+Design-first (the v1.3 #1 pattern): the full design was written,
+sent for downstream review before implementation, amended per that
+review (2026-07-08), and lives in `promote-design.md` — this entry
+locks the decisions; the design doc carries the reasoning.
+
+1. **State application, not event replay.** `runtime.promote(fork)`
+   computes the fork's net structural delta three-way — parent state
+   at the recorded fork point (base) vs parent-now vs fork-now — and
+   applies it to the parent as ordinary, newly-emitted parent
+   events. Copying the fork's events (LLM/tool calls the parent
+   never made) into the parent's log would fabricate history; the
+   fork's log stays intact under its own run id, and the parent's
+   log records the adoption, which is what actually happened.
+   "State" is type + data (+ endpoints); versions and provenance are
+   bookkeeping. Object patches use `op="replace"` so post-promote
+   state is byte-equal to fork state.
+
+2. **Fail-closed, atomic, no semantic merge.** Fork-only changes
+   promote; parent-only changes are untouched; both-sides changes —
+   including identical concurrent edits and same-id both-created
+   collisions — raise `PromoteConflictError` before any mutation.
+   Referential integrity is part of the check (review amendment):
+   promoted relations with missing post-promote endpoints, and
+   promoted removals that would cascade away parent post-fork
+   relations, conflict. No `force=` flag: the escape hatch is
+   re-fork from the parent's current tip, which re-tests the change.
+
+3. **Quiescent apply; the marker is the reaction point** (review
+   amendment). Delta events append, project, and persist but never
+   enqueue for behavior matching — live (runtime flag during apply)
+   or on reload (`_requeue_unfired` skips `actor="promote:*"`).
+   Re-firing per delta event would duplicate side effects the fork
+   already processed and interleave new events into the atomic
+   block. The queue-visible `promote.applied` marker fires
+   subscribed behaviors once, after the full delta, seeing
+   post-promote state.
+
+4. **Plans are advisory; apply recomputes** (review amendment).
+   `dry_run=True` returns a `PromotePlan` that cannot be handed back
+   in; apply recomputes against parent-now, and `computed_against`
+   (parent tip event id at plan time) makes staleness detectable on
+   both the plan and the applied result.
+
+5. **Lineage from the store, one level at a time.** The runs table's
+   `parent_run_id` / `forked_at_event_id` row is the authority
+   (`PromoteLineageError` otherwise); grandchildren promote through
+   their own parent. SQLite-only in v1, the `fork()` precedent.
+   Fixing this exposed a store bug: `upsert_run`'s blind ON CONFLICT
+   overwrite nulled the lineage columns on every `Runtime.load`
+   (both stores); the columns are now COALESCE-protected.
+
+6. **Resolved review questions.** Per-entity provenance: fast-follow
+   (marker + intact fork log = two-hop auditability). Approval
+   integration: caller-side; the runtime stays domain-neutral.
+   Selective promote: deferred on correctness grounds — the fork was
+   tested as a whole, a partial promote is an untested state.
+
+Out of scope, unforeclosed: event-level promote with id remapping,
+Postgres-native promote, per-entity provenance in the marker.

@@ -170,13 +170,13 @@ scoping. Ships in v1.3.0 alongside Phases 1–2.
   inference.
 - **DONE: `EmbeddingProvider` seam** + `HashEmbeddingProvider` test
   double; retrieval/ranking stays in packs.
-- **MUST, design-first: `promote`** — the missing third of
-  fork → test → promote. Design published for review in
-  [`promote-design.md`](promote-design.md) (proposed CONTRACT
-  v1.3 #4): state-level delta application, three-way structural
-  conflict detection, fail-closed, atomic, no semantic merge.
-  Implementation starts after downstream review of the conflict
-  semantics.
+- **DONE: `promote`** — the missing third of fork → test → promote.
+  Design reviewed downstream (2026-07-08), amended (quiescent apply,
+  referential-integrity conflicts, plan/apply staleness), locked as
+  CONTRACT v1.3 #4, and implemented: `Runtime.promote(fork,
+  dry_run=...)`, the `activegraph promote` CLI, the
+  [Fork, test, promote](docs/guides/fork-test-promote.md) guide, and
+  the `upsert_run` lineage-erasure store fix it surfaced.
 - **Expected inbound: pack-manifest spec review.** The manifest
   format is being formalized downstream; loader-side validation
   lands here as its own contract item when the draft arrives.
