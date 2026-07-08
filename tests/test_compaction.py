@@ -181,6 +181,41 @@ def test_unpromoted_rejected_fork_retires_cleanly(tmp_path):
     assert len(parent_view.graph.events) == n_parent
 
 
+def test_retire_fork_per_run_while_parent_runtime_is_live(tmp_path):
+    # The downstream housekeeping pattern (v1.6.x ruling, CONTRACT
+    # v1.5 #2 addendum 2b): the offline rule is per-RUN, not
+    # per-file. pins()/retire() on a finished fork run while the
+    # PARENT run holds a live runtime on the same SQLite file is
+    # sanctioned — WAL + per-run row scoping + single-statement
+    # appends. What stays forbidden is a runtime attached to the run
+    # being retired/compacted itself.
+    path, parent = _seeded_runtime(tmp_path)
+    rejected = parent.fork(at_event=parent.trace.events()[-1].id)
+    rejected.graph.add_object("note", {"text": "never adopted"})
+    fork_run = rejected.run_id
+    n_fork = len(rejected.graph.events)
+    del rejected  # trial over: nothing attached to the FORK run
+
+    # Parent stays LIVE — attached store connection, no teardown.
+    assert pins(path, fork_run) == []
+    moved = retire(path, fork_run)
+    assert moved == n_fork
+
+    # The live parent keeps working through its open attachment:
+    # appends land, save succeeds, nothing about its run was touched.
+    parent.run_goal("second")
+    parent.save_state(path)
+    n_parent = len(parent.graph.events)
+
+    store = SQLiteEventStore(path, run_id=fork_run)
+    assert list(store.iter_events()) == []
+    assert store.has_archived()  # moved, never deleted
+    reloaded = Runtime.load(path, run_id=parent.run_id, behaviors=[])
+    assert len(reloaded.graph.events) == n_parent
+    # And the retired fork no longer pins the still-live parent.
+    assert not any("live-lineage" in r for r in pins(path, parent.run_id))
+
+
 def test_live_lineage_pins_the_parent_until_children_retire(tmp_path):
     path, parent = _seeded_runtime(tmp_path)
     child = parent.fork(at_event=parent.trace.events()[-1].id)

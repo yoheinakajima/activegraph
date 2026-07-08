@@ -7528,6 +7528,30 @@ the reasoning; this entry locks what shipped and where phase 1 stops:
    the child's fork point) is a design call deliberately not made
    here: phase 1 refuses the whole operation instead.
 
+Post-release ruling (v1.6.x, downstream consumer confirm-request):
+**2b. The offline rule is per-RUN, not per-file.** "No runtime
+attached" means no live runtime attached to the run the operation
+touches; other runs in the same store file may hold live runtimes
+throughout. Grounds, from the implementation: every event-row
+statement is scoped `WHERE run_id = ?`; the store runs in WAL mode
+(retention's readers never block a live run's writer or see torn
+state); a live runtime appends via single-statement autocommit
+transactions and never re-reads its own log mid-dispatch; the
+archive move is one short `BEGIN IMMEDIATE` transaction a contending
+writer waits out (sqlite3's default busy timeout — exhausted, it
+raises `OperationalError`, never corrupting). What the rule protects
+against is the SAME-run case, verified empirically: a runtime
+attached to a run being compacted mints the snapshot event's id
+itself (`UNIQUE(id, run_id)` → `IntegrityError`) and its projection
+never learns the horizon exists. Two caveats stay the caller's:
+`pins` → archive is check-then-act, so no pin-creating operation
+(promote from the run, fork of it) may race the retirement of that
+run — retire after decisions are final (a lost race degrades audit
+walks but destroys no bytes; archiving is a move); and a very large
+run's archive move can hold the write lock past a concurrent
+writer's busy timeout (`OperationalError`, not corruption). Pinned
+by `tests/test_compaction.py::test_retire_fork_per_run_while_parent_runtime_is_live`.
+
 # v1.6 — closing-the-loop cycle (in progress)
 
 Opened 2026-07-08 on top of the v1.5.0 release. Small by design:
