@@ -76,6 +76,7 @@ from activegraph.core.ids import IDGen
 from activegraph.core.view import View
 from activegraph.frame import Frame
 from activegraph.llm.cache import LLMCache
+from activegraph.llm.embedding import EmbeddingProvider
 from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.llm.provider import LLMProvider
 from activegraph.llm.types import LLMMessage, ToolCall
@@ -278,6 +279,10 @@ class Runtime:
         # False for the v1.3 cycle - native mode changes prompt hashes,
         # so flipping it must be a deliberate, cache-invalidating act.
         native_structured_output: bool = False,
+        # v1.3: embedding seam. The runtime holds it for packs (memory
+        # and retrieval capabilities read runtime.embedding_provider);
+        # the runtime itself never calls it.
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> None:
         self.graph = graph
         self.frame = frame
@@ -287,6 +292,11 @@ class Runtime:
         self.replay_strict = replay_strict
         # CONTRACT v0.6 #3: provider is set once at construction.
         self.llm_provider: Optional[LLMProvider] = llm_provider
+        # v1.3: second provider seam, same set-once convention. None
+        # means the application didn't configure one; packs degrade
+        # (e.g. lexical-only retrieval) or fail loud per their own
+        # contract.
+        self.embedding_provider: Optional[EmbeddingProvider] = embedding_provider
         # CONTRACT v1.3 #1: the opt-in lever plus the per-behavior
         # resolved modes ("native" | "prompt"), filled by
         # _ensure_registry. Runtime-local on purpose: behaviors are
@@ -2349,6 +2359,7 @@ class Runtime:
         metrics: Optional[Metrics] = None,
         graph_store: Optional[GraphStore] = None,
         native_structured_output: bool = False,
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -2412,6 +2423,7 @@ class Runtime:
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
             metrics=metrics,
             native_structured_output=native_structured_output,
+            embedding_provider=embedding_provider,
         )
         # Make sure the run row exists (older files might predate it; in v0.5
         # they shouldn't, but be defensive).
@@ -2456,6 +2468,7 @@ class Runtime:
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
         graph_store: Optional[GraphStore] = None,
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> "Runtime":
         """Branch this run at `at_event` into an independent new run.
 
@@ -2580,6 +2593,13 @@ class Runtime:
             # CONTRACT v1.3 #1: forks inherit the parent's mode posture
             # so pre-populated caches stay reachable.
             native_structured_output=self.native_structured_output,
+            # v1.3: forks inherit the embedding seam like the LLM
+            # provider — override per-fork to test a different embedder.
+            embedding_provider=(
+                embedding_provider
+                if embedding_provider is not None
+                else self.embedding_provider
+            ),
         )
         # CONTRACT v0.5 diff #8 (extended to fork in v0.6): events whose
         # behaviors never started get re-queued. For a fork at an early

@@ -144,6 +144,41 @@ in — construct it with `structured_output_mode="native"` to serve
 native-mode fixtures (the default `"prompt"` keeps every pre-v1.3
 fixture reachable unchanged).
 
+## Embedding providers (v1.3)
+
+`EmbeddingProvider` is the runtime's second provider seam, next to
+`LLMProvider`. The runtime **holds** one and never calls it — memory
+and retrieval capabilities live in packs, and the seam exists so
+every pack finds embeddings the same way instead of growing its own
+configuration channel:
+
+```python
+from activegraph import Runtime
+from activegraph.llm import EmbeddingProvider
+
+class MyEmbedder:                      # any object with the Protocol shape
+    default_model = "text-embedding-3-small"
+    def embed(self, *, texts, model):
+        ...                            # call your embedding API
+        return vectors                 # one list[float] per input text
+
+rt = Runtime(graph, embedding_provider=MyEmbedder())
+# Packs read rt.embedding_provider; None means "not configured" and
+# packs degrade (e.g. lexical-only retrieval) per their own contract.
+```
+
+Forks inherit the parent's embedding provider (override per-fork with
+`fork(embedding_provider=...)`); `Runtime.load(...,
+embedding_provider=...)` wires one at load time.
+
+The runtime ships exactly one implementation:
+`HashEmbeddingProvider`, a deterministic, dependency-free test double
+(token-hash buckets, L2-normalized). Its vectors reflect token
+overlap, not semantics — use it to test embedding plumbing offline;
+wire a real provider (OpenAI embeddings, Voyage, a local model) for
+retrieval quality. Real embedding implementations are deliberately
+not shipped in the runtime: no network dependencies, no API keys.
+
 ## Mixing with [`RecordedLLMProvider`](api/index.md)
 
 The fixture-backed provider is provider-agnostic: fixtures are keyed

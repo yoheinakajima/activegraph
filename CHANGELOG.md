@@ -55,6 +55,16 @@ design).
 
 ### Added
 
+- `EmbeddingProvider` protocol + `HashEmbeddingProvider` test double
+  (`activegraph.llm`): the runtime's second provider seam, next to
+  `LLMProvider`. `Runtime(embedding_provider=...)` /
+  `Runtime.load(..., embedding_provider=...)` hold one for packs
+  (memory/retrieval capabilities read `runtime.embedding_provider`);
+  forks inherit it and can override per-fork. The runtime never calls
+  it itself, ships no real embedding implementation (no network deps,
+  no keys), and `None` remains the not-configured signal packs degrade
+  against. `HashEmbeddingProvider` is a deterministic, dependency-free
+  double for testing embedding plumbing offline.
 - `@tool` infers `input_schema` from the first parameter's Pydantic
   annotation when `input_schema=` is omitted
   (`def fetch(args: FetchArgs, ctx)` → the model sees `FetchArgs`'s
