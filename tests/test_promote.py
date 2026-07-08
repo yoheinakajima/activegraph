@@ -819,3 +819,64 @@ def test_promote_of_unknown_types_passes_untyped(tmp_path):
     n = fork.graph.add_object("freeform", {"anything": ["goes", 1]})
     parent.promote(fork)
     assert parent.graph.get_object(n.id).data == {"anything": ["goes", 1]}
+
+
+# --------------------------- fork-tail removals are ordinary events
+# The downstream residue policy (evolution pack): before promoting, a
+# fork removes every fork-created object/relation it scaffolded so
+# those entities read base-None/fork-None and vanish from the delta,
+# while patches to shared state still promote. Promote must never
+# special-case fork-tail removals — they are ordinary events
+# (CONTRACT v1.3 #4 addendum 4d). This test is the pin.
+
+
+def test_residue_policy_fork_tail_removal_of_fork_created_entities(tmp_path):
+    parent = _parent(tmp_path)
+    task = _task_id(parent)
+    fork = _fork_at_tip(parent)
+
+    # The fork does real work on shared state...
+    fork.graph.patch_object(task, {"status": "done"})
+
+    # ...and scaffolds trial residue: two fork-created objects, a
+    # relation between them, and a relation into shared state.
+    a = fork.graph.add_object("scaffold", {"n": 1})
+    b = fork.graph.add_object("scaffold", {"n": 2})
+    rel_ab = fork.graph.add_relation(a.id, b.id, "supports")
+    rel_task = fork.graph.add_relation(task, a.id, "tried")
+
+    # Fork tail: remove the residue with ordinary events — one
+    # explicit relation removal, then object removals whose cascade
+    # sweeps the relation into shared state.
+    fork.graph.remove_relation(rel_ab.id)
+    fork.graph.remove_object(a.id)  # cascade removes rel_task too
+    fork.graph.remove_object(b.id)
+    assert fork.graph.get_relation(rel_task.id) is None
+
+    # The residue reads base-None/fork-None: not part of the delta.
+    plan = parent.promote(fork, dry_run=True)
+    assert plan.is_promotable
+    assert plan.object_creates == []
+    assert plan.relation_creates == []
+    assert plan.object_removes == []
+    assert plan.relation_removes == []
+    # The shared-state patch is the WHOLE delta, and it survives.
+    assert [o["id"] for o in plan.object_patches] == [task]
+
+    result = parent.promote(fork)
+    assert parent.graph.get_object(task).data["status"] == "done"
+    for residue_id in (a.id, b.id):
+        assert parent.graph.get_object(residue_id) is None
+    for residue_rel in (rel_ab.id, rel_task.id):
+        assert parent.graph.get_relation(residue_rel) is None
+    # And no removal events were manufactured for entities the parent
+    # never had: the promote block carries only the task patch.
+    marker = next(
+        e for e in parent.trace.events() if e.type == "promote.applied"
+    )
+    assert marker.payload["objects_patched"] == [task]
+    assert marker.payload["objects_created"] == []
+    assert marker.payload["objects_removed"] == []
+    assert marker.payload["relations_created"] == []
+    assert marker.payload["relations_removed"] == []
+    assert result.plan.is_promotable

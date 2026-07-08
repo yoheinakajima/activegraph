@@ -7321,6 +7321,18 @@ canonicalized exactly as `add_object` would store it; undeclared
 types keep v0.9 untyped semantics. This also catches version skew
 (fork ran pack v2, parent has v1) at the boundary.
 
+Post-release follow-up (v1.6, pinning a load-bearing downstream
+pattern): **4d. Fork-tail removals are ordinary events that promote
+must never special-case.** A fork that removes entities it created
+(the downstream residue policy: strip trial scaffolding before
+promoting) leaves them base-None/fork-None, so they are simply
+absent from the delta — no create, no remove, no conflict — while
+patches to shared state promote unchanged. No promote version,
+compaction pass, or plan optimization may detect, collapse, reorder,
+or otherwise treat remove-events near the fork tip differently from
+any other event. Pinned by
+`tests/test_promote.py::test_residue_policy_fork_tail_removal_of_fork_created_entities`.
+
 # v1.4 — agent-ecosystem cycle (in progress)
 
 Opened 2026-07-08 on top of the v1.3.0 release, driven by the pack

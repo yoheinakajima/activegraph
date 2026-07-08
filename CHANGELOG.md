@@ -30,6 +30,17 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
   `tests/test_sandbox_trial.py::test_recorded_segment_replay_inside_the_trial`.
   The design doc's stale "design for review" status header updated to
   reflect that v1.5.0 shipped it.
+- **Fork-tail removals pinned as ordinary events** (CONTRACT v1.3 #4
+  addendum 4d). The downstream residue policy — a fork removes every
+  entity it created before promoting, so scaffolding reads
+  base-None/fork-None and vanishes from the delta while shared-state
+  patches promote — is now contract: no promote version, compaction
+  pass, or plan optimization may special-case remove-events near the
+  fork tip. Regression test
+  `test_residue_policy_fork_tail_removal_of_fork_created_entities`
+  (covers explicit relation removal, `remove_object` cascade through
+  a relation into shared state, and the promote marker's payload);
+  sentence added to `promote-design.md` §4.
 
 ## [v1.5.0] — 2026-07-08
 
