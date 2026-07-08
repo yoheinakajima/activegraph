@@ -20,6 +20,24 @@ The designs-become-code cycle: the two v1.4 design docs
 
 ### Added
 
+- **Compaction phase 1: snapshot + archive tier + the pin set**
+  (CONTRACT v1.5 #2; `compaction-design.md` phase 1).
+  `activegraph.store.retention` ships `compact` (snapshot event +
+  blob sidecar + idempotent prefix archival — never deletion),
+  `retire` (whole closed unpinned runs), `pins` (the "why can't I
+  retire this?" API), and `verify_snapshot` (replay the archive,
+  prove the pinned state hash). **The pin set dominates retention
+  policy unconditionally**, headed by the normative retention pin: a
+  fork referenced by any live `promote.applied` marker is pinned
+  whole — the property is tested directly. Compacted runs load by
+  hash-verified snapshot projection plus suffix replay
+  (`SnapshotIntegrityError` on corruption); forks of compacted
+  parents share the snapshot base; fork points below the horizon
+  refuse loudly; strict replay verifies the suffix. Phase-1
+  boundaries stated in the contract: same-file archive table only,
+  no archive-aware causal chains yet, no CLI yet, proposed-status
+  patches block compaction.
+
 - **Subprocess fork-trial isolation** (CONTRACT v1.5 #1;
   `trial-isolation-design.md` implemented as scoped).
   `activegraph.sandbox.run_forked_trial(store, parent_run_id=...,

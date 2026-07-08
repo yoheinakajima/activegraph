@@ -2550,6 +2550,11 @@ class Runtime:
         store = _open_sqlite_store(path, run_id=chosen)
         graph = Graph(ids=IDGen(), run_id=chosen, graph_store=graph_store)
         events = list(store.iter_events())
+        # CONTRACT v1.5 #2: a compacted run's hot log begins with its
+        # runtime.snapshot event; project the snapshot state first so
+        # the suffix replays against the base it was recorded on.
+        if events and events[0].type == "runtime.snapshot":
+            _materialize_snapshot(graph, store, events[0])
         for ev in events:
             graph._replay_event(ev)  # noqa: SLF001 — internal seam
         graph.ids.reseed_from_events(events)
@@ -2707,6 +2712,11 @@ class Runtime:
         fork_store = SQLiteEventStore(store.path, run_id=new_run_id)
         fork_graph = Graph(ids=IDGen(), run_id=new_run_id, graph_store=graph_store)
         events = list(fork_store.iter_events())
+        # CONTRACT v1.5 #2: forking a compacted parent copies its
+        # runtime.snapshot event; the fork's base state comes from the
+        # shared snapshot sidecar exactly as a load would.
+        if events and events[0].type == "runtime.snapshot":
+            _materialize_snapshot(fork_graph, fork_store, events[0])
         for ev in events:
             fork_graph._replay_event(ev)  # noqa: SLF001
         fork_graph.ids.reseed_from_events(events)
@@ -3416,6 +3426,13 @@ def _verify_replay(
     cache = LLMCache.from_events(recorded_events)
 
     fresh = Graph(ids=IDGen(), run_id="verify_" + loaded_graph.run_id)
+    # CONTRACT v1.5 #2: compacted runs verify their post-snapshot
+    # suffix against the snapshot base; the archived prefix is
+    # verified separately by store.retention.verify_snapshot.
+    if recorded_events and recorded_events[0].type == "runtime.snapshot":
+        _materialize_snapshot(
+            fresh, loaded_graph.store, recorded_events[0]
+        )
     fresh_rt = Runtime(
         fresh,
         behaviors=behaviors,
@@ -3536,6 +3553,69 @@ def _is_lifecycle(e: Event) -> bool:
         or e.type.startswith("relation_behavior.")
         or e.type.startswith("runtime.")
     )
+
+
+def _materialize_snapshot(graph: Graph, store: Any, snapshot_event: Event) -> None:
+    """Rebuild a compacted run's base state from its snapshot blob.
+
+    CONTRACT v1.5 #2: the blob is fetched from the store's snapshot
+    sidecar by the hash recorded in the ``runtime.snapshot`` event,
+    verified against that hash (fail-loud on mismatch — a corrupted
+    sidecar must never silently produce wrong state), and projected
+    into the graph before the post-snapshot suffix replays. Id
+    counters recorded at compact time prime the generators so fresh
+    mints can't collide with archived history.
+    """
+    from activegraph.core.graph import Object, Relation
+    from activegraph.store.retention import (
+        SnapshotIntegrityError,
+        state_hash_of,
+    )
+
+    payload = snapshot_event.payload or {}
+    expected = str(payload.get("state_hash", ""))
+    blob = store.get_snapshot(expected) if store is not None else None
+    if blob is None:
+        raise SnapshotIntegrityError(
+            run_id=graph.run_id,
+            expected=expected,
+            detail="the snapshot blob is missing from the sidecar table.",
+        )
+    if state_hash_of(blob) != expected:
+        raise SnapshotIntegrityError(
+            run_id=graph.run_id,
+            expected=expected,
+            detail="the stored blob does not hash to the recorded state hash.",
+        )
+    state = json.loads(blob)
+    for o in state.get("objects", []):
+        graph._state.put_object(  # noqa: SLF001 — the replay seam
+            Object(
+                id=o["id"],
+                type=o["type"],
+                data=o["data"],
+                version=o.get("version", 1),
+                provenance=o.get("provenance", {}),
+            )
+        )
+    for r in state.get("relations", []):
+        graph._state.put_relation(  # noqa: SLF001
+            Relation(
+                id=r["id"],
+                source=r["source"],
+                target=r["target"],
+                type=r["type"],
+                data=r.get("data", {}),
+                provenance=r.get("provenance", {}),
+            )
+        )
+    counters = payload.get("id_counters", {})
+    ids = graph.ids
+    ids._object_counter = max(ids._object_counter, int(counters.get("object", 0)))  # noqa: SLF001
+    ids._event_counter = max(ids._event_counter, int(counters.get("event", 0)))  # noqa: SLF001
+    ids._relation_counter = max(ids._relation_counter, int(counters.get("relation", 0)))  # noqa: SLF001
+    ids._patch_counter = max(ids._patch_counter, int(counters.get("patch", 0)))  # noqa: SLF001
+    ids._frame_counter = max(ids._frame_counter, int(counters.get("frame", 0)))  # noqa: SLF001
 
 
 def _rebuild_pending_approvals(rt: "Runtime", events: list[Event]) -> None:

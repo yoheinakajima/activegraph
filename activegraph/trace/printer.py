@@ -384,9 +384,21 @@ def _fmt_promote_applied(e: Event) -> str:
     )
 
 
+def _fmt_runtime_snapshot(e: Event) -> str:
+    """CONTRACT v1.5 #2: the compaction boundary, one line."""
+    p = e.payload or {}
+    h = str(p.get("state_hash", ""))
+    return (
+        f'{_format_tag("runtime.snapshot")}'
+        f'{_plural(int(p.get("events_covered", 0)), "event")} compacted '
+        f'(state {h[:19]}…)'
+    )
+
+
 _FORMATTERS = {
     "goal.created": _fmt_goal_created,
     "promote.applied": _fmt_promote_applied,
+    "runtime.snapshot": _fmt_runtime_snapshot,
     "object.created": _fmt_object_created,
     "object.removed": _fmt_object_removed,
     "relation.created": _fmt_relation_created,

@@ -7466,3 +7466,52 @@ carries the reasoning, this entry locks the deltas and boundaries:
    open the file directly) is stated, not solved — scratch-store
    trials plus cross-store promote remain the follow-on design if
    consumers need hard separation.
+
+## v1.5 #2. Compaction phase 1: snapshot + archive tier + the pin set
+
+Implements phase 1 of `compaction-design.md`. The design doc carries
+the reasoning; this entry locks what shipped and where phase 1 stops:
+
+1. **Never deletion.** `compact(path, run_id)` emits a
+   `runtime.snapshot` event (state hash, coverage, id counters),
+   stores the full projected state as canonical JSON in a `snapshots`
+   sidecar keyed by hash, then moves the pre-snapshot prefix to an
+   `events_archive` table in one idempotent transaction —
+   crash-safe order: event, blob, move. `retire(path, run_id)`
+   archives a whole closed, unpinned run. Both are offline
+   operations. Archive rows are never deleted by the runtime.
+2. **The pin set dominates policy unconditionally**, via
+   `pins(path, run_id)` (design §5's "why can't I retire this?" API,
+   the same computation the refusals run): promoted-from (the
+   normative retention pin — a fork named by any live
+   `promote.applied` marker is pinned WHOLE), live-lineage
+   (un-retired children pin the parent), and pending machinery
+   (unresolved approvals, proposed patches). Refusals raise
+   `RetentionPinnedError` carrying every reason.
+3. **Load, fork, and strict replay understand the horizon.** A
+   compacted run loads by verifying the blob against the event's
+   state hash (`SnapshotIntegrityError` on any mismatch — a
+   corrupted sidecar never silently produces wrong state),
+   projecting it, and replaying the suffix; id counters recorded at
+   compact time prevent mint collisions with archived history.
+   Forks of compacted parents materialize the same base from the
+   shared sidecar. Fork points below the horizon refuse with a
+   structured error naming the archive. `replay_strict` verifies the
+   post-snapshot suffix; `verify_snapshot(path, run_id)` is the
+   audit tool that replays the archived prefix and proves it
+   reproduces the pinned state hash.
+4. **Simplification over the design draft**: the state hash is
+   computed over the canonical blob bytes themselves (sorted ids,
+   sorted keys, provenance INCLUDED — the snapshot must reconstruct
+   state faithfully) rather than a separate provenance-normalized
+   hash; equally deterministic, nothing left uncovered.
+5. **Phase-1 boundaries, stated**: the archive tier is a table in
+   the same store file (operator-selected sidecar files unbuilt);
+   `causal_chain` does not yet read the archive (chains crossing the
+   horizon stop at it); no CLI yet; patch records from the archived
+   prefix are not reconstructed post-compaction — `compact` refuses
+   runs with patches still in `proposed` status, and applied/
+   rejected patch history remains queryable via the archive. Finer-
+   grained compaction of parents with live children (cutoff above
+   the child's fork point) is a design call deliberately not made
+   here: phase 1 refuses the whole operation instead.
