@@ -25,8 +25,42 @@ pack library's runtime evaluation (developer-experience surfacing,
 provider compatibility, the embedding seam, and the fork→test→promote
 design).
 
+### Fixed
+
+- **Pack-scoped tool names no longer break provider function calling**
+  (CONTRACT v1.3 #3). Canonical dotted names (`diligence.fetch_docs`)
+  are outside both providers' `[a-zA-Z0-9_-]` tool-name alphabet, so
+  every pack tool offered to a model was a guaranteed request
+  rejection. Names are now rewritten (`.` → `__`) in outbound tool
+  definitions and echoed assistant tool-call turns, and returned calls
+  reverse-map through an explicit per-request table
+  (`activegraph/llm/wire.py`) — the runtime, event log, and fixtures
+  only ever see canonical names. Non-dotted names are byte-identical
+  on the wire, so recorded v1.2 runs replay unchanged.
+- **`OpenAIProvider` no longer 400s on reasoning-model families**
+  (CONTRACT v1.3 #3). `o1`/`o3`/`o4`/`gpt-5` models get
+  `max_completion_tokens` and omit `temperature`/`top_p` (the API
+  rejects the GPT-4-era parameters); other families are unchanged.
+  Family table overridable via the `reasoning_model_prefixes=`
+  constructor kwarg.
+- **Auth and invalid-request failures are terminal, not retried**
+  (CONTRACT v1.3 #3). New reason codes `llm.auth_error` (401/403 —
+  bad or revoked API key) and `llm.request_error` (other 4xx —
+  unknown model, rejected parameter) split out of the
+  `llm.network_error` catch-all, which sits in the transient-retry
+  set — so a revoked key was previously retried with exponential
+  backoff and then reported as a network problem. Unrecognized
+  exception shapes keep the `llm.network_error` classification and
+  its retry behavior.
+
 ### Added
 
+- `@tool` infers `input_schema` from the first parameter's Pydantic
+  annotation when `input_schema=` is omitted
+  (`def fetch(args: FetchArgs, ctx)` → the model sees `FetchArgs`'s
+  JSON schema instead of an empty parameters object, and the runtime
+  validates arguments before invocation). Explicit `input_schema=`
+  wins; unannotated or non-model-annotated tools are unchanged.
 - `Trace.events()` and `Trace.failures()`: structured accessors on
   `runtime.trace`. `events()` returns the run's events as `Event`
   objects in log order — the discoverable way to pick an event id for

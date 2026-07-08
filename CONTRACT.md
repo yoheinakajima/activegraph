@@ -7174,3 +7174,67 @@ v1.2 arc end-to-end, and adopters file product-grade issues).
 4. **CLA / DCO stays deferred** (ROADMAP Phase 4 DEFERRED restated):
    Apache 2.0 §5's implicit grant remains the contract at current
    volume.
+
+## v1.3 #3. Provider-boundary compatibility: wire names, exception taxonomy, reasoning-model parameters
+
+Three provider-boundary defects surfaced by the July 2026
+agent-readiness evaluation (run against activegraph 1.2.0 by the
+downstream pack library). All three fixes share one principle: **the
+runtime's canonical surface does not bend to provider wire formats** —
+translation happens at the provider boundary, in both directions.
+
+1. **Tool names are sanitized on the wire, canonical everywhere
+   else.** Pack-scoped tools carry dotted canonical names
+   (`diligence.fetch_company_docs`, v0.9 #9). Both shipped providers'
+   APIs enforce `^[a-zA-Z0-9_-]+$` on tool names, so every pack tool
+   offered to a model was a guaranteed request rejection — in both
+   providers. The fix rewrites `.` → `__` in outbound tool
+   definitions AND in echoed assistant tool-call turns (the
+   conversation the provider produced must re-validate on the next
+   turn), and reverse-maps returned tool calls through an explicit
+   per-request table (`activegraph/llm/wire.py`), never a blind
+   string replace. A sanitization collision (a literal `pack__tool`
+   registered alongside `pack.tool`) raises rather than dispatching
+   ambiguously. The event log, the tool registry, `get_tool()`, and
+   fixtures see only canonical names; recorded runs from v1.2 replay
+   byte-identically because non-dotted names pass through untouched.
+
+2. **The v0.6 #11 reason taxonomy opens for two terminal codes:
+   `llm.auth_error` and `llm.request_error`.** The closed taxonomy
+   classified every non-rate-limit provider failure as
+   `llm.network_error` — which is in the transient-retry set, so a
+   revoked API key was retried with exponential backoff before
+   failing, and the terminal error told the operator to check their
+   network. Auth failures (401/403-shaped) and invalid-request
+   failures (other 4xx: unknown model, rejected parameter) are
+   deterministic: identical bytes fail identically, so both new codes
+   are terminal — deliberately NOT added to
+   `_TRANSIENT_LLM_REASONS`. Classification prefers the SDK
+   exception's `status_code` and falls back to type-name heuristics;
+   anything unrecognized keeps the pre-v1.3 `llm.network_error`
+   classification and its retry behavior, so no failure shape gets
+   silently promoted from transient to terminal. Custom providers
+   that raise `llm.network_error` for everything keep working
+   unchanged.
+
+3. **OpenAI request parameters are family-aware.** The provider sent
+   `max_tokens` and `temperature` unconditionally; reasoning families
+   (`o1`/`o3`/`o4`/`gpt-5`) take `max_completion_tokens` and reject
+   non-default sampling parameters, so every call to the families the
+   provider itself claims to recognize (v1.0.2 #1) — and advertises
+   native structured output for (v1.3 #1) — was a guaranteed 400. The
+   family table is constructor-overridable
+   (`reasoning_model_prefixes=`), the pricing-table pattern. On
+   reasoning families the provider omits `temperature`/`top_p`
+   rather than translating them: silently mapping a sampling request
+   the model cannot honor would misrepresent the recorded call.
+
+Adjacent, same review, locked here for the record: `@tool` infers
+`input_schema` from the first parameter's Pydantic annotation when
+`input_schema=` is omitted (previously the model saw an empty
+parameters object while the function body plainly declared its
+shape). Explicit `input_schema=` always wins; unannotated and
+non-model-annotated tools are byte-identical to v1.2. And all six
+handler decorators validate the positional calling convention at
+decoration time (the v1.0.3 #2 precedent, extended from schema to
+signature).

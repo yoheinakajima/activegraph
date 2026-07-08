@@ -154,10 +154,20 @@ class AnthropicProvider(LLMProvider):
         # top_p of 1.0 is the model default; only forward when narrowing.
         if top_p < 1.0:
             kwargs["top_p"] = float(top_p)
+        name_map: Optional[dict[str, str]] = None
         if tools:
             # Anthropic's tools shape: {"name", "description", "input_schema"}.
-            # Our Tool.to_definition() already emits this shape.
-            kwargs["tools"] = list(tools)
+            # Our Tool.to_definition() already emits this shape. Names are
+            # sanitized to the wire alphabet (CONTRACT v1.3 #3): the API
+            # rejects the dotted canonical names pack tools carry, so
+            # `.` becomes `__` on the wire and returned calls map back.
+            from activegraph.llm.wire import build_tool_name_map, sanitize_tool_name
+
+            name_map = build_tool_name_map(list(tools))
+            kwargs["tools"] = [
+                {**dict(t), "name": sanitize_tool_name(str(t.get("name", "")))}
+                for t in tools
+            ]
         if structured_output_mode == "native" and output_schema is not None:
             # CONTRACT v1.3 #1 #3: GA structured outputs. The runtime
             # passes native mode only after the capability + schema
@@ -192,7 +202,7 @@ class AnthropicProvider(LLMProvider):
         latency = time.monotonic() - t0
 
         text = _extract_text(raw)
-        tool_calls = _extract_tool_calls(raw)
+        tool_calls = _extract_tool_calls(raw, name_map=name_map)
         parsed: Any = None
         # If the model returned tool_use blocks the loop isn't done yet
         # — the runtime will dispatch the tools and re-call. Parsing
@@ -281,8 +291,16 @@ def _extract_text(raw: Any) -> str:
     return "".join(parts)
 
 
-def _extract_tool_calls(raw: Any) -> list[ToolCall]:
-    """Extract `tool_use` blocks from a `Message.content` list. v0.7."""
+def _extract_tool_calls(
+    raw: Any, name_map: Optional[dict[str, str]] = None
+) -> list[ToolCall]:
+    """Extract `tool_use` blocks from a `Message.content` list. v0.7.
+
+    ``name_map`` (v1.3 #3) reverse-maps wire-sanitized tool names to
+    their canonical forms so the runtime dispatches by canonical name.
+    """
+    from activegraph.llm.wire import restore_tool_name
+
     content = getattr(raw, "content", None)
     if content is None:
         return []
@@ -292,7 +310,7 @@ def _extract_tool_calls(raw: Any) -> list[ToolCall]:
         if block_type != "tool_use":
             continue
         call_id = getattr(block, "id", None) or ""
-        name = getattr(block, "name", None) or ""
+        name = restore_tool_name(getattr(block, "name", None) or "", name_map)
         args = getattr(block, "input", None) or {}
         if isinstance(args, str):
             try:
@@ -328,15 +346,19 @@ def _message_to_anthropic(m: LLMMessage) -> dict[str, Any]:
             ],
         }
     if m.role == "assistant" and m.tool_calls:
+        from activegraph.llm.wire import sanitize_tool_name
+
         blocks: list[dict[str, Any]] = []
         if m.content:
             blocks.append({"type": "text", "text": m.content})
         for tc in m.tool_calls:
+            # Echoed tool calls carry canonical names in the event log;
+            # rewrite them the same way the definitions were (v1.3 #3).
             blocks.append(
                 {
                     "type": "tool_use",
                     "id": tc.id,
-                    "name": tc.name,
+                    "name": sanitize_tool_name(tc.name),
                     "input": dict(tc.args),
                 }
             )
@@ -345,12 +367,12 @@ def _message_to_anthropic(m: LLMMessage) -> dict[str, Any]:
 
 
 def _classify_provider_exception(e: Exception) -> str:
-    name = type(e).__name__.lower()
-    if "ratelimit" in name or "429" in str(e):
-        return "llm.rate_limited"
-    if "timeout" in name or "connect" in name:
-        return "llm.network_error"
-    return "llm.network_error"
+    # CONTRACT v1.3 #3: shared classification. Auth and invalid-request
+    # failures get their own terminal reason codes instead of the
+    # retried llm.network_error catch-all.
+    from activegraph.llm.wire import classify_provider_exception
+
+    return classify_provider_exception(e)
 
 
 def _retry_after_seconds(e: Exception) -> Optional[float]:

@@ -130,12 +130,50 @@ def _llm_prose_network_error(message: str) -> tuple[str, str, str]:
     )
 
 
+def _llm_prose_auth_error(message: str) -> tuple[str, str, str]:
+    return (
+        f"The LLM provider rejected the request's credentials:\n  {message}",
+        "Authentication and permission failures (HTTP 401/403, "
+        "`AuthenticationError`, `PermissionDeniedError`) are terminal: "
+        "retrying the same request with the same credentials cannot "
+        "succeed, so the runtime fails immediately instead of burning "
+        "the retry budget. Before v1.3 these were classified as "
+        "`llm.network_error` and retried with backoff — CONTRACT v1.3 #3 "
+        "split them out.",
+        "Check the provider API key in the environment "
+        "(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`): is it set in THIS "
+        "process's environment, is it current (keys get rotated and "
+        "revoked), and does it have access to the requested model? The "
+        "provider dashboard's API-keys page is the canonical source.",
+    )
+
+
+def _llm_prose_request_error(message: str) -> tuple[str, str, str]:
+    return (
+        f"The LLM provider rejected the request as invalid:\n  {message}",
+        "4xx request failures other than auth and rate-limit (HTTP "
+        "400/404/422 — malformed parameters, unknown model, oversize "
+        "payload) are terminal: the same bytes will fail the same way "
+        "on every retry, so the runtime fails immediately instead of "
+        "burning the retry budget. Before v1.3 these were classified as "
+        "`llm.network_error` and retried with backoff — CONTRACT v1.3 #3 "
+        "split them out.",
+        "The provider's message above names the offending parameter. "
+        "Common causes: a model name the account can't access, a "
+        "sampling parameter the model family rejects, or a request "
+        "exceeding the model's context window. Fix the "
+        "`@llm_behavior(...)` configuration and re-run.",
+    )
+
+
 _LLM_REASON_PROSE: dict[str, Any] = {
     "llm.parse_error": _llm_prose_parse_error,
     "llm.schema_violation": _llm_prose_schema_violation,
     "llm.fixture_missing": _llm_prose_fixture_missing,
     "llm.rate_limited": _llm_prose_rate_limited,
     "llm.network_error": _llm_prose_network_error,
+    "llm.auth_error": _llm_prose_auth_error,
+    "llm.request_error": _llm_prose_request_error,
 }
 
 

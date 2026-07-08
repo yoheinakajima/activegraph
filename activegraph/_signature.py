@@ -134,6 +134,66 @@ def validate_handler_signature(
         )
 
 
+def infer_tool_input_schema(fn: Any) -> Any:
+    """Infer a tool's ``input_schema`` from its first parameter's
+    type annotation, or return ``None``.
+
+    v1.3: with ``input_schema=None``, ``@tool`` previously sent the
+    model an empty parameters schema (``{"type": "object",
+    "properties": {}}``) even when the function body plainly declared
+    its shape via ``def fetch(args: FetchArgs, ctx)``. Inference
+    closes that gap: when the first positional parameter is annotated
+    with a Pydantic ``BaseModel`` subclass, that class becomes the
+    tool's ``input_schema`` — the model sees real parameters and the
+    runtime validates arguments before invocation, exactly as if
+    ``input_schema=FetchArgs`` had been passed explicitly.
+
+    Anything else — no annotation, a non-model annotation
+    (``dict``, ``Any``), an uninspectable callable — returns ``None``
+    and the tool behaves exactly as before. Explicit ``input_schema=``
+    always wins; the decorators only call this when it was omitted.
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return None
+    positional = [
+        p
+        for p in sig.parameters.values()
+        if p.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    if not positional:
+        return None
+    annotation = positional[0].annotation
+    if annotation is inspect.Parameter.empty:
+        return None
+    # PEP 563 / `from __future__ import annotations` leaves string
+    # annotations; resolve through get_type_hints (module-global
+    # visibility), the same tolerance the pack loader's settings
+    # injection applies.
+    if isinstance(annotation, str):
+        import typing
+
+        try:
+            hints = typing.get_type_hints(fn)
+        except Exception:
+            return None
+        annotation = hints.get(positional[0].name)
+        if annotation is None:
+            return None
+    try:
+        from pydantic import BaseModel
+    except ImportError:  # pragma: no cover — Pydantic is a hard dep
+        return None
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    return None
+
+
 def _extra_is_satisfiable(
     p: inspect.Parameter, allow_annotated_extras: bool
 ) -> bool:

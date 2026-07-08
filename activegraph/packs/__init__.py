@@ -881,8 +881,13 @@ def tool(
     from decimal import Decimal
 
     def wrap(fn: Callable[..., Any]) -> Tool:
-        # v1.3: arity check at decoration time (see activegraph/_signature.py).
-        from activegraph._signature import validate_handler_signature
+        # v1.3: arity check at decoration time, plus input_schema
+        # inference from the first parameter's Pydantic annotation when
+        # input_schema= is omitted (see activegraph/_signature.py).
+        from activegraph._signature import (
+            infer_tool_input_schema,
+            validate_handler_signature,
+        )
 
         validate_handler_signature(
             fn,
@@ -894,7 +899,11 @@ def tool(
             name=name or fn.__name__,
             fn=fn,
             description=description,
-            input_schema=input_schema,
+            input_schema=(
+                input_schema
+                if input_schema is not None
+                else infer_tool_input_schema(fn)
+            ),
             output_schema=output_schema,
             cost_per_call=Decimal(str(cost_per_call)),
             timeout_seconds=timeout_seconds,

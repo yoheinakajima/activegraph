@@ -20,6 +20,8 @@ specific patch decision.
 | --- | --- | --- |
 | `llm.network_error` | `llm.responded.error`, `behavior.failed` | Provider call failed before usable output. The runtime retries this code before terminal failure. |
 | `llm.rate_limited` | `llm.responded.error`, `behavior.failed` | Provider rejected the request as rate-limited. The runtime retries this code before terminal failure. |
+| `llm.auth_error` | `llm.responded.error`, `behavior.failed` | Provider rejected the request's credentials (401/403, invalid or revoked API key). Terminal — never retried (v1.3). |
+| `llm.request_error` | `llm.responded.error`, `behavior.failed` | Provider rejected the request as invalid (other 4xx: malformed parameters, unknown model). Terminal — never retried (v1.3). |
 | `llm.parse_error` | `llm.responded.error`, `behavior.failed` | Provider returned text that could not be parsed as JSON for a structured-output behavior. |
 | `llm.schema_violation` | `llm.responded.error`, `behavior.failed` | Provider returned JSON that did not satisfy the declared `output_schema`. |
 | `llm.fixture_missing` | `behavior.failed` | `RecordedLLMProvider` has no fixture for the prompt hash. |

@@ -189,9 +189,10 @@ def test_complete_maps_rate_limit_exception():
     assert exc.value.reason == "llm.rate_limited"
 
 
-def test_complete_maps_auth_failure_to_network_error():
-    # CONTRACT v1.0.1 #5: closed reason taxonomy; auth failures land
-    # in llm.network_error with the message preserved verbatim.
+def test_complete_maps_auth_failure_to_auth_error():
+    # CONTRACT v1.3 #3: auth failures get their own terminal reason
+    # code instead of the retried llm.network_error catch-all
+    # (which is where they landed from v0.6 through v1.2).
     class AuthenticationError(Exception):
         pass
 
@@ -211,8 +212,32 @@ def test_complete_maps_auth_failure_to_network_error():
             output_schema=None,
             timeout_seconds=30,
         )
-    assert exc.value.reason == "llm.network_error"
+    assert exc.value.reason == "llm.auth_error"
     assert "Invalid API key" in str(exc.value)
+
+
+def test_complete_maps_bad_request_to_request_error():
+    # CONTRACT v1.3 #3: non-auth, non-rate-limit 4xx is terminal.
+    class BadRequestError(Exception):
+        status_code = 400
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = BadRequestError(
+        "Unsupported parameter: 'max_tokens'"
+    )
+    p = OpenAIProvider(client=client)
+    with pytest.raises(LLMBehaviorError) as exc:
+        p.complete(
+            system="",
+            messages=[LLMMessage(role="user", content="u")],
+            model="gpt-4o-mini",
+            max_tokens=64,
+            temperature=0.0,
+            top_p=1.0,
+            output_schema=None,
+            timeout_seconds=30,
+        )
+    assert exc.value.reason == "llm.request_error"
 
 
 def test_complete_translates_framework_tools_and_extracts_openai_tool_calls():
@@ -470,3 +495,157 @@ def test_missing_api_key_raises_when_constructing_real_client(monkeypatch):
             output_schema=None,
             timeout_seconds=30,
         )
+
+
+# ---- v1.3 #3: wire-name sanitization + reasoning-model params ----
+
+
+def test_pack_scoped_tool_names_are_sanitized_and_restored():
+    # Pack tools carry dotted canonical names; the OpenAI API rejects
+    # them. The wire sees `pack__tool`; the returned ToolCall carries
+    # the canonical name back.
+    tool_call = SimpleNamespace(
+        id="call_1",
+        function=SimpleNamespace(
+            name="diligence__lookup", arguments='{"q": "northwind"}'
+        ),
+    )
+    client = MagicMock()
+    client.chat.completions.create.return_value = _raw_response(
+        None, tool_calls=[tool_call], finish_reason="tool_calls"
+    )
+    p = OpenAIProvider(client=client)
+    r = p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=None,
+        timeout_seconds=30,
+        tools=[
+            {
+                "name": "diligence.lookup",
+                "description": "Find a thing",
+                "input_schema": {"type": "object", "properties": {}},
+            }
+        ],
+    )
+    sent = client.chat.completions.create.call_args.kwargs["tools"]
+    assert sent[0]["function"]["name"] == "diligence__lookup"
+    assert r.tool_calls == [
+        ToolCall(id="call_1", name="diligence.lookup", args={"q": "northwind"})
+    ]
+
+
+def test_echoed_assistant_tool_calls_are_sanitized_on_the_wire():
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client)
+    p.complete(
+        system="",
+        messages=[
+            LLMMessage(role="user", content="u"),
+            LLMMessage(
+                role="assistant",
+                content="",
+                tool_calls=(
+                    ToolCall(id="call_1", name="diligence.lookup", args={"q": "x"}),
+                ),
+            ),
+            LLMMessage(role="tool", content='{"answer": "ok"}', tool_use_id="call_1"),
+        ],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+    )
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    echoed = messages[1]["tool_calls"][0]["function"]["name"]
+    assert echoed == "diligence__lookup"
+
+
+def test_non_pack_tool_names_pass_through_unchanged():
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client)
+    p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+        tools=[
+            {
+                "name": "plain_lookup",
+                "description": "",
+                "input_schema": {"type": "object", "properties": {}},
+            }
+        ],
+    )
+    sent = client.chat.completions.create.call_args.kwargs["tools"]
+    assert sent[0]["function"]["name"] == "plain_lookup"
+
+
+def test_reasoning_models_use_max_completion_tokens_and_omit_sampling():
+    # CONTRACT v1.3 #3: o-series / gpt-5 take max_completion_tokens
+    # and reject non-default temperature / top_p. Before v1.3 every
+    # call to these families 400'd on the GPT-4-era parameters.
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client)
+    p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="o3-mini",
+        max_tokens=64,
+        temperature=0.7,
+        top_p=0.9,
+        output_schema=_Out,
+        timeout_seconds=30,
+    )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["max_completion_tokens"] == 64
+    assert "max_tokens" not in kwargs
+    assert "temperature" not in kwargs
+    assert "top_p" not in kwargs
+
+
+def test_gpt4_family_keeps_max_tokens_and_temperature():
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client)
+    p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="gpt-4o-mini",
+        max_tokens=64,
+        temperature=0.7,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+    )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["max_tokens"] == 64
+    assert kwargs["temperature"] == 0.7
+    assert "max_completion_tokens" not in kwargs
+
+
+def test_reasoning_model_prefixes_are_constructor_overridable():
+    client = _client_returning('{"n": 1}')
+    p = OpenAIProvider(client=client, reasoning_model_prefixes=("my-custom",))
+    p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="my-custom-deployment",
+        max_tokens=64,
+        temperature=0.7,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+    )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["max_completion_tokens"] == 64
+    assert "temperature" not in kwargs

@@ -233,3 +233,69 @@ def test_non_callable_is_rejected():
             decorator="@behavior",
             allow_annotated_extras=True,
         )
+
+
+# ----------------------------------------- input_schema inference (v1.3)
+
+
+class _FetchArgs(BaseModel):
+    q: str
+
+
+def test_tool_infers_input_schema_from_annotation():
+    @tool(name="fetch")
+    def fetch(args: _FetchArgs, ctx):
+        return {}
+
+    assert fetch.input_schema is _FetchArgs
+    # The model sees real parameters, not an empty schema.
+    definition = fetch.to_definition()
+    assert definition["input_schema"]["properties"] == {"q": {"title": "Q", "type": "string"}}
+    assert definition["input_schema"]["required"] == ["q"]
+
+
+def test_tool_explicit_input_schema_wins_over_annotation():
+    class _Other(BaseModel):
+        z: int
+
+    @tool(name="fetch", input_schema=_Other)
+    def fetch(args: _FetchArgs, ctx):
+        return {}
+
+    assert fetch.input_schema is _Other
+
+
+def test_tool_without_annotation_keeps_empty_schema():
+    @tool(name="fetch")
+    def fetch(args, ctx):
+        return {}
+
+    assert fetch.input_schema is None
+    definition = fetch.to_definition()
+    assert definition["input_schema"] == {"type": "object", "properties": {}}
+
+
+def test_tool_non_model_annotation_is_ignored():
+    @tool(name="fetch")
+    def fetch(args: dict, ctx):
+        return {}
+
+    assert fetch.input_schema is None
+
+
+def test_pack_tool_infers_input_schema_from_annotation():
+    @pack_api.tool(name="fetch")
+    def fetch(args: _FetchArgs, ctx):
+        return {}
+
+    assert fetch.input_schema is _FetchArgs
+
+
+def test_tool_inference_resolves_string_annotations():
+    # This module has `from __future__ import annotations`? It does
+    # not — simulate PEP 563 with an explicit string annotation.
+    @tool(name="fetch")
+    def fetch(args: "_FetchArgs", ctx):
+        return {}
+
+    assert fetch.input_schema is _FetchArgs

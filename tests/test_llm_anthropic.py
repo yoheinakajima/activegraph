@@ -189,3 +189,103 @@ def test_missing_api_key_raises_when_constructing_real_client(monkeypatch):
     p = AnthropicProvider()  # no client override
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         p.count_tokens(system="", messages=[], model="claude-sonnet-4-5")
+
+
+# ---- v1.3 #3: wire-name sanitization + taxonomy split ----
+
+
+def test_pack_scoped_tool_names_are_sanitized_and_restored():
+    # Pack tools carry dotted canonical names; the Anthropic API
+    # rejects them. The wire sees `pack__tool`; the returned ToolCall
+    # carries the canonical name back.
+    raw = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                id="toolu_1",
+                name="diligence__lookup",
+                input={"q": "northwind"},
+            )
+        ],
+        usage=SimpleNamespace(input_tokens=10, output_tokens=5),
+        model="claude-sonnet-4-5",
+        stop_reason="tool_use",
+    )
+    client = MagicMock()
+    client.messages.create.return_value = raw
+    p = AnthropicProvider(client=client)
+    r = p.complete(
+        system="",
+        messages=[LLMMessage(role="user", content="u")],
+        model="claude-sonnet-4-5",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=None,
+        timeout_seconds=30,
+        tools=[
+            {
+                "name": "diligence.lookup",
+                "description": "Find a thing",
+                "input_schema": {"type": "object", "properties": {}},
+            }
+        ],
+    )
+    sent = client.messages.create.call_args.kwargs["tools"]
+    assert sent[0]["name"] == "diligence__lookup"
+    assert sent[0]["description"] == "Find a thing"
+    assert r.tool_calls is not None
+    assert r.tool_calls[0].name == "diligence.lookup"
+
+
+def test_echoed_assistant_tool_calls_are_sanitized_on_the_wire():
+    from activegraph.llm import ToolCall
+
+    client = _client_returning('{"n": 1}')
+    p = AnthropicProvider(client=client)
+    p.complete(
+        system="",
+        messages=[
+            LLMMessage(role="user", content="u"),
+            LLMMessage(
+                role="assistant",
+                content="",
+                tool_calls=(
+                    ToolCall(id="toolu_1", name="diligence.lookup", args={"q": "x"}),
+                ),
+            ),
+            LLMMessage(role="tool", content='{"answer": "ok"}', tool_use_id="toolu_1"),
+        ],
+        model="claude-sonnet-4-5",
+        max_tokens=64,
+        temperature=0.0,
+        top_p=1.0,
+        output_schema=_Out,
+        timeout_seconds=30,
+    )
+    messages = client.messages.create.call_args.kwargs["messages"]
+    tool_use = messages[1]["content"][-1]
+    assert tool_use["type"] == "tool_use"
+    assert tool_use["name"] == "diligence__lookup"
+
+
+def test_complete_maps_auth_failure_to_auth_error():
+    # CONTRACT v1.3 #3: same taxonomy split as OpenAIProvider.
+    class AuthenticationError(Exception):
+        status_code = 401
+
+    client = MagicMock()
+    client.messages.create.side_effect = AuthenticationError("invalid x-api-key")
+    p = AnthropicProvider(client=client)
+    with pytest.raises(LLMBehaviorError) as exc:
+        p.complete(
+            system="",
+            messages=[LLMMessage(role="user", content="u")],
+            model="claude-sonnet-4-5",
+            max_tokens=64,
+            temperature=0.0,
+            top_p=1.0,
+            output_schema=None,
+            timeout_seconds=30,
+        )
+    assert exc.value.reason == "llm.auth_error"
