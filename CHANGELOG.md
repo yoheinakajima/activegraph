@@ -13,10 +13,21 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased] — v1.5
+## [v1.5.0] — 2026-07-08
 
-The designs-become-code cycle: the two v1.4 design docs
-(trial isolation, compaction) turn into runtime primitives.
+The designs-become-code release: the two v1.4 design docs (trial
+isolation, compaction) become runtime primitives, in dependency order
+for the downstream assistant's self-modification loop. Everything
+additive on 1.4.0; packs pinned `>=1.4,<2.0` keep working unchanged.
+
+### Migration
+
+No breaking changes. Notes: the SQLite store gains two additive
+tables (`events_archive`, `snapshots`) created `IF NOT EXISTS` —
+`schema_version` stays `1` and files remain readable by 1.4.0
+runtimes (which simply never touch the new tables; do not mix
+versions against a store you have already compacted, since a 1.4.0
+reader would see only the post-snapshot suffix).
 
 ### Added
 
