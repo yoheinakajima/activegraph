@@ -13,7 +13,23 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased] — v1.6
+## [v1.6.0] — 2026-07-08
+
+The closing-the-loop release: two downstream-facing confirmations
+(recorded-segment replay expressible as shipped; the fork-tail
+removal pattern pinned as contract) plus the manifest validator's
+promised warning tier, starting the Q2 clock. Everything additive on
+1.5.0; packs pinned `>=1.5,<2.0` keep working unchanged.
+
+### Migration
+
+No breaking changes. One behavioral note: packs that ship a
+`manifest.toml` at their pack root now get it validated at
+`load_pack`, with violations logged as a single structured WARNING
+per pack per process (`activegraph.packs.manifest` logger). Nothing
+fails that loaded before; silence the logger if the noise is
+unwanted, or fix the manifest — it becomes enforceable no earlier
+than 2.0.
 
 ### Added
 
