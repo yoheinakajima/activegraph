@@ -165,6 +165,14 @@ Rules:
   state: a fork that patched a field twice back to the same value
   differs from base in version only and contributes nothing to the
   delta.
+- **Fork-tail removals are ordinary events that promote must never
+  special-case** (CONTRACT v1.3 #4 addendum 4d): a fork that removes
+  entities it created reads base-None/fork-None for them — absent
+  from the delta by the table above, not by any removal-detection
+  logic — and downstream residue policies (strip trial scaffolding
+  before promoting, keep the shared-state patches) depend on exactly
+  that. Pinned by
+  `tests/test_promote.py::test_residue_policy_fork_tail_removal_of_fork_created_entities`.
 - **Atomicity**: conflicts are computed on the full plan before any
   mutation; one conflict fails the whole promote, applying nothing —
   the `load_pack` pre-mutation precedent. There is no partial

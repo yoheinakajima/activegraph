@@ -258,3 +258,110 @@ pack = Pack(
     assert report.outcome == "materialization_failed"
     assert "undeclared" in report.detail
     _parent_untouched(path, parent_run, n_parent)
+
+
+REPLAY_PACK_INIT = '''
+from activegraph.packs import Pack, behavior
+
+
+@behavior(name="responder", on=["chat.message"])
+def responder(event, graph, ctx):
+    graph.add_object(
+        "reply", {"to": event.payload.get("text", ""), "text": "ack"}
+    )
+
+
+pack = Pack(name="trial_candidate", version="0.1.0", behaviors=(responder,))
+'''
+
+REPLAY_MANIFEST = MANIFEST_TEMPLATE.replace(
+    'behaviors = ["greeter"]', 'behaviors = ["responder"]'
+)
+
+REPLAY_SCENARIO = '''
+from activegraph.core.event import Event
+
+
+def main(rt):
+    # The recorded input segment IS the fork's history: read it back
+    # and re-inject each input as a fresh event so the candidate's
+    # behaviors process it live inside the trial.
+    segment = [e for e in rt.trace.events() if e.type == "chat.message"]
+    for recorded in segment:
+        rt.graph.emit(
+            Event(
+                id=rt.graph.ids.event(),
+                type="chat.message",
+                payload=dict(recorded.payload),
+                actor="trial.replay",
+                frame_id=None,
+                caused_by=None,
+                timestamp=rt.graph.clock.now(),
+            )
+        )
+    rt.run_until_idle()
+'''
+
+
+def test_recorded_segment_replay_inside_the_trial(tmp_path):
+    # THE consumer use case (evolution stage 3): fork a run, replay a
+    # recorded input segment against the fork inside the child, read
+    # failures + counts from the fork's run in the store afterward.
+    from activegraph.core.event import Event
+
+    clear_registry()
+    rt = Runtime(Graph())
+    # The parent's recorded inputs: three chat messages, no subscriber
+    # in the parent (they are raw recorded history).
+    for text in ("hello", "what's on today?", "thanks"):
+        rt.graph.emit(
+            Event(
+                id=rt.graph.ids.event(),
+                type="chat.message",
+                payload={"text": text},
+                actor="user",
+                frame_id=None,
+                caused_by=None,
+                timestamp=rt.graph.clock.now(),
+            )
+        )
+    rt.run_until_idle()
+    path = str(tmp_path / "run.db")
+    rt.save_state(path)
+    parent_run, tip, n_parent = (
+        rt.run_id,
+        rt.trace.events()[-1].id,
+        len(rt.graph.events),
+    )
+    del rt
+
+    root = tmp_path / "trial_candidate"
+    root.mkdir()
+    (root / "__init__.py").write_text(REPLAY_PACK_INIT)
+    (root / "scenario.py").write_text(REPLAY_SCENARIO)
+    content = compute_content_hash(root)
+    (root / "manifest.toml").write_text(
+        REPLAY_MANIFEST.format(content_hash=content)
+    )
+
+    report = run_forked_trial(
+        path,
+        parent_run_id=parent_run,
+        at_event=tip,
+        pack_source=PackSource(
+            root_dir=str(root),
+            expected_bundle_hash=compute_bundle_hash(root),
+        ),
+        scenario="scenario.py",
+    )
+    assert report.outcome == "completed", report.detail
+    assert report.behavior_failures == 0
+
+    # The candidate processed exactly the recorded segment, in order,
+    # inside the fork — and the evidence is ordinary fork history.
+    fork = Runtime.load(path, run_id=report.fork_run_id, behaviors=[])
+    replies = [
+        o.data["to"] for o in fork.graph.all_objects() if o.type == "reply"
+    ]
+    assert replies == ["hello", "what's on today?", "thanks"]
+    _parent_untouched(path, parent_run, n_parent)

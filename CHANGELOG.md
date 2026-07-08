@@ -13,6 +13,67 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [v1.6.0] — 2026-07-08
+
+The closing-the-loop release: two downstream-facing confirmations
+(recorded-segment replay expressible as shipped; the fork-tail
+removal pattern pinned as contract) plus the manifest validator's
+promised warning tier, starting the Q2 clock. Everything additive on
+1.5.0; packs pinned `>=1.5,<2.0` keep working unchanged.
+
+### Migration
+
+No breaking changes. One behavioral note: packs that ship a
+`manifest.toml` at their pack root now get it validated at
+`load_pack`, with violations logged as a single structured WARNING
+per pack per process (`activegraph.packs.manifest` logger). Nothing
+fails that loaded before; silence the logger if the noise is
+unwanted, or fix the manifest — it becomes enforceable no earlier
+than 2.0.
+
+### Added
+
+- **Recorded-segment replay: confirmed expressible, worked example
+  added** (evolution stage 3's consumer use case). `run_forked_trial`
+  as shipped in v1.5.0 covers it with no interface extension: the
+  recorded segment IS the fork's history, so the scenario reads the
+  recorded inputs back from `rt.trace.events()`, re-injects each as a
+  fresh event (fresh id, `actor="trial.replay"`), and drains — the
+  candidate's behaviors process the segment in order inside the
+  child, and failures + counts read back from the fork's run in the
+  store. Worked example now in `trial-isolation-design.md` §2b;
+  executable proof in
+  `tests/test_sandbox_trial.py::test_recorded_segment_replay_inside_the_trial`.
+  The design doc's stale "design for review" status header updated to
+  reflect that v1.5.0 shipped it.
+- **Fork-tail removals pinned as ordinary events** (CONTRACT v1.3 #4
+  addendum 4d). The downstream residue policy — a fork removes every
+  entity it created before promoting, so scaffolding reads
+  base-None/fork-None and vanishes from the delta while shared-state
+  patches promote — is now contract: no promote version, compaction
+  pass, or plan optimization may special-case remove-events near the
+  fork tip. Regression test
+  `test_residue_policy_fork_tail_removal_of_fork_created_entities`
+  (covers explicit relation removal, `remove_object` cascade through
+  a relation into shared state, and the promote marker's payload);
+  sentence added to `promote-design.md` §4.
+- **Loader-side manifest validation, warning tier** (CONTRACT
+  v1.6 #1 — the Q2 schedule's clock starts). When a `manifest.toml`
+  is discoverable at the pack root (best-effort: the pack's
+  component modules resolved via `sys.modules`, walked up while
+  inside the package), `load_pack` runs `load_manifest` +
+  `verify_surface` and emits ONE structured stdlib-`logging` WARNING
+  per (pack, version, manifest path) per process on the
+  `activegraph.packs.manifest` logger, carrying the full
+  `violations` list and `reason="pack.manifest_invalid"`. The pack
+  loads regardless — never an error before 2.0, and a bug in the
+  tier itself degrades to DEBUG, not a load failure. Absent
+  manifest: silent. Hash verification stays host/CI territory (the
+  loader never re-hashes a pack directory on the load path). Tests
+  cover both tiers: clean manifest silent, absent manifest silent,
+  surface drift warns once and still loads, malformed TOML warns and
+  still loads.
+
 ## [v1.5.0] — 2026-07-08
 
 The designs-become-code release: the two v1.4 design docs (trial

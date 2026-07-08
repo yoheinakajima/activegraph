@@ -1,10 +1,11 @@
 # Subprocess fork-trial isolation: design
 
-**Status: DESIGN FOR REVIEW — no implementation this cycle.**
-Proposed as a CONTRACT v1.4/v1.5 item when locked. Answers the
-evolution pack's T5 ask (its design §6/§9): `fork()` isolates *graph
-state*, never *process state* — candidate code running inside a
-stage-3 trial executes in the parent's process, before any approval.
+**Status: IMPLEMENTED — shipped in v1.5.0 as CONTRACT v1.5 #1**
+(`activegraph.sandbox.run_forked_trial`; tests in
+`tests/test_sandbox_trial.py`). Answers the evolution pack's T5 ask
+(its design §6/§9): `fork()` isolates *graph state*, never *process
+state* — candidate code running inside a stage-3 trial executes in
+the parent's process, before any approval.
 
 ## 1. What the runtime already gives us
 
@@ -64,6 +65,90 @@ Mechanics, in order:
    `trace.failures()`, event counts, and fixture assertions itself.
    The pipe is a signal, the store is the record — a crashed child
    that already appended events loses nothing.
+
+## 2b. Worked example: recorded-segment replay
+
+THE consumer use case (evolution stage 3): fork a run, replay a
+recorded input segment against the candidate inside the child, and
+read failures + counts from the fork's run in the store afterward.
+The interface as shipped expresses this with no extension — the key
+observation is that **the recorded segment IS the fork's history**.
+`fork(at_event=...)` copies the parent's log up to the fork point, so
+the child's runtime arrives already holding the recorded inputs; the
+scenario reads them back from the trace and re-injects them as fresh
+events so the candidate's behaviors process them live.
+
+The scenario file, in full:
+
+```python
+# scenario.py — shipped inside the candidate's pack directory
+from activegraph.core.event import Event
+
+
+def main(rt):
+    # 1. Read the recorded input segment out of the fork's own
+    #    history (copied from the parent at fork time).
+    segment = [e for e in rt.trace.events() if e.type == "chat.message"]
+
+    # 2. Re-inject each input as a fresh event (fresh id, replay
+    #    actor) so the candidate's behaviors fire on it live.
+    for recorded in segment:
+        rt.graph.emit(
+            Event(
+                id=rt.graph.ids.event(),
+                type="chat.message",
+                payload=dict(recorded.payload),
+                actor="trial.replay",
+                frame_id=None,
+                caused_by=None,
+                timestamp=rt.graph.clock.now(),
+            )
+        )
+
+    # 3. Drain: the candidate processes the whole segment in order.
+    rt.run_until_idle()
+```
+
+The caller's side is the ordinary trial call — nothing
+replay-specific appears in the interface:
+
+```python
+report = run_forked_trial(
+    store_path,
+    parent_run_id=parent_run,
+    at_event=segment_tip,          # fork point = end of the segment
+    pack_source=PackSource(root_dir=..., expected_bundle_hash=...),
+    scenario="scenario.py",        # the replay scenario above
+)
+
+# Failures and counts come from the report...
+assert report.outcome == "completed"
+assert report.behavior_failures == 0
+
+# ...and everything richer is ordinary fork history in the store:
+fork = Runtime.load(store_path, run_id=report.fork_run_id, behaviors=[])
+replies = [o for o in fork.graph.all_objects() if o.type == "reply"]
+failures = fork.trace.failures()   # full tracebacks since v1.3
+```
+
+Notes that make this correct rather than merely plausible:
+
+- **Re-inject with fresh ids, don't re-fire the recorded events.**
+  The recorded events are history — they already happened, and the
+  log is append-only. Replay means *new* events with the recorded
+  payloads, attributed to a replay actor (`actor="trial.replay"`),
+  so the fork's log honestly records both the original segment and
+  the replayed processing of it.
+- **Filter by type (or actor, or a payload marker) to pick the
+  segment.** The fork's history contains everything the parent
+  recorded up to `at_event`; the scenario chooses what counts as
+  "input". A tighter segment = fork earlier and filter later events.
+- **The parent needs no subscriber for the recorded type.** Inputs
+  recorded raw (no behavior fired in the parent) replay exactly the
+  same way — the candidate under trial supplies the subscriber.
+- **Parent untouched, as always.** The replay happens in the fork's
+  run in a fresh interpreter; the executable proof is
+  `tests/test_sandbox_trial.py::test_recorded_segment_replay_inside_the_trial`.
 
 ## 3. Artifact-materialization contract
 
