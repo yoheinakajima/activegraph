@@ -86,6 +86,16 @@ the parent's current tip, re-apply the candidate change there (the
 cache keeps it cheap), and promote the fresh fork — re-testing the
 change against the parent's actual present.
 
+Apply also validates the delta against the **parent's** loaded pack
+schemas, pre-mutation: promoted objects whose type a parent pack
+declares must satisfy that schema (`PackSchemaViolation` otherwise,
+with nothing applied), and are stored canonicalized exactly as
+`add_object` would store them; types no loaded pack declares pass
+through untyped, the same v0.9 semantics as `add_object`. If your
+adoption flow loads the candidate pack before promoting (the
+recommended order: dry-run → `load_pack` → promote), the promoted
+state is schema-checked against the very pack that defines it.
+
 ## What promote deliberately does not move
 
 - **Pack loads and settings overrides.** Packs are code. A fork

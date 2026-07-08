@@ -13,6 +13,22 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.4
+
+Post-release work on top of v1.3.0, driven by the evolution pack's
+consumer sign-off and the pack-manifest spec review.
+
+### Added
+
+- **Promote apply-time schema validation** (CONTRACT v1.3 #4 addendum
+  4c). Promote's hand-built events bypass `add_object`'s pack-schema
+  hook; apply now runs the parent's object and relation validators
+  over the full delta pre-mutation. Typed data violating a
+  parent-loaded schema raises `PackSchemaViolation` with nothing
+  applied; valid typed data is stored canonicalized exactly as
+  `add_object` would store it; undeclared types keep v0.9 untyped
+  semantics. Catches fork/parent pack version skew at the boundary.
+
 ## [v1.3.0] — 2026-07-08
 
 The agent-readiness release. Two arcs: the v1.3 cycle work locked in

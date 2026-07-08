@@ -2775,6 +2775,37 @@ class Runtime:
                 into_run=self.run_id,
             )
 
+        # ---- pre-mutation schema validation (v1.3 follow-up) ----
+        # The delta is applied through hand-built events, which bypass
+        # add_object's pack-schema hook — so validate here, against
+        # THIS runtime's loaded packs, before anything mutates. Types
+        # no loaded pack declares pass through untyped, exactly like
+        # add_object (CONTRACT v0.9 #5 semantics); typed data that
+        # violates the parent's schema raises PackSchemaViolation with
+        # the parent byte-identical to before the call. Validated
+        # (canonicalized) data replaces the raw delta payload so a
+        # promoted object matches what add_object would have stored.
+        obj_validator = self.graph._pack_object_validator  # noqa: SLF001
+        if obj_validator is not None:
+            for o in list(plan.object_creates) + list(plan.object_patches):
+                o["data"] = obj_validator(o["type"], o["data"])
+        rel_validator = self.graph._pack_relation_validator  # noqa: SLF001
+        if rel_validator is not None:
+            created_types = {o["id"]: o["type"] for o in plan.object_creates}
+
+            def _endpoint_type(oid: str) -> Optional[str]:
+                if oid in created_types:
+                    return created_types[oid]
+                obj = self.graph.get_object(oid)
+                return obj.type if obj else None
+
+            for r in plan.relation_creates:
+                rel_validator(
+                    r["type"],
+                    _endpoint_type(r["source"]),
+                    _endpoint_type(r["target"]),
+                )
+
         # ---- apply (marker first, then the delta, quiescently) ----
 
         actor = f"promote:{fork.run_id}"

@@ -7309,3 +7309,14 @@ locks the decisions; the design doc carries the reasoning.
 
 Out of scope, unforeclosed: event-level promote with id remapping,
 Postgres-native promote, per-entity provenance in the marker.
+
+Post-release follow-up (v1.4, evolution-pack consumer sign-off):
+**4c. Apply validates the delta against the parent's pack schemas,
+pre-mutation.** Promote's hand-built events bypass `add_object`'s
+validation hook, so apply runs the parent's `_pack_object_validator`
+and `_pack_relation_validator` over the full delta before the marker
+is emitted: typed data violating a parent-loaded schema raises
+`PackSchemaViolation` with nothing applied; validated data is stored
+canonicalized exactly as `add_object` would store it; undeclared
+types keep v0.9 untyped semantics. This also catches version skew
+(fork ran pack v2, parent has v1) at the boundary.

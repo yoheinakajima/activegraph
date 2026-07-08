@@ -752,3 +752,70 @@ def test_strict_replay_pre_promote_behavior_sees_pre_promote_state(tmp_path):
     snap = next(o for o in loaded.graph.all_objects() if o.type == "snapshot")
     assert snap.data == {"saw_status": "open"}
     assert loaded.graph.get_object(task).data["status"] == "done"
+
+
+# ----------------- apply-time schema validation (v1.3 follow-up) -----
+
+
+def _typed_pack():
+    from pydantic import BaseModel, Field
+
+    from activegraph.packs import ObjectType
+
+    class Insight(BaseModel):
+        text: str
+        confidence: float = Field(ge=0.0, le=1.0)
+
+    return Pack(
+        name="typed",
+        version="1.0",
+        object_types=(ObjectType(name="insight", schema=Insight),),
+    )
+
+
+def test_promote_validates_delta_against_parent_schemas(tmp_path):
+    # The evolution loop's inverted case: the fork created data WITHOUT
+    # the pack loaded (forks don't inherit pack state), the parent HAS
+    # the typed pack. Apply must fail loud pre-mutation on data that
+    # violates the parent's schema — never write unvalidated state.
+    from activegraph.packs import PackSchemaViolation
+
+    parent = _parent(tmp_path)
+    parent.load_pack(_typed_pack())
+    fork = _fork_at_tip(parent)
+    # No pack in the fork: this invalid insight (confidence > 1) is
+    # accepted there as untyped data.
+    bad = fork.graph.add_object("insight", {"text": "x", "confidence": 5.0})
+    assert fork.graph.get_object(bad.id) is not None
+
+    before = len(parent.graph.events)
+    with pytest.raises(PackSchemaViolation):
+        parent.promote(fork)
+    # Pre-mutation: no marker, no delta, nothing.
+    assert len(parent.graph.events) == before
+    assert parent.graph.get_object(bad.id) is None
+
+
+def test_promote_canonicalizes_valid_typed_delta(tmp_path):
+    parent = _parent(tmp_path)
+    parent.load_pack(_typed_pack())
+    fork = _fork_at_tip(parent)
+    ok = fork.graph.add_object("insight", {"text": "x", "confidence": 0.5})
+
+    result = parent.promote(fork)
+    assert ok.id in [o["id"] for o in result.plan.object_creates]
+    promoted = parent.graph.get_object(ok.id)
+    # Stored exactly as add_object would have stored it (validated,
+    # canonicalized through the schema).
+    assert promoted.data == {"text": "x", "confidence": 0.5}
+
+
+def test_promote_of_unknown_types_passes_untyped(tmp_path):
+    # Types no loaded pack declares keep v0.9 untyped semantics —
+    # identical to add_object of an undeclared type.
+    parent = _parent(tmp_path)
+    parent.load_pack(_typed_pack())
+    fork = _fork_at_tip(parent)
+    n = fork.graph.add_object("freeform", {"anything": ["goes", 1]})
+    parent.promote(fork)
+    assert parent.graph.get_object(n.id).data == {"anything": ["goes", 1]}
