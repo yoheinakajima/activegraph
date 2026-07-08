@@ -69,6 +69,10 @@ per-error recovery prose see the
 
 ::: activegraph.InternalEvaluatorError
 
+::: activegraph.PromoteLineageError
+
+::: activegraph.PromoteConflictError
+
 ## Registration
 
 ::: activegraph.MissingProviderError

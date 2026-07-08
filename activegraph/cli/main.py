@@ -886,7 +886,8 @@ def cmd_promote(
 
     Fail-closed and atomic: any conflict between the fork's delta and
     the parent's own post-fork changes aborts with nothing applied
-    (exit 5, the divergence code). Fork lineage is verified from the
+    (exit 5, the divergence code) — a conflicted --dry-run also exits
+    5 so scripts can gate on it. Fork lineage is verified from the
     store's runs table.
     """
     from activegraph.runtime.exec_errors import (
@@ -894,6 +895,27 @@ def cmd_promote(
         PromoteLineageError,
     )
     from activegraph.runtime.runtime import Runtime
+    from activegraph.store.url import InvalidStoreURL, parse_store_url
+
+    try:
+        parse_store_url(url)
+    except InvalidStoreURL as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(EXIT_USAGE_ERROR)
+
+    # Validate both run ids against the runs table BEFORE Runtime.load:
+    # load upserts a run row for whatever id it's given, so loading a
+    # mistyped id would insert a phantom empty run and then fail with
+    # a misleading lineage error.
+    known_runs = {r.run_id for r in _list_runs_or_die(url)}
+    for label_, rid in (("--run-id", run_id), ("--from-run", from_run)):
+        if rid not in known_runs:
+            click.echo(
+                f"{label_} {rid!r}: no such run in {url} "
+                f"(activegraph inspect {url} --runs lists them)",
+                err=True,
+            )
+            raise SystemExit(EXIT_NOT_FOUND)
 
     try:
         parent = Runtime.load(url, run_id=run_id)
@@ -937,6 +959,8 @@ def cmd_promote(
         summary["applied_event_ids"] = list(outcome.applied_event_ids)
     if as_json:
         click.echo(_json.dumps(summary))
+        if dry_run and plan.conflicts:
+            raise SystemExit(EXIT_DIVERGENCE)
         return
     verb = "would promote" if dry_run else "promoted"
     click.echo(f"{verb} {plan.from_run} -> {plan.into_run}:")
@@ -956,6 +980,9 @@ def cmd_promote(
         click.echo("conflicts (promote would fail):")
         for c in plan.conflicts:
             click.echo(f"  - [{c.kind}] {c.entity} {c.id}: {c.detail}")
+        # Scripts gate on the exit code: a conflicted dry run is the
+        # same signal as a conflicted apply, minus the mutation.
+        raise SystemExit(EXIT_DIVERGENCE)
 
 
 # ---- export-trace -------------------------------------------------------

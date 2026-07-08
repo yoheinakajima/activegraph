@@ -705,3 +705,121 @@ class TestMigrate:
         run_report = next(r for r in obj["runs"] if r["run_id"] == run_id)
         assert run_report["status"] == "failed"
         assert "CorruptedEventPayloadError" in run_report["error"]
+
+
+class TestPromote:
+    """CONTRACT v1.3 #4: exit codes, JSON shape, dry-run gating."""
+
+    def _seed_parent_and_fork(self, path, *, conflict=False, warn_pack=False):
+        clear_registry()
+
+        @behavior(name="planner", on=["goal.created"])
+        def planner(event, graph, ctx):
+            graph.add_object("task", {"x": 1})
+
+        g = Graph()
+        parent = Runtime(g, persist_to=path)
+        parent.run_goal("test")
+        parent.save_state()
+        fork = parent.fork(at_event=parent.trace.events()[-1].id)
+        if warn_pack:
+            fork.load_pack(Pack(name="candidate", version="0.1"))
+        fork.graph.add_object("note", {"text": "from fork"})
+        if conflict:
+            task = next(
+                o.id for o in parent.graph.all_objects() if o.type == "task"
+            )
+            fork.graph.patch_object(task, {"x": 2})
+            parent.graph.patch_object(task, {"x": 3})
+        return parent.run_id, fork.run_id
+
+    def test_dry_run_then_apply_json_shapes(self, tmp_path, runner):
+        db = str(tmp_path / "p.db")
+        parent, fork = self._seed_parent_and_fork(db, warn_pack=True)
+        url = f"sqlite:///{db}"
+
+        r = runner.invoke(
+            cli,
+            ["promote", url, "--run-id", parent, "--from-run", fork,
+             "--dry-run", "--json"],
+        )
+        assert r.exit_code == EXIT_OK, r.output
+        plan = json.loads(r.output)
+        assert plan["dry_run"] is True
+        assert plan["objects_created"] == ["note#2"]
+        assert plan["conflicts"] == []
+        assert any("candidate@0.1" in w for w in plan["warnings"])
+        assert "marker_event_id" not in plan
+        assert plan["computed_against"]
+
+        r = runner.invoke(
+            cli,
+            ["promote", url, "--run-id", parent, "--from-run", fork, "--json"],
+        )
+        assert r.exit_code == EXIT_OK, r.output
+        applied = json.loads(r.output)
+        assert applied["dry_run"] is False
+        assert applied["marker_event_id"]
+        assert applied["applied_event_ids"]
+        # The pack warning survives the CLI path (log-derived, since a
+        # loaded runtime has no live pack state).
+        assert any("candidate@0.1" in w for w in applied["warnings"])
+
+    def test_conflict_exits_divergence_on_apply_and_dry_run(self, tmp_path, runner):
+        db = str(tmp_path / "p.db")
+        parent, fork = self._seed_parent_and_fork(db, conflict=True)
+        url = f"sqlite:///{db}"
+
+        r = runner.invoke(
+            cli, ["promote", url, "--run-id", parent, "--from-run", fork]
+        )
+        assert r.exit_code == EXIT_DIVERGENCE
+
+        r = runner.invoke(
+            cli,
+            ["promote", url, "--run-id", parent, "--from-run", fork,
+             "--dry-run", "--json"],
+        )
+        assert r.exit_code == EXIT_DIVERGENCE
+        plan = json.loads(r.output)
+        assert plan["conflicts"][0]["kind"] == "both_changed"
+
+    def test_unknown_run_ids_exit_not_found_without_phantom_rows(
+        self, tmp_path, runner
+    ):
+        from activegraph.store.sqlite import SQLiteEventStore
+
+        db = str(tmp_path / "p.db")
+        parent, fork = self._seed_parent_and_fork(db)
+        url = f"sqlite:///{db}"
+        runs_before = {r.run_id for r in SQLiteEventStore.list_runs(db)}
+
+        r = runner.invoke(
+            cli, ["promote", url, "--run-id", parent, "--from-run", "nope"]
+        )
+        assert r.exit_code == EXIT_NOT_FOUND
+        assert "no such run" in r.output
+        r = runner.invoke(
+            cli, ["promote", url, "--run-id", "nope", "--from-run", fork]
+        )
+        assert r.exit_code == EXIT_NOT_FOUND
+        # The mistyped ids must not insert phantom run rows.
+        assert {r.run_id for r in SQLiteEventStore.list_runs(db)} == runs_before
+
+    def test_bare_path_is_a_usage_error(self, tmp_path, runner):
+        db = str(tmp_path / "p.db")
+        parent, fork = self._seed_parent_and_fork(db)
+        r = runner.invoke(
+            cli, ["promote", db, "--run-id", parent, "--from-run", fork]
+        )
+        assert r.exit_code == EXIT_USAGE_ERROR
+
+    def test_reversed_lineage_exits_not_found(self, tmp_path, runner):
+        db = str(tmp_path / "p.db")
+        parent, fork = self._seed_parent_and_fork(db)
+        url = f"sqlite:///{db}"
+        r = runner.invoke(
+            cli, ["promote", url, "--run-id", fork, "--from-run", parent]
+        )
+        assert r.exit_code == EXIT_NOT_FOUND
+        assert "not a direct fork" in r.output

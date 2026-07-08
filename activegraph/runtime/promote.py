@@ -366,28 +366,36 @@ def promote_warnings(
     name different events on the two sides.
     """
     warnings: list[str] = []
+    # Pack loads are derived from the LOGS, not live runtime state:
+    # `load_pack` always emits a `pack.loaded` event, while a
+    # `Runtime.load`-ed runtime has no live pack state at all (packs
+    # are code — the loader never reconstructs them from the log). A
+    # live-state comparison therefore missed every warning on the CLI
+    # path and false-positived a live fork against a reloaded parent.
     parent_packs = {
-        (getattr(p, "name", "?"), getattr(p, "version", "?"))
-        for p in parent_rt.loaded_packs()
+        ((e.payload or {}).get("name"), (e.payload or {}).get("version"))
+        for e in parent_rt.graph.events
+        if e.type == "pack.loaded"
     }
-    for p in fork_rt.loaded_packs():
-        key = (getattr(p, "name", "?"), getattr(p, "version", "?"))
-        if key not in parent_packs:
-            warnings.append(
-                f"fork has pack {key[0]}@{key[1]} loaded that the parent "
-                f"does not; promote never adopts code — call "
-                f"parent.load_pack(...) explicitly if the promoted state "
-                f"depends on it"
-            )
     in_tail = False
     for e in fork_rt.graph.events:
         if not in_tail:
             if e.id == forked_at_event:
                 in_tail = True
             continue
+        payload = e.payload or {}
+        if e.type == "pack.loaded":
+            key = (payload.get("name"), payload.get("version"))
+            if key not in parent_packs:
+                warnings.append(
+                    f"fork has pack {key[0]}@{key[1]} loaded that the "
+                    f"parent does not; promote never adopts code — call "
+                    f"parent.load_pack(...) explicitly if the promoted "
+                    f"state depends on it"
+                )
+            continue
         if e.type != "pack.settings_overridden":
             continue
-        payload = e.payload or {}
         assignments = payload.get("assignments") or []
         rendered = (
             ", ".join(str(a) for a in assignments)

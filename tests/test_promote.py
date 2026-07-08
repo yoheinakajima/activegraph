@@ -666,3 +666,89 @@ def test_strict_replay_of_multi_goal_run_no_longer_diverges(tmp_path):
         str(tmp_path / "run.db"), run_id=parent.run_id, replay_strict=True
     )
     assert len([o for o in loaded.graph.all_objects() if o.type == "task"]) == 2
+
+
+def test_pack_warning_survives_runtime_load(tmp_path):
+    # A Runtime.load'ed runtime has no live pack state (packs are
+    # code); warnings must derive from pack.loaded events in the logs
+    # or the whole CLI path silently loses the governance signal.
+    parent = _parent(tmp_path)
+    fork = _fork_at_tip(parent)
+    fork.load_pack(Pack(name="candidate", version="0.1"))
+    fork.graph.add_object("note", {"text": "x"})
+    path = str(tmp_path / "run.db")
+
+    reloaded_parent = Runtime.load(path, run_id=parent.run_id)
+    reloaded_fork = Runtime.load(path, run_id=fork.run_id)
+    assert reloaded_fork.loaded_packs() == []  # no live state, by design
+
+    plan = reloaded_parent.promote(reloaded_fork, dry_run=True)
+    assert any("candidate@0.1" in w for w in plan.warnings)
+
+
+def test_shared_pack_produces_no_false_warning_after_reload(tmp_path):
+    # Reverse case: parent and fork both carry the pack (parent loaded
+    # it before the fork point, so it's in the shared prefix). A
+    # live-state comparison used to false-positive when the parent
+    # was reloaded.
+    @behavior(name="seed", on=["goal.created"])
+    def seed(event, graph, ctx):
+        graph.add_object("task", {"title": "base"})
+
+    g = Graph(ids=IDGen(), clock=FrozenClock())
+    parent = Runtime(g)
+    parent.load_pack(Pack(name="shared", version="1.0"))
+    parent.run_goal("hello")
+    path = str(tmp_path / "run.db")
+    parent.save_state(path)
+    fork = _fork_at_tip(parent)
+    fork.graph.add_object("note", {"text": "x"})
+
+    reloaded_parent = Runtime.load(path, run_id=parent.run_id)
+    plan = reloaded_parent.promote(
+        Runtime.load(path, run_id=fork.run_id), dry_run=True
+    )
+    assert not any("shared@1.0" in w for w in plan.warnings)
+
+
+def test_strict_replay_pre_promote_behavior_sees_pre_promote_state(tmp_path):
+    # The verify run drains derivation BEFORE projecting the promote
+    # block, so a behavior that originally fired pre-promote re-fires
+    # against pre-promote state — its output stays byte-identical and
+    # strict replay passes.
+    from activegraph import clear_registry
+
+    clear_registry()
+
+    @behavior(name="seed", on=["goal.created"])
+    def seed(event, graph, ctx):
+        graph.add_object("task", {"title": "base", "status": "open"})
+
+    @behavior(
+        name="snapshotter",
+        on=["object.created"],
+        where={"object.type": "task"},
+    )
+    def snapshotter(event, graph, ctx):
+        # Output depends on the task's CURRENT status: pre-promote
+        # this is "open"; if the verify run projected the promote
+        # block too early, it would read "done" and diverge.
+        task = graph.get_object(event.payload["id"])
+        graph.add_object("snapshot", {"saw_status": task.data["status"]})
+
+    g = Graph(ids=IDGen(), clock=FrozenClock())
+    parent = Runtime(g)
+    parent.run_goal("hello")
+    path = str(tmp_path / "run.db")
+    parent.save_state(path)
+
+    task = _task_id(parent)
+    fork = parent.fork(at_event=parent.trace.events()[-1].id)
+    fork.graph.patch_object(task, {"status": "done"})
+    parent.promote(fork)
+    parent.run_until_idle()
+
+    loaded = Runtime.load(path, run_id=parent.run_id, replay_strict=True)
+    snap = next(o for o in loaded.graph.all_objects() if o.type == "snapshot")
+    assert snap.data == {"saw_status": "open"}
+    assert loaded.graph.get_object(task).data["status"] == "done"

@@ -26,3 +26,11 @@ go through events. For the conceptual model see
 ::: activegraph.DivergentObject
 
 ::: activegraph.DivergentRelation
+
+## Promote
+
+::: activegraph.PromotePlan
+
+::: activegraph.PromoteResult
+
+::: activegraph.PromoteConflict

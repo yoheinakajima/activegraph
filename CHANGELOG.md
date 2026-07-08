@@ -55,6 +55,19 @@ design).
 
 ### Fixed
 
+- **Promote warnings derive from the event logs, not live runtime
+  state.** `loaded_packs()` is empty on a `Runtime.load`-ed runtime
+  (packs are code), so the CLI promote path silently lost every
+  fork-only pack warning — the governance signal the design names —
+  and a live fork promoted into a reloaded parent false-positived.
+  Pack-load and settings-override warnings now read `pack.loaded` /
+  `pack.settings_overridden` events positionally from the fork tail.
+- **`activegraph promote` CLI hardening** (adversarial review):
+  mistyped run ids exit 3 with a clear message instead of inserting a
+  phantom run row and reporting a misleading lineage error; a
+  conflicted `--dry-run` exits 5 like a conflicted apply, so scripts
+  can gate on it; bare filesystem paths are a usage error (exit 2),
+  matching `inspect`/`fork`. Full CliRunner coverage added.
 - **Strict replay no longer falsely diverges on multi-goal runs.**
   `_verify_replay` used to batch every seed event and drain once, so
   a recorded `goal1, derived1, goal2, derived2` stream replayed as

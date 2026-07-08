@@ -473,6 +473,18 @@ def _fmt_replay(event: Event) -> str:
         body = f'{event.id} {t} "{p.get("goal", "")}"'
     elif t in ("behavior.started", "behavior.completed", "behavior.failed", "relation_behavior.started"):
         body = f'{event.id} {t} {p.get("behavior", "?")}'
+    elif t == "promote.applied":
+        n = (
+            len(p.get("objects_created", []))
+            + len(p.get("objects_patched", []))
+            + len(p.get("objects_removed", []))
+            + len(p.get("relations_created", []))
+            + len(p.get("relations_removed", []))
+        )
+        body = (
+            f'{event.id} {t} from {p.get("from_run", "?")} '
+            f'({_plural(n, "delta event")})'
+        )
     else:
         body = f"{event.id} {t}"
     return f'{_format_tag("replay.event")}{body}'

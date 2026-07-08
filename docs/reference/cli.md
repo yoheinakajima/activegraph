@@ -206,8 +206,10 @@ objects_removed, relations_created, relations_removed, conflicts,
 warnings}` plus `marker_event_id` and `applied_event_ids` after a
 real apply.
 
-Exits: 0 on success (including a clean dry run), 3 when a run
-doesn't exist or lineage doesn't hold, 5 on conflicts.
+Exits: 0 on success (including a clean dry run), 2 for a bare
+filesystem path (use a `sqlite:///` URL), 3 when a run doesn't exist
+or lineage doesn't hold, 5 on conflicts — from an apply refusal or a
+conflicted `--dry-run` alike, so scripts can gate on the dry run.
 
 ---
 
