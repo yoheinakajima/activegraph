@@ -3182,11 +3182,29 @@ def _verify_replay(
     regardless of replay_llm_cache — otherwise we'd hit the live API.
     A live-rebuilt prompt whose hash doesn't match the recorded one is
     itself a divergence (decision-2 adjustment).
+
+    CONTRACT v1.3 #4: promote blocks — the ``promote.applied`` marker
+    plus its ``actor="promote:*"`` delta events — are recorded runtime
+    actions, not behavior output. They were applied quiescently in the
+    original run, so behaviors cannot re-derive them; strict replay
+    projects them verbatim at their recorded position (so later seeds
+    see post-promote state) and excludes them from the comparison
+    streams. KNOWN LIMITATION (mirrors v0.5 #7's posture): events a
+    behavior derived FROM a promote.applied subscription are recorded
+    but not re-derived, so strict replay diverges on runs that combine
+    ``replay_strict=True`` with marker-subscribed behaviors.
     """
 
     # Seed events: everything with no caused_by (goal.created, user-emitted
-    # bootstrap events). Behaviors re-derive everything else.
-    seed_events = [e for e in recorded_events if e.caused_by is None and not _is_lifecycle(e)]
+    # bootstrap events). Behaviors re-derive everything else. Promote
+    # markers have caused_by=None but are NOT seeds — see the docstring.
+    seed_events = [
+        e
+        for e in recorded_events
+        if e.caused_by is None
+        and not _is_lifecycle(e)
+        and not _is_promote_block(e)
+    ]
     if not seed_events:
         return  # nothing to verify
 
@@ -3225,8 +3243,27 @@ def _verify_replay(
     fresh_rt._strict_expected_hashes = list(expected_hashes)
     fresh_rt._ensure_registry()
 
-    # Replay seed events through emit so behaviors fire.
-    for e in seed_events:
+    # Replay seed events through emit so behaviors fire. Promote-block
+    # events are interleaved at their recorded positions but projected
+    # quiescently (_replay_event: state only, no listeners, no queue) —
+    # the same posture the original apply used.
+    seed_ids = {e.id for e in seed_events}
+    for e in recorded_events:
+        if _is_promote_block(e):
+            fresh._replay_event(  # noqa: SLF001 — the load/fork seam
+                Event(
+                    id=fresh.ids.event(),
+                    type=e.type,
+                    payload=dict(e.payload),
+                    actor=e.actor,
+                    frame_id=e.frame_id,
+                    caused_by=None,
+                    timestamp=e.timestamp,
+                )
+            )
+            continue
+        if e.id not in seed_ids:
+            continue
         new_id = fresh.ids.event()
         replay_ev = Event(
             id=new_id,
@@ -3240,13 +3277,20 @@ def _verify_replay(
         fresh.emit(replay_ev)
     fresh_rt.run_until_idle()
 
-    # Compare type-stream of non-lifecycle events.
+    # Compare type-stream of non-lifecycle events (promote blocks are
+    # projected verbatim on both sides, so both streams exclude them).
     rec_stream = [
         (e.id, e.type)
         for e in recorded_events
-        if not _is_lifecycle(e) and e.id not in non_replayable_llm_ids
+        if not _is_lifecycle(e)
+        and e.id not in non_replayable_llm_ids
+        and not _is_promote_block(e)
     ]
-    new_stream = [(e.id, e.type) for e in fresh.events if not _is_lifecycle(e)]
+    new_stream = [
+        (e.id, e.type)
+        for e in fresh.events
+        if not _is_lifecycle(e) and not _is_promote_block(e)
+    ]
     for i, (rec, new) in enumerate(zip(rec_stream, new_stream)):
         if rec[1] != new[1]:
             raise ReplayDivergenceError(
@@ -3285,3 +3329,11 @@ def _is_lifecycle(e: Event) -> bool:
         or e.type.startswith("relation_behavior.")
         or e.type.startswith("runtime.")
     )
+
+
+def _is_promote_block(e: Event) -> bool:
+    """True for the promote.applied marker and its quiescent delta
+    events (CONTRACT v1.3 #4) — recorded runtime actions that strict
+    replay projects verbatim rather than expecting behaviors to
+    re-derive."""
+    return e.type == "promote.applied" or (e.actor or "").startswith("promote:")

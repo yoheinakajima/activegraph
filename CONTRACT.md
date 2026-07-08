@@ -7284,6 +7284,15 @@ locks the decisions; the design doc carries the reasoning.
    (parent tip event id at plan time) makes staleness detectable on
    both the plan and the applied result.
 
+4b. **Strict replay projects promote blocks verbatim.** The marker
+   and its `promote:*` delta events are recorded runtime actions;
+   `_verify_replay` interleaves them at their recorded position
+   (projection-only) and excludes them from the re-derivation
+   comparison, since behaviors were quiescent when they landed.
+   KNOWN LIMITATION (v0.5 #7's posture): behavior output derived
+   from a `promote.applied` subscription is not re-derived, so
+   strict replay diverges on that combination.
+
 5. **Lineage from the store, one level at a time.** The runs table's
    `parent_run_id` / `forked_at_event_id` row is the authority
    (`PromoteLineageError` otherwise); grandchildren promote through

@@ -229,6 +229,16 @@ Replaying the parent's log reproduces promoted state with no special
 cases, because promoted state *is* ordinary events. `trace.lines()`
 gets a `[promote.applied]` rendering (one line, counts + source run).
 
+**Strict replay** (`replay_strict=True`) treats the promote block the
+same way the live apply did: the marker and its `promote:*` delta
+events are recorded runtime actions, projected verbatim at their
+recorded position and excluded from the behavior-re-derivation
+comparison — behaviors were quiescent when they landed, so behaviors
+cannot re-derive them. Known limitation, mirroring v0.5 #7's posture:
+events a behavior derived *from* a `promote.applied` subscription are
+recorded but not re-derived, so `replay_strict=True` diverges on runs
+that combine strict replay with marker-subscribed behaviors.
+
 ## 7. Tests that must exist before this ships
 
 All offline/deterministic: clean promote (creates/patches/removes,

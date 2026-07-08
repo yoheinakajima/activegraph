@@ -47,7 +47,11 @@ design).
   time). Ships with the `activegraph promote` CLI command
   (conflicts exit 5), a `[promote.applied]` trace rendering, and the
   new [Fork, test, promote](https://docs.activegraph.ai/guides/fork-test-promote/)
-  guide.
+  guide. Strict replay (`replay_strict=True`) projects promote blocks
+  verbatim at their recorded position and excludes them from the
+  re-derivation comparison (behaviors were quiescent when they
+  landed); the marker-subscription re-derivation gap is a documented
+  known limitation in the v0.5 #7 tradition.
 
 ### Fixed
 

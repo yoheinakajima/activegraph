@@ -143,7 +143,9 @@ def _relation_state(r: Relation) -> dict[str, Any]:
     }
 
 
-def _snapshot(graph: Graph) -> tuple[dict[str, dict], dict[str, dict]]:
+def _snapshot(
+    graph: Graph,
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     objects = {o.id: _object_state(o) for o in graph.all_objects()}
     relations = {r.id: _relation_state(r) for r in graph.all_relations()}
     return objects, relations
@@ -205,9 +207,9 @@ def compute_promote_plan(
     def classify(
         entity: str,
         ids: set[str],
-        base_s: dict[str, dict],
-        parent_s: dict[str, dict],
-        fork_s: dict[str, dict],
+        base_s: dict[str, dict[str, Any]],
+        parent_s: dict[str, dict[str, Any]],
+        fork_s: dict[str, dict[str, Any]],
     ) -> tuple[list[str], list[str], list[str]]:
         """Split ids into (creates, patches, removes) of the fork-only
         delta, appending conflicts to the plan as found."""

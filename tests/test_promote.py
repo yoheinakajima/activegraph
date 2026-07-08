@@ -488,3 +488,51 @@ def test_fork_lineage_survives_reload_and_promote_works_after_load(tmp_path):
     result = reloaded_parent.promote(reloaded_fork)
     assert [o["id"] for o in result.plan.object_creates] == [note.id]
     assert reloaded_parent.graph.get_object(note.id) is not None
+
+
+# ---------------------------- strict replay of a promoted log --------
+
+
+def test_strict_replay_accepts_promoted_log(tmp_path):
+    # The promote block is a recorded runtime action: strict replay
+    # projects it verbatim at its recorded position and excludes it
+    # from the re-derivation comparison. Before the fix, any promoted
+    # log failed replay_strict=True at the marker.
+    parent = _parent(tmp_path)
+    task = _task_id(parent)
+    fork = _fork_at_tip(parent)
+    note = fork.graph.add_object("note", {"text": "x"})
+    fork.graph.patch_object(task, {"status": "done"})
+    parent.promote(fork)
+    parent.run_until_idle()
+
+    loaded = Runtime.load(
+        str(tmp_path / "run.db"), run_id=parent.run_id, replay_strict=True
+    )
+    assert loaded.graph.get_object(note.id).data == {"text": "x"}
+    assert loaded.graph.get_object(task).data["status"] == "done"
+
+
+def test_strict_replay_still_catches_real_divergence_after_promote(tmp_path):
+    # The promote-block exclusion must not blind strict replay to a
+    # genuinely changed behavior.
+    from activegraph import clear_registry
+    from activegraph.runtime.errors import ReplayDivergenceError
+
+    parent = _parent(tmp_path)
+    fork = _fork_at_tip(parent)
+    fork.graph.add_object("note", {"text": "x"})
+    parent.promote(fork)
+    parent.run_until_idle()
+
+    clear_registry()
+
+    @behavior(name="seed", on=["goal.created"])
+    def drifted(event, graph, ctx):
+        graph.add_object("task", {"title": "DIFFERENT"})
+        graph.add_object("task", {"title": "EXTRA"})  # drift: 2 objects now
+
+    with pytest.raises(ReplayDivergenceError):
+        Runtime.load(
+            str(tmp_path / "run.db"), run_id=parent.run_id, replay_strict=True
+        )
