@@ -7419,3 +7419,99 @@ boundary:
 
 This upgrades downstream's v1 rollback from "boot-time exclusion
 plus restart" to "stops firing now, restart to evict memory."
+
+# v1.5 — designs-become-code cycle (in progress)
+
+Opened 2026-07-08 on the fresh v1.4.0. The two published designs
+(trial isolation, compaction) turn into code, in dependency order for
+the downstream assistant.
+
+## v1.5 #1. Subprocess fork-trial isolation
+
+Implements `trial-isolation-design.md` as scoped; the design doc
+carries the reasoning, this entry locks the deltas and boundaries:
+
+1. **The parent forks; the child never gets fork authority.**
+   `run_forked_trial` creates the fork in-process with full `fork()`
+   semantics (lineage, promote-block cut guard) and hands the child
+   only the fork's run id via a JSON job spec on stdin.
+2. **Fresh interpreter, allow-list environment.** `sys.executable -m
+   activegraph.sandbox._child`; only PATH/PYTHONPATH/HOME/LANG plus
+   an explicit `env_passthrough` allow-list cross the boundary —
+   parent API keys don't leak into candidate code by default.
+3. **Materialization is pin-first**: `verify_bundle_hash` (the v1.4
+   external pin, manifest included) BEFORE any import, then
+   `load_manifest`, then import, then `verify_surface` against the
+   live Pack — the trial child is the first end-to-end consumer of
+   the manifest chain. The pack module must expose exactly one
+   module-level `Pack` matching the manifest name.
+4. **Three independent nets**: rlimits (RLIMIT_AS + RLIMIT_CPU,
+   POSIX; on Windows the other two nets hold — stated, not
+   emulated), parent-side wall-clock kill, and the runtime's own
+   budgets in the child. `MemoryError` under RLIMIT_AS classifies as
+   `limits_exceeded`, not a crash.
+5. **Key-freedom is structural**: the v1 child configures no LLM
+   provider; `max_llm_calls=0` (default) therefore needs no budget
+   dimension — an LLM-calling candidate fails loud at registration.
+6. **The store is the record.** Outcomes are a closed set
+   (`completed | scenario_failed | limits_exceeded |
+   materialization_failed | crashed` — `crashed` is the one addition
+   over the design draft, for children that die without a parseable
+   tail). The parent re-reads events-appended and behavior-failure
+   counts from the fork's run after exit; the stdout tail never
+   overrides the store.
+7. **Honest limits restated as contract**: crash/state isolation,
+   not a security sandbox. Syscall/network confinement is host
+   territory; the shared-SQLite-file caveat (a hostile child could
+   open the file directly) is stated, not solved — scratch-store
+   trials plus cross-store promote remain the follow-on design if
+   consumers need hard separation.
+
+## v1.5 #2. Compaction phase 1: snapshot + archive tier + the pin set
+
+Implements phase 1 of `compaction-design.md`. The design doc carries
+the reasoning; this entry locks what shipped and where phase 1 stops:
+
+1. **Never deletion.** `compact(path, run_id)` emits a
+   `runtime.snapshot` event (state hash, coverage, id counters),
+   stores the full projected state as canonical JSON in a `snapshots`
+   sidecar keyed by hash, then moves the pre-snapshot prefix to an
+   `events_archive` table in one idempotent transaction —
+   crash-safe order: event, blob, move. `retire(path, run_id)`
+   archives a whole closed, unpinned run. Both are offline
+   operations. Archive rows are never deleted by the runtime.
+2. **The pin set dominates policy unconditionally**, via
+   `pins(path, run_id)` (design §5's "why can't I retire this?" API,
+   the same computation the refusals run): promoted-from (the
+   normative retention pin — a fork named by any live
+   `promote.applied` marker is pinned WHOLE), live-lineage
+   (un-retired children pin the parent), and pending machinery
+   (unresolved approvals, proposed patches). Refusals raise
+   `RetentionPinnedError` carrying every reason.
+3. **Load, fork, and strict replay understand the horizon.** A
+   compacted run loads by verifying the blob against the event's
+   state hash (`SnapshotIntegrityError` on any mismatch — a
+   corrupted sidecar never silently produces wrong state),
+   projecting it, and replaying the suffix; id counters recorded at
+   compact time prevent mint collisions with archived history.
+   Forks of compacted parents materialize the same base from the
+   shared sidecar. Fork points below the horizon refuse with a
+   structured error naming the archive. `replay_strict` verifies the
+   post-snapshot suffix; `verify_snapshot(path, run_id)` is the
+   audit tool that replays the archived prefix and proves it
+   reproduces the pinned state hash.
+4. **Simplification over the design draft**: the state hash is
+   computed over the canonical blob bytes themselves (sorted ids,
+   sorted keys, provenance INCLUDED — the snapshot must reconstruct
+   state faithfully) rather than a separate provenance-normalized
+   hash; equally deterministic, nothing left uncovered.
+5. **Phase-1 boundaries, stated**: the archive tier is a table in
+   the same store file (operator-selected sidecar files unbuilt);
+   `causal_chain` does not yet read the archive (chains crossing the
+   horizon stop at it); no CLI yet; patch records from the archived
+   prefix are not reconstructed post-compaction — `compact` refuses
+   runs with patches still in `proposed` status, and applied/
+   rejected patch history remains queryable via the archive. Finer-
+   grained compaction of parents with live children (cutoff above
+   the child's fork point) is a design call deliberately not made
+   here: phase 1 refuses the whole operation instead.

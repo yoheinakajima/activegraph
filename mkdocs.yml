@@ -292,6 +292,8 @@ nav:
           - PromoteLineageError: reference/errors/promote-lineage-error.md
           - PromoteConflictError: reference/errors/promote-conflict-error.md
           - PackManifestError: reference/errors/pack-manifest-error.md
+          - RetentionPinnedError: reference/errors/retention-pinned-error.md
+          - SnapshotIntegrityError: reference/errors/snapshot-integrity-error.md
   - About:
       - Changelog: about/changelog.md
       - Publishing a release: about/publishing.md

@@ -13,6 +13,63 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [v1.5.0] — 2026-07-08
+
+The designs-become-code release: the two v1.4 design docs (trial
+isolation, compaction) become runtime primitives, in dependency order
+for the downstream assistant's self-modification loop. Everything
+additive on 1.4.0; packs pinned `>=1.4,<2.0` keep working unchanged.
+
+### Migration
+
+No breaking changes. Notes: the SQLite store gains two additive
+tables (`events_archive`, `snapshots`) created `IF NOT EXISTS` —
+`schema_version` stays `1` and files remain readable by 1.4.0
+runtimes (which simply never touch the new tables; do not mix
+versions against a store you have already compacted, since a 1.4.0
+reader would see only the post-snapshot suffix).
+
+### Added
+
+- **Compaction phase 1: snapshot + archive tier + the pin set**
+  (CONTRACT v1.5 #2; `compaction-design.md` phase 1).
+  `activegraph.store.retention` ships `compact` (snapshot event +
+  blob sidecar + idempotent prefix archival — never deletion),
+  `retire` (whole closed unpinned runs), `pins` (the "why can't I
+  retire this?" API), and `verify_snapshot` (replay the archive,
+  prove the pinned state hash). **The pin set dominates retention
+  policy unconditionally**, headed by the normative retention pin: a
+  fork referenced by any live `promote.applied` marker is pinned
+  whole — the property is tested directly. Compacted runs load by
+  hash-verified snapshot projection plus suffix replay
+  (`SnapshotIntegrityError` on corruption); forks of compacted
+  parents share the snapshot base; fork points below the horizon
+  refuse loudly; strict replay verifies the suffix. Phase-1
+  boundaries stated in the contract: same-file archive table only,
+  no archive-aware causal chains yet, no CLI yet, proposed-status
+  patches block compaction.
+
+- **Subprocess fork-trial isolation** (CONTRACT v1.5 #1;
+  `trial-isolation-design.md` implemented as scoped).
+  `activegraph.sandbox.run_forked_trial(store, parent_run_id=...,
+  at_event=..., pack_source=..., scenario=..., limits=...)`: the
+  parent forks (child never gets fork authority), a fresh-interpreter
+  child materializes the candidate from artifacts pinned by the
+  bundle hash (`verify_bundle_hash` before any import, then manifest
+  + two-way surface check — the first end-to-end consumer of the
+  manifest chain), and runs the scenario under three independent nets
+  (rlimits, parent-side wall-clock kill, runtime budgets).
+  Key-freedom is structural: the child configures no LLM provider.
+  Outcomes are a closed set; the store is the record — the parent
+  re-reads the fork run and the stdout tail never overrides it.
+  Honest limits carried into the API docs: crash/state isolation,
+  not a security sandbox; syscall/network confinement stays host
+  territory; the shared-SQLite-file caveat is stated. Seven
+  deterministic key-free tests, including a candidate that blows
+  each budget, one that hard-crashes the child, and one whose
+  undeclared surface is refused before load — every failure case
+  re-proves the parent run is byte-untouched.
+
 ## [v1.4.0] — 2026-07-08
 
 The manifest-and-rollback release, cut fast because PyPI 1.3.0

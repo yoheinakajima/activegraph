@@ -88,6 +88,33 @@ _SCHEMA = [
         value TEXT NOT NULL
     )
     """,
+    # v1.5 compaction (CONTRACT v1.5 #2): the archive tier and the
+    # snapshot sidecar. Additive IF NOT EXISTS tables — old runtimes
+    # reading a new file simply never touch them, so schema_version
+    # stays "1".
+    """
+    CREATE TABLE IF NOT EXISTS events_archive (
+        seq INTEGER,
+        id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        actor TEXT,
+        payload TEXT NOT NULL,
+        frame_id TEXT,
+        caused_by TEXT,
+        timestamp TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        archived_at TEXT NOT NULL,
+        UNIQUE(id, run_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_archive_run ON events_archive(run_id, seq)",
+    """
+    CREATE TABLE IF NOT EXISTS snapshots (
+        state_hash TEXT PRIMARY KEY,
+        blob TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
 ]
 
 
@@ -337,6 +364,70 @@ class SQLiteEventStore:
             ),
         )
 
+    # ---------- v1.5 compaction (CONTRACT v1.5 #2) ----------
+
+    def put_snapshot(self, state_hash: str, blob: str, *, created_at: str) -> None:
+        """Store a snapshot blob keyed by its state hash (idempotent)."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO snapshots(state_hash, blob, created_at) "
+            "VALUES (?, ?, ?)",
+            (state_hash, blob, created_at),
+        )
+
+    def get_snapshot(self, state_hash: str) -> Optional[str]:
+        """The snapshot blob for ``state_hash``, or None."""
+        row = self._conn.execute(
+            "SELECT blob FROM snapshots WHERE state_hash = ?", (state_hash,)
+        ).fetchone()
+        return row["blob"] if row else None
+
+    def archive_prefix(self, before_seq: int, *, archived_at: str) -> int:
+        """Move this run's rows with seq < ``before_seq`` to the archive
+        tier, in one transaction. Idempotent (re-running moves nothing).
+        Returns the number of rows moved."""
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO events_archive "
+                "(seq, id, type, actor, payload, frame_id, caused_by, "
+                " timestamp, run_id, archived_at) "
+                "SELECT seq, id, type, actor, payload, frame_id, caused_by, "
+                "       timestamp, run_id, ? FROM events "
+                "WHERE run_id = ? AND seq < ?",
+                (archived_at, self.run_id, before_seq),
+            )
+            moved = cur.rowcount
+            self._conn.execute(
+                "DELETE FROM events WHERE run_id = ? AND seq < ?",
+                (self.run_id, before_seq),
+            )
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        return int(moved)
+
+    def archive_run(self, *, archived_at: str) -> int:
+        """Move ALL of this run's rows to the archive tier (retire)."""
+        return self.archive_prefix(2**62, archived_at=archived_at)
+
+    def iter_archived(self) -> Iterator[Event]:
+        """This run's archived events, in original seq order."""
+        cur = self._conn.execute(
+            "SELECT * FROM events_archive WHERE run_id = ? ORDER BY seq",
+            (self.run_id,),
+        )
+        for row in cur:
+            yield _row_to_event(row)
+
+    def has_archived(self) -> bool:
+        """True when any of this run's events sit in the archive tier."""
+        row = self._conn.execute(
+            "SELECT 1 FROM events_archive WHERE run_id = ? LIMIT 1",
+            (self.run_id,),
+        ).fetchone()
+        return row is not None
+
     # ---------- file-level helpers ----------
 
     @classmethod
@@ -397,6 +488,41 @@ class SQLiteEventStore:
             ).fetchone()
             if cut is None:
                 from activegraph.store.errors import EventNotFoundError
+                archived = conn.execute(
+                    "SELECT 1 FROM events_archive WHERE id = ? AND run_id = ?",
+                    (at_event_id, parent_run_id),
+                ).fetchone()
+                if archived is not None:
+                    # CONTRACT v1.5 #2: pre-snapshot fork points refuse
+                    # loudly — compaction narrows where you can branch
+                    # history, never what state is.
+                    raise EventNotFoundError(
+                        f"event {at_event_id!r} of run {parent_run_id!r} is "
+                        f"archived below the compaction horizon",
+                        what_failed=(
+                            f"Cannot fork run {parent_run_id!r} at event "
+                            f"{at_event_id!r}: the run was compacted and that "
+                            f"event now lives in the archive tier."
+                        ),
+                        why=(
+                            "Forking copies events up to the fork point from "
+                            "the hot log. A compacted run's pre-snapshot "
+                            "prefix is summarized by the snapshot; branching "
+                            "below that horizon would need the archived rows "
+                            "restored first (CONTRACT v1.5 #2)."
+                        ),
+                        how_to_fix=(
+                            "Fork at the snapshot event or any later event, "
+                            "or restore the archived prefix (operator action "
+                            "on the events_archive table) before forking "
+                            "below the horizon."
+                        ),
+                        context={
+                            "run_id": parent_run_id,
+                            "at_event": at_event_id,
+                            "archived": True,
+                        },
+                    )
                 raise EventNotFoundError(
                     f"event {at_event_id!r} not found in run {parent_run_id!r}",
                     what_failed=(
