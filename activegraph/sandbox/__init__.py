@@ -59,12 +59,15 @@ pack's static gates remain the pre-execution filter.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+_log = logging.getLogger("activegraph.sandbox")
 
 
 #: The closed outcome set. ``crashed`` is the implementation's one
@@ -144,6 +147,12 @@ class TrialReport:
     favor of the store. Richer evidence (tracebacks, diffs) is read
     from the fork's log directly: ``Runtime.load(store, run_id=
     report.fork_run_id)`` then ``trace.failures()`` / ``diff()``.
+
+    ``warnings`` (v1.7.1) carries any resource net that DEGRADED on
+    this platform — most notably the memory cap (RLIMIT_AS) on macOS,
+    which the Darwin kernel refuses. A degraded net is announced, never
+    silently skipped: the same strings are also folded into ``detail``,
+    and the parent logs each one.
     """
 
     outcome: str
@@ -152,6 +161,7 @@ class TrialReport:
     behavior_failures: int
     detail: str
     exit_code: Optional[int]
+    warnings: tuple[str, ...] = ()
 
 
 class SandboxStartupError(RuntimeError):
@@ -277,22 +287,52 @@ def _run_child(
         return proc.returncode, stdout, stderr, True
 
 
+#: A representative memory cap the preflight probe applies when the
+#: caller left ``max_rss_bytes`` unset — generous enough not to cap a
+#: just-started child into a false ``MemoryError`` on Linux (a child
+#: after importing activegraph sits near ~40 MiB of address space),
+#: finite enough to actually exercise the ``setrlimit(RLIMIT_AS)`` call
+#: that Darwin rejects. The point of the probe is to trip the platform
+#: check, not to bound anything.
+_PREFLIGHT_PROBE_RSS = 1024 * 2**20
+
+
+def _limits_job_block(limits: TrialLimits, *, probe: bool) -> dict[str, object]:
+    """The ``limits`` sub-dict of a child job. ``probe=True`` fills an
+    unset ``max_rss_bytes`` with :data:`_PREFLIGHT_PROBE_RSS` so
+    preflight always exercises the RLIMIT_AS path."""
+    max_rss = limits.max_rss_bytes
+    if probe and max_rss is None:
+        max_rss = _PREFLIGHT_PROBE_RSS
+    return {
+        "max_rss_bytes": max_rss,
+        "max_events": limits.max_events,
+        "max_llm_calls": limits.max_llm_calls,
+        "cpu_seconds": int(limits.wall_clock_seconds) + 5,
+    }
+
+
 def _preflight_with(
     env: dict[str, str],
     *,
+    limits: TrialLimits = TrialLimits(),
     python_flags: tuple[str, ...] = (),
     timeout: float = 30.0,
-) -> None:
+) -> tuple[str, ...]:
     """The preflight check against a specific ``env`` (the testable
-    seam under :func:`preflight`). Raises :class:`SandboxStartupError`
-    if a child cannot start and report ``preflight: ok``.
+    seam under :func:`preflight`). Applies a representative limits block
+    so the resource-limit path is actually exercised. Returns any
+    degradation warnings (empty when every requested net applied);
+    raises :class:`SandboxStartupError` if a child cannot start and
+    report ``preflight: ok``.
     """
+    job = {"preflight": True, "limits": _limits_job_block(limits, probe=True)}
     exit_code, stdout, stderr, timed_out = _run_child(
-        {"preflight": True}, env=env, wall_clock=timeout, python_flags=python_flags
+        job, env=env, wall_clock=timeout, python_flags=python_flags
     )
     tail = _parse_report_tail(stdout)
     if not timed_out and exit_code == 0 and tail.get("preflight") == "ok":
-        return
+        return tuple(str(w) for w in (tail.get("warnings") or ()))
     cause = _stderr_tail(stderr) or (
         "child timed out" if timed_out else "no preflight tail on stdout"
     )
@@ -301,18 +341,33 @@ def _preflight_with(
     )
 
 
-def preflight(*, limits: TrialLimits = TrialLimits(), timeout: float = 30.0) -> None:
+def preflight(
+    *, limits: TrialLimits = TrialLimits(), timeout: float = 30.0
+) -> tuple[str, ...]:
     """Verify a trial child can START under the sandbox env on this box.
 
-    Spawns the child with a null job (no fork, no store, no candidate):
-    it imports ``activegraph``, echoes ``preflight: ok``, and exits 0.
-    Returns ``None`` on success; raises :class:`SandboxStartupError`
-    with the child's stderr tail otherwise. Consumers call this once at
-    boot so a broken sandbox env (e.g. a platform whose package
-    discovery the allow-list strips) fails LOUD here instead of showing
-    up as an opaque ``crashed`` on the first real trial.
+    Spawns the child with a null job that exercises the full startup
+    path a real trial hits — importing ``activegraph`` under the sandbox
+    env AND applying resource limits (v1.7.1: a go/no-go gate that
+    skipped limit application passed on macOS where every real trial
+    then crashed on RLIMIT_AS). No fork, no store, no candidate.
+
+    Returns a tuple of degradation warnings — empty when every net
+    applied cleanly, non-empty (and logged) when a net degraded on this
+    platform (e.g. the memory cap on macOS). Raises
+    :class:`SandboxStartupError` with the child's stderr tail if a child
+    cannot start at all. So on macOS this PASSES with a memory-net
+    warning rather than pass-then-crash; on a box that cannot import
+    activegraph it RAISES with the real cause. Consumers call it once at
+    boot to fail loud or learn what degraded before the first trial.
+
+    Pass the same ``limits`` a real trial will carry to probe that exact
+    configuration; the default probes with a representative memory cap.
     """
-    _preflight_with(_child_env(limits), timeout=timeout)
+    warnings = _preflight_with(_child_env(limits), limits=limits, timeout=timeout)
+    for w in warnings:
+        _log.warning("sandbox preflight: %s", w)
+    return warnings
 
 
 def run_forked_trial(
@@ -379,12 +434,7 @@ def run_forked_trial(
             for p in extra_packs
         ],
         "scenario": scenario,
-        "limits": {
-            "max_rss_bytes": limits.max_rss_bytes,
-            "max_events": limits.max_events,
-            "max_llm_calls": limits.max_llm_calls,
-            "cpu_seconds": int(limits.wall_clock_seconds) + 5,
-        },
+        "limits": _limits_job_block(limits, probe=False),
     }
     exit_code, stdout, stderr, timed_out = _run_child(
         job, env=_child_env(limits), wall_clock=limits.wall_clock_seconds
@@ -418,6 +468,17 @@ def run_forked_trial(
         if err_tail:
             detail = f"{detail}; child stderr:\n{err_tail}"
 
+    # Degraded resource nets (v1.7.1): announced, never silent. A memory
+    # cap the platform refused (RLIMIT_AS on macOS) is folded into detail
+    # and logged, so a trial that ran WITHOUT the memory net it asked for
+    # is loud rather than quietly unbounded.
+    warnings = tuple(str(w) for w in (tail.get("warnings") or ()))
+    if warnings:
+        joined = "; ".join(warnings)
+        detail = f"{detail} [degraded: {joined}]" if detail else f"[degraded: {joined}]"
+        for w in warnings:
+            _log.warning("sandbox trial %s: %s", fork_run_id, w)
+
     # The store is the record: re-read the fork run for the numbers.
     events_appended = 0
     behavior_failures = 0
@@ -437,4 +498,5 @@ def run_forked_trial(
         behavior_failures=behavior_failures,
         detail=detail,
         exit_code=exit_code,
+        warnings=warnings,
     )
