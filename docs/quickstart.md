@@ -315,8 +315,8 @@ In rough order of usefulness from here:
 - [`concepts/failure-model`](concepts/failure-model.md) — the
   framework's stance on what counts as a recoverable failure.
   Short, load-bearing, worth reading once.
-- [Authoring packs](guides/writing-behaviors.md) and
-  [Writing LLM behaviors](guides/writing-llm-behaviors.md) —
+- [Authoring packs](guides/authoring-packs.md) and the
+  [LLM providers reference](reference/llm-providers.md) —
   for when you're ready to build something larger than a
   single behavior.
 

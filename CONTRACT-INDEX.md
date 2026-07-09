@@ -22,11 +22,13 @@ adding new planning notes.
   current roadmap. It collected scattered v1.1 candidates after the
   post-v1.0.3 contract review and is useful for provenance, source
   amendments, and original priority notes.
-- **[`ROADMAP.md`](ROADMAP.md) — current scoped roadmap.** This is the
-  scoping document for the current cycle (v1.3 as of 2026-07-03; the
-  closed v1.1 roadmap is archived at the bottom of the same file). It
-  translates the backlog into mergeable phases and marks each item as
-  MUST, SHOULD, or DEFERRED.
+- **[`ROADMAP.md`](ROADMAP.md) — scoped roadmap.** This is the
+  scoping document for a planning cycle (last authored for v1.3 on
+  2026-07-03; the v1.3–v1.7 line has since shipped, so treat it as a
+  dated planning artifact rather than live status; the closed v1.1
+  roadmap is archived at the bottom of the same file). It translates
+  the backlog into mergeable phases and marks each item as MUST,
+  SHOULD, or DEFERRED.
 - **[`FUTURE_IDEAS.md`](FUTURE_IDEAS.md) — valid but unscheduled
   ideas.** This keeps useful candidates visible without letting them
   block the current cycle unless the maintainer explicitly promotes

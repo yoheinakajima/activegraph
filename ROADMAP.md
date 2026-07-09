@@ -1,5 +1,12 @@
 # Active Graph v1.3 roadmap
 
+> **Dated artifact (2026-07-03).** This roadmap was authored for the
+> v1.3 cycle. The v1.3–v1.7 line has since shipped; what actually
+> landed is recorded in `CHANGELOG.md` and locked in `CONTRACT.md`
+> (v1.3 #1–#4, v1.4 #1–#3, v1.5 #1–#2, v1.6 #1, plus the v1.7
+> sandbox addenda). Read this as the historical plan for that cycle,
+> not as live status.
+
 `ROADMAP.md` is the current scoping document for proposed v1.3 work.
 The closed v1.1 roadmap is archived at the bottom of this file for
 provenance; `v1.1-plan.md` remains the original post-v1.0.3 backlog.

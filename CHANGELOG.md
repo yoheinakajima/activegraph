@@ -340,7 +340,8 @@ the new bundle hash (the content hash cannot cover `manifest.toml`).
   recorded before v1.4 lack the payload in their events and are not
   reconstructible (documented boundary; no history rewriting).
 - **Compaction/retention design published for review**
-  (`compaction-design.md`, proposed CONTRACT v1.4 #3): snapshot
+  (`compaction-design.md`; shipped a cycle later as CONTRACT
+  v1.5 #2, phase 1): snapshot
   events + archive tier, never deletion; a normative pin set that
   retention policy can never override — promoted-from fork logs
   (evolution-pack sign-off input), live lineage, replay-cache

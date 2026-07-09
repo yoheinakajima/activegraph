@@ -119,6 +119,6 @@ happens to either end of any edge of this type" (relation behavior).
   `@llm_behavior`.
 - [`patterns`](patterns.md) — pattern subscriptions that match on
   relation structure.
-- [Writing relation behaviors](../guides/writing-behaviors.md) —
-  practical how-to; the decision rules for relation vs regular
-  behavior get more attention there.
+- [Behaviors API reference](../reference/api/behaviors.md) — the
+  `@relation_behavior` decorator and the `RelationBehavior` base,
+  alongside the regular-behavior decorators.

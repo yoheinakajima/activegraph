@@ -91,5 +91,5 @@ broader principle.
   `@llm_behavior` declares a tool name that isn't in the registry.
   Different shape: declared name missing vs. wrong-type value
   registered.
-- [Writing tools](../../guides/writing-tools.md) — the canonical
+- [Tools API reference](../api/tools.md) — the canonical
   reference for the `@tool` decorator and the Tool wrapper.

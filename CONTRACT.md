@@ -7400,8 +7400,8 @@ item 7, deferred from v1.3). Now:
    the runtime instance that created them, exactly as before. No
    migration rewrites history.
 
-Event-log compaction/retention is proposed separately in
-`compaction-design.md` (v1.4 #3 when its review lands).
+Event-log compaction/retention is designed separately in
+`compaction-design.md`; it shipped a cycle later as v1.5 #2 (phase 1).
 
 ## v1.4 #3. disable_pack: deregistration, honestly not unload
 

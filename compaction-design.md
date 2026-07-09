@@ -1,8 +1,15 @@
 # Event-log compaction and retention: design
 
-**Status: DESIGN FOR REVIEW — no implementation.** Proposed as
-CONTRACT v1.4 #3 when locked. Opened as v1.4 work; the deferred
-"item 14" from the July 2026 agent-readiness review.
+**Status: IMPLEMENTED (phase 1) — shipped in v1.5.0 as CONTRACT
+v1.5 #2** (`activegraph.store.retention`: `compact`, `retire`, `pins`,
+`verify_snapshot`; tests in `tests/test_compaction.py`). Originally
+opened as v1.4 work (the deferred "item 14" from the July 2026
+agent-readiness review) and proposed as v1.4 #3; that slot went to
+`disable_pack`, and compaction locked a cycle later as v1.5 #2. This
+doc is the aspirational design; where phase 1 deliberately shipped
+less (or a simplification), the notes below and
+`activegraph/store/retention.py`'s module docstring are authoritative
+for what actually shipped.
 
 ## 0. Normative inputs
 
@@ -46,13 +53,25 @@ deleting a `.db` file today.
 
 `runtime.snapshot`, emitted like any event (persisted, in the log,
 auditable), with a payload of: the log position it covers (last
-summarized event id + count), a **state hash** (deterministic hash of
-the provenance-normalized projection — objects, relations, patches),
-and a reference to the snapshot blob. The blob itself — the full
-projected state, JSON — lives in a sidecar `snapshots` table keyed by
-hash, NOT inline in the event payload: events stay small, and the
-hash in the event keeps the blob honest (a snapshot that doesn't
-hash-match its event is corruption, fail-loud on load).
+summarized event id + count), the id counters at snapshot time, a
+**state hash**, and a reference to the snapshot blob. The blob itself
+— the full projected state, JSON — lives in a sidecar `snapshots`
+table keyed by hash, NOT inline in the event payload: events stay
+small, and the hash in the event keeps the blob honest (a snapshot
+that doesn't hash-match its event is corruption, fail-loud on load).
+
+**What shipped (simplification over this draft).** The state hash is
+computed over the canonical blob *bytes themselves* — objects and
+relations only, sorted by id with sorted keys, **provenance
+INCLUDED** (the snapshot must reconstruct state faithfully, audit
+fields and all) — rather than a separately provenance-normalized
+hash over objects/relations/patches. There is no `patches` key in
+the blob: patch records from the archived prefix are not
+reconstructed post-compaction (see §2 and the phase-1 boundaries),
+so the snapshot captures projected object/relation state, not patch
+history. Equally deterministic, and nothing that survives compaction
+is left uncovered. `activegraph.store.retention._canonical_state_blob`
+/ `state_hash_of` are authoritative.
 
 Replay of a compacted run: load the snapshot blob, verify its hash
 against the snapshot event, replay the post-snapshot suffix. The
@@ -93,10 +112,16 @@ with the pin reason — when any of:
    dearchive path. Fork points at or after the snapshot work
    unchanged. This is the deliberate trade: compaction narrows
    *where you can branch history*, never *what state is*.
-4. **Pending machinery**: unresolved approvals, un-promoted live
-   forks' parents (case 2 covers this), and the current run of an
-   attached runtime (no self-compaction under a live dispatcher in
-   v1; compaction is an offline/idle-time operation).
+4. **Pending machinery**: unresolved approvals **and patches still in
+   `proposed` status** (both are recorded state a state-snapshot
+   cannot carry — the shipped `pins()` enforces each as a distinct
+   pin reason), and un-promoted live forks' parents (case 2 covers
+   this). The current run of an *attached* runtime is also refused,
+   but not via `pins()`: it is enforced out-of-band by the per-run
+   offline rule (no self-compaction under a live dispatcher — see
+   CONTRACT v1.5 #2 addendum 2b) plus the `UNIQUE(id, run_id)`
+   collision a live runtime would hit on the snapshot event.
+   Compaction is an offline/idle-time operation.
 
 Retention windows (e.g. "archive prefixes older than N events / days")
 are policy sugar over `compact`; the pin set always dominates policy.

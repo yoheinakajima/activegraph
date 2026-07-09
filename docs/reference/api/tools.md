@@ -2,8 +2,9 @@
 
 The `@tool` decorator and tool primitives. For the conceptual
 model and the LLM-tool-loop interaction see
-[`concepts/behaviors`](../../concepts/behaviors.md) and the
-[Writing tools](../../guides/writing-tools.md) guide.
+[`concepts/behaviors`](../../concepts/behaviors.md), and for tools
+inside a pack see the [authoring packs](../../guides/authoring-packs.md)
+guide.
 
 ## Decorator + base
 

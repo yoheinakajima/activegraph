@@ -251,14 +251,36 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
 
 ## Status
 
-**v1.2.0 (stable)** (2026-07). v1.0 shipped in May 2026 after a
+**v1.7.1 (stable)** (2026-07). v1.0 shipped in May 2026 after a
 three-rc external user-test gate per
 [CONTRACT v1.0 #C4](CONTRACT.md#v10-c4-v10-ships-as-v10-rc1-first-time-user-gate-is-owned-externally);
-v1.1.0 and v1.2.0 followed. See [CHANGELOG.md](CHANGELOG.md) for the
-full v0 → v1.2 history and per-version migration notes.
+the v1.1–v1.7 line followed, driven by a downstream self-modification
+stack (a pack library and a governed fork→test→promote assistant).
+See [CHANGELOG.md](CHANGELOG.md) for the full v0 → v1.7 history and
+per-version migration notes.
 
 Major shipped milestones:
 
+- **v1.7** — subprocess trial-child hardening from downstream soaks:
+  `extra_packs` for cross-pack interaction trials, the child's stderr
+  captured into the trial report, code discovery made an explicit
+  computed-`PYTHONPATH` channel (the env allow-list stays closed),
+  `sandbox.preflight()`, and portable resource limits — `RLIMIT_AS`
+  enforced on Linux, announced-off (not crashed) on macOS.
+- **v1.6** — loader-side manifest validation as a warning tier at
+  `load_pack` (structured, once per pack, never an error before 2.0);
+  the fork-tail-removal promote invariant pinned as contract.
+- **v1.5** — subprocess fork-trial isolation (`run_forked_trial`: a
+  fresh-interpreter child against a fork, artifacts pinned by bundle
+  hash) and compaction phase 1 (snapshot + archive tier + the
+  retention pin set, never deletion).
+- **v1.4** — the pack-manifest validator (`load_manifest`,
+  `verify_surface`, content + bundle hashes), declarative
+  `Pack.capabilities`, and `disable_pack` deregistration.
+- **v1.3** — `promote`: apply a fork's net structural delta back to
+  its parent, fail-closed on conflicts (the fork→test→promote loop);
+  provider-compatibility hardening; traceback/DX surfacing; the
+  `EmbeddingProvider` seam.
 - **v1.2** — the `GraphStore` seam: the materialized projection
   becomes pluggable, with `FalkorDBGraphStore` (native edges, Cypher
   query push-down) as the first external backend, contributed by

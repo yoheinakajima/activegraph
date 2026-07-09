@@ -140,11 +140,12 @@ plugins:
           - reference/api/tools.md
           - reference/api/store.md
           - reference/api/packs.md
+          - reference/api/sandbox.md: Subprocess fork-trial isolation — run_forked_trial, preflight, PackSource, TrialLimits, TrialReport.
           - reference/api/errors.md
           - reference/api/observability.md
           - reference/api/packs/diligence.md
         Optional:
-          - about/changelog.md: Per-release changelog v0 through v1.0.5, with migration notes.
+          - about/changelog.md: Per-release changelog v0 through v1.7, with migration notes.
           - about/publishing.md: How to cut a release — version bump, tagging, PyPI publish, doc-site deploy.
   - mkdocstrings:
       # API reference rendering. CONTRACT v1.0 #C2 (tiered docstring
@@ -253,6 +254,7 @@ nav:
           - Tools: reference/api/tools.md
           - Store: reference/api/store.md
           - Packs: reference/api/packs.md
+          - Sandbox: reference/api/sandbox.md
           - Errors: reference/api/errors.md
           - Observability: reference/api/observability.md
           - Diligence pack: reference/api/packs/diligence.md

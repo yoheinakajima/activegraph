@@ -95,7 +95,7 @@ behaviors and tools to the runtime alongside the global ones.
 
 To author a pack from existing v0.7/v0.8 code, see
 [Authoring packs](../guides/authoring-packs.md). The shipped
-[Diligence pack](../packs/diligence.md) is the reference example.
+[Diligence pack](../reference/api/packs/diligence.md) is the reference example.
 
 Two things to know if you're loading third-party packs:
 
