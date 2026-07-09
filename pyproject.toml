@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "activegraph"
-version = "1.7.0"
+version = "1.7.1"
 description = "An event-sourced reactive graph runtime for long-running, auditable, agentic systems."
 readme = "README.md"
 requires-python = ">=3.11"

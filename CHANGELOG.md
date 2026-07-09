@@ -13,6 +13,51 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [v1.7.1] — 2026-07-09
+
+A macOS trial-child fix, surfaced BECAUSE 1.7.0's import fix let the
+child reach resource-limit application. Additive, in
+`activegraph.sandbox`; packs pinned `>=1.6,<2.0` (and `>=1.5,<2.0`)
+keep working unchanged.
+
+### Migration
+
+No breaking changes. `TrialReport` gains a `warnings: tuple[str, ...]`
+field (defaults empty), and `sandbox.preflight()` now returns
+`tuple[str, ...]` (degradation warnings; empty = fully clean) instead
+of `None` — a caller doing `preflight()` for its raise-or-not
+behavior is unaffected; a caller that asserted `is None` should
+compare to `()`.
+
+### Fixed
+
+- **The memory budget no longer crashes trial children on macOS**
+  (CONTRACT v1.5 #1 addendum 1d, from a macOS/arm64 soak going RED on
+  rotation 1). `max_rss_bytes` maps to `RLIMIT_AS`, which the Darwin
+  kernel rejects (`ValueError: current limit exceeds maximum limit` —
+  Darwin does not support address-space limiting), so every
+  limits-carrying trial crashed at `_apply_rlimits`. Resource-limit
+  application is now portable: an unsettable cap DEGRADES rather than
+  crashes or silently skips — the child records a loud warning that
+  surfaces in `TrialReport.warnings` and `.detail` and is logged, and
+  the wall-clock kill + event budget remain the active nets. Limit
+  application never raises a hard limit (the target is clamped to the
+  existing hard limit — that raise was the Darwin crash). **The memory
+  budget's guarantee is now stated per-platform: enforced on Linux;
+  announced-unavailable on macOS/Windows, where wall-clock + events
+  bound the runaway-memory accident class.** The 1.7.0 stderr-capture
+  fix is what surfaced the exact `RLIMIT_AS` ValueError in the macOS
+  digest — it earned its keep.
+- **`preflight()` now exercises the resource-limit path** (the false
+  green — the real safety gap). The 1.7.0 preflight sent a null job
+  with no limits, so it never reached `_apply_rlimits` and passed on a
+  box where every real trial then crashed. Preflight now applies a
+  representative limits block, so it catches the `RLIMIT_AS` class at
+  the gate: on macOS it PASSES with a memory-net warning (returned and
+  logged) rather than pass-then-crash; on a box that cannot start a
+  child it still RAISES `SandboxStartupError` with the cause. Returns
+  the degradation warnings (empty tuple when fully clean).
+
 ## [v1.7.0] — 2026-07-08
 
 The sandbox-hardening release: cross-pack trials become expressible,
