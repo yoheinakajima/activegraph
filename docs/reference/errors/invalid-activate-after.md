@@ -72,6 +72,6 @@ runs.
 
 ## What's related
 
-- [Writing behaviors](../../guides/writing-behaviors.md) — the
+- [Behaviors API reference](../api/behaviors.md) — the
   canonical reference for the `@behavior` decorator including
   `activate_after`.

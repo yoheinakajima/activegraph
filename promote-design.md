@@ -76,11 +76,16 @@ result = parent_rt.promote(fork_rt)               # apply atomically
 - `promote(fork, *, dry_run=False) -> PromotePlan | PromoteResult`
   on `Runtime`. The receiver is the **destination** (parent), the
   argument the **source** (fork) — same orientation as `rt.diff(fork)`.
-- `PromotePlan` (dry run): `creates` / `patches` / `removes` for
-  objects and relations (provenance-stripped snapshots, the
-  `Diff` convention), `conflicts` (empty on a promotable plan),
-  `warnings` (see §5: pack-load and settings differences surfaced
-  but not applied), and `is_promotable`.
+- `PromotePlan` (dry run): `object_creates` / `object_patches` /
+  `object_removes` for objects, and `relation_creates` /
+  `relation_removes` for relations (provenance-stripped snapshots,
+  the `Diff` convention). Note there is **no** `relation_patches`
+  category: a relation's identity is its endpoints, so a changed
+  relation is folded into a remove + create rather than an in-place
+  patch (the projection has no relation-patch event). Also
+  `conflicts` (empty on a promotable plan), `warnings` (see §5:
+  pack-load and settings differences surfaced but not applied), and
+  `is_promotable`.
 - `PromoteResult`: everything in the plan, plus the applied event
   ids and the `promote.applied` marker event id.
 - **Plan/apply staleness (review amendment #3).** `promote()` always
@@ -178,7 +183,9 @@ Rules:
   the `load_pack` pre-mutation precedent. There is no partial
   promote.
 - Determinism: same store contents → same plan, same conflict list,
-  same ordering (sorted by entity id, the `compute_diff` convention).
+  same ordering. The delta lists are sorted by entity id (the
+  `compute_diff` convention); the conflict list is sorted by the
+  `(kind, entity, id)` tuple. Either way, fully deterministic.
 
 The escape hatch for a conflicted promote is not a `force=` flag
 (easy to reach for, impossible to audit) but the loop itself:
@@ -235,6 +242,36 @@ reaction point is the `promote.applied` marker itself: it is
 queue-visible (like `pack.loaded`, unlike `approval.*`), so a
 behavior subscribed to `promote.applied` fires once, after the full
 delta is in place, seeing post-promote state.
+
+**Apply-time schema validation (CONTRACT v1.3 #4 addendum 4c).**
+Promote applies the delta through hand-built mutation events, which
+bypass `add_object`'s pack-schema hook — so apply validates the delta
+against the **parent's** loaded pack schemas *before* the marker is
+emitted and before anything mutates. Concretely: the parent's
+`_pack_object_validator` runs over every `object_creates` and
+`object_patches` entry, and the parent's `_pack_relation_validator`
+runs over each `relation_creates` entry's endpoint types (resolving a
+delta-created endpoint's type from the plan, else from parent-now).
+Three consequences, each pinned by a test:
+
+- **Typed data that violates a parent-loaded schema raises
+  `PackSchemaViolation` with nothing applied** — validation precedes
+  the marker emit, so the parent is byte-identical to before the
+  call. This is a distinct pre-mutation failure mode alongside the §4
+  conflict gate. (`test_promote_validates_delta_against_parent_schemas`.)
+- **Validated data is stored canonicalized**, exactly as `add_object`
+  would have stored it: the validator's return replaces the raw delta
+  payload, so a promoted object is byte-equal to a directly-added one.
+  (`test_promote_canonicalizes_valid_typed_delta`.)
+- **Undeclared types keep v0.9 untyped semantics** — a type no loaded
+  pack declares has a `None` validator and passes through unchanged,
+  identical to `add_object` of an undeclared type (CONTRACT v0.9 #5).
+  (`test_promote_of_unknown_types_passes_untyped`.)
+
+Because validation is against the parent's schemas, this also catches
+version skew at the boundary (the fork ran pack v2, the parent holds
+v1): the delta is checked against what the *parent* will actually
+enforce, not what the fork produced it under.
 
 Replaying the parent's log reproduces promoted state with no special
 cases, because promoted state *is* ordinary events. `trace.lines()`

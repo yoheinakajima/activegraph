@@ -25,7 +25,7 @@ One helper, deliberately small:
 from activegraph.sandbox import run_forked_trial
 
 report = run_forked_trial(
-    store_url="sqlite:///assistant.db",
+    store_path="assistant.db",
     parent_run_id=parent.run_id,
     at_event=fork_point,
     pack_source=PackSource(...),      # §3

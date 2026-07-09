@@ -1,19 +1,22 @@
 """Pack manifest schema, validation, and content hashing. PROVISIONAL.
 
 CONTRACT v1.4 #1 (provisional). Reference implementation of the pack
-manifest spec (activegraph-packs `docs/manifest-spec.md`, DRAFT) so
-the three consumers that recompute the same checks — this loader,
-downstream CI, and the evolution pack's static gates — share one
-implementation instead of drifting.
+manifest spec (activegraph-packs `docs/manifest-spec.md`) so the
+consumers that recompute the same checks — this loader, downstream CI,
+and the evolution pack's static gates — share one implementation
+instead of drifting.
 
-**PROVISIONAL API.** The spec stays DRAFT until the vc extraction and
-the evolution pack have both consumed it; expect one round of breaking
-edits to this module before the API is contract-stable. Nothing here
-is enforced by ``load_pack`` yet (grandfathering: packs without a
-manifest load exactly as before; opting in means calling these
-functions yourself or via host tooling).
+**PROVISIONAL API.** Expect one round of breaking edits to this module
+before the API is contract-stable. Since v1.6, ``load_pack`` runs
+these checks itself as a WARNING tier (CONTRACT v1.6 #1): when a
+``manifest.toml`` is discoverable at the pack root, the loader runs
+:func:`load_manifest` + :func:`verify_surface` and logs any violations
+once per pack — it never raises before 2.0, and a pack without a
+manifest still loads exactly as before. You may also call these
+functions directly (host tooling, CI, and the trial sandbox's pin
+chain all do).
 
-Three entry points:
+Entry points:
 
   * :func:`load_manifest` — parse ``manifest.toml`` and validate the
     schema. All violations are collected and raised together in one
@@ -21,17 +24,25 @@ Three entry points:
     ``load_pack``'s pre-mutation posture).
   * :func:`verify_surface` — the loader-verifiable two-way check
     between a manifest's ``[surface]`` and a live :class:`Pack`
-    object, per the spec's identity mapping. ``capabilities`` and
-    ``consumes`` are deliberately NOT checked here — gateway
-    registration is imperative host wiring the loader cannot observe;
-    those stay statically verified downstream until ``Pack`` grows a
-    declarative capabilities field (spec Q8).
+    object, per the spec's identity mapping. Since ``Pack`` grew a
+    declarative ``capabilities`` field (spec Q8), declared
+    ``capabilities`` ARE checked here too — two-way by
+    ``(provider, capability)`` with ``risk_class`` agreement (a
+    relabeled risk class is exactly the swap the decision surface must
+    catch). Only ``consumes`` stays out of scope, being imperative
+    gateway wiring the loader cannot observe.
   * :func:`compute_content_hash` / :func:`verify_content_hash` — the
-    spec §4 canonical byte stream, byte-exact, with this
-    implementation's amendments (also flagged in the spec review):
-    directory symlinks are rejected like file symlinks; paths that
-    are not UTF-8-encodable or not NFC-normalized are rejected loudly
-    rather than hashed ambiguously.
+    spec §4 canonical byte stream over the pack directory EXCLUDING
+    ``manifest.toml``, byte-exact, with this implementation's
+    amendments (also flagged in the spec review): directory symlinks
+    are rejected like file symlinks; paths that are not
+    UTF-8-encodable or not NFC-normalized are rejected loudly rather
+    than hashed ambiguously.
+  * :func:`compute_bundle_hash` / :func:`verify_bundle_hash` — the
+    same §4 walk but WITH ``manifest.toml`` included. This is the
+    external pin recorded in a proposal and verified before a
+    candidate is trialed or adopted, since the manifest is part of
+    what the owner approves.
 """
 
 from __future__ import annotations
@@ -356,10 +367,13 @@ def verify_surface(manifest: PackManifest, pack: Any) -> None:
     ``behaviors`` / ``tools`` / ``settings_schema``. Raises
     :class:`PackManifestError` with the full mismatch list.
 
-    ``capabilities`` / ``consumes`` are NOT verified here: gateway
-    registration is imperative host wiring invisible at
-    ``load_pack`` time; those checks stay static (CI / evolution
-    gates) until ``Pack`` grows a declarative capabilities field.
+    ``capabilities`` ARE verified here (spec Q8, runtime half): since
+    ``Pack`` carries a declarative ``capabilities`` field, this runs
+    the same two-way check keyed by ``(provider, capability)`` and
+    additionally requires ``risk_class`` agreement on any pair
+    declared on both sides. Only ``consumes`` stays out of scope —
+    it is imperative gateway wiring invisible at ``load_pack`` time,
+    left to static CI / evolution gates.
     """
     violations: list[str] = []
 
