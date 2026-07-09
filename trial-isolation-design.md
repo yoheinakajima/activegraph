@@ -240,8 +240,14 @@ Child stdout, last line, JSON:
  "fork_run_id": "...",
  "events_appended": 137,
  "behavior_failures": 0,
- "detail": "one line"}
+ "detail": "one line",
+ "warnings": ["memory cap (RLIMIT_AS) ... net is OFF ..."]}
 ```
+
+`warnings` (v1.7.1) lists resource nets that degraded on this
+platform — the memory cap on macOS, most notably. The parent folds
+them into `TrialReport.warnings` and `.detail` and logs them, so a
+trial that ran without a net it requested is loud, never silent.
 
 Everything richer — tracebacks, diff summaries, eval numbers — is
 read from the fork's log by the parent (`trace.failures()` payloads
@@ -302,9 +308,32 @@ store resolves in favor of the store.
   tail (import failure, rlimit setup) carries its real cause back
   into `TrialReport.detail` — the pre-execution gate must never
   swallow its own failure cause.
+- **The memory budget's guarantee is per-platform, stated honestly**
+  (v1.7.1, from a macOS soak). `max_rss_bytes` maps to
+  `RLIMIT_AS`, and RLIMIT_AS is **enforced on Linux** but **rejected
+  by the Darwin (macOS) kernel** — Darwin does not support limiting a
+  process's address space, and `setrlimit(RLIMIT_AS, …)` raises
+  `ValueError: current limit exceeds maximum limit`. There is no
+  honest Darwin substitute: `RLIMIT_RSS`/`RLIMIT_DATA` are accepted
+  but not enforced against total address space (a silent non-cap is
+  worse than an announced-off one), and a Python-level RSS watchdog
+  is exactly the OS-control imitation this design refuses. So on
+  macOS the memory net **degrades to OFF, loudly**: the child records
+  a warning that surfaces in `TrialReport.warnings` and `.detail` and
+  is logged — never a crash, never a silent skip. The wall-clock kill
+  and event budget are unaffected and remain the active nets on every
+  platform. **Guarantee, stated plainly: memory-budget enforcement is
+  Linux-only in v1; on macOS and Windows the memory cap is announced
+  unavailable and the runaway-memory accident class is bounded only by
+  wall-clock + events.** A BabyAGI author developing on macOS gets a
+  memory net that says it is off rather than one that pretends to be
+  on. `preflight()` applies a representative limits block so it
+  surfaces this at boot (a null-job gate that skipped limit
+  application would pass on macOS and then every real trial would
+  crash — the false green this fix closes).
 - **Windows**: rlimits are POSIX; on Windows the memory/CPU nets
-  degrade to wall-clock + budgets, stated in the API docs rather
-  than emulated badly.
+  degrade to wall-clock + budgets (announced the same way as the
+  macOS memory net), stated rather than emulated badly.
 
 ## 6. Open questions for review
 

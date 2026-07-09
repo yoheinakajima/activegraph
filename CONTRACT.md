@@ -7519,6 +7519,35 @@ cause if not, so consumers fail loud at boot. Pinned by
 `test_explicit_code_channel_rescues_a_restricted_child`, and
 `test_env_allow_list_stays_closed_secrets_do_not_leak`.
 
+Post-release addendum (v1.7.1, a macOS soak surfaced a third defect —
+exposed BECAUSE 1c's import fix let the child reach limit
+application): **1d. The memory budget's enforcement is per-platform
+and degrades loudly; preflight exercises the limit path.** (i)
+`max_rss_bytes` → `RLIMIT_AS` is enforced on Linux but REJECTED by
+the Darwin kernel (`setrlimit` raises — Darwin does not support
+address-space limiting). An unsettable cap DEGRADES: the child never
+crashes and never silently skips — it records a warning that surfaces
+in `TrialReport.warnings` and `.detail` and is logged. There is no
+honest Darwin substitute (`RLIMIT_RSS`/`RLIMIT_DATA` are unenforced;
+a Python RSS watchdog is the OS-control imitation the design refuses).
+**Guarantee: memory-budget enforcement is Linux-only in v1; on macOS
+and Windows the memory cap is announced unavailable, and the
+runaway-memory accident class is bounded by wall-clock + event
+budgets, which apply on every platform.** The limit application never
+RAISES a hard limit (the Darwin crash was exactly that): the target
+is clamped to the existing hard limit, so the call only ever lowers.
+(ii) `preflight()` now applies a REPRESENTATIVE limits block so it
+exercises the limit path — a go/no-go gate that skipped it passed on
+macOS where every real trial then crashed. On macOS preflight PASSES
+with a memory-net warning (returned + logged), never pass-then-crash;
+on a box that cannot start a child it still RAISES. `preflight()`
+returns the degradation warnings (empty tuple = fully clean). Pinned
+by `test_rlimit_as_rejection_degrades_not_crashes`,
+`test_rlimit_never_raises_the_hard_limit`,
+`test_preflight_exercises_the_limit_path`,
+`test_trial_report_surfaces_degraded_warning`, and
+`test_real_trial_with_memory_cap_completes_on_linux`.
+
 ## v1.5 #2. Compaction phase 1: snapshot + archive tier + the pin set
 
 Implements phase 1 of `compaction-design.md`. The design doc carries

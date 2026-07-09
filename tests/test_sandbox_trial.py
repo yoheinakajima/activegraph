@@ -540,9 +540,9 @@ def test_child_import_crash_surfaces_the_cause_in_detail(tmp_path, monkeypatch):
 
 
 def test_preflight_succeeds_on_a_working_env():
-    # Returns None (no raise) when a child can start under the sandbox
-    # env — the normal case on any box where the parent imports fine.
-    assert preflight(timeout=30.0) is None
+    # Returns () (no raise, no degradation) when a child can start AND
+    # apply limits under the sandbox env — the normal case on Linux.
+    assert preflight(timeout=30.0) == ()
 
 
 def test_preflight_fails_loud_with_the_cause_on_a_restricted_env():
@@ -570,7 +570,7 @@ def test_explicit_code_channel_rescues_a_restricted_child():
             python_flags=("-S",),
             timeout=30.0,
         )
-        is None
+        == ()
     )
 
 
@@ -598,3 +598,133 @@ def test_env_passthrough_still_forwards_named_vars(monkeypatch):
     env = sandbox._child_env(TrialLimits(env_passthrough=("MY_TRIAL_FLAG",)))
     assert env["MY_TRIAL_FLAG"] == "1"
     assert "PYTHONPATH" in env
+
+
+# ------------------- portable RLIMIT_AS (v1.7.1 macOS soak fix)
+
+resource = pytest.importorskip("resource")
+from activegraph.sandbox import _child  # noqa: E402
+
+
+def test_rlimit_as_applies_cleanly_on_linux():
+    # Linux shape: a settable RLIMIT_AS applies with no degradation.
+    warnings = _child._apply_rlimits(
+        {"max_rss_bytes": 1024 * 2**20, "cpu_seconds": 60}
+    )
+    assert warnings == []
+
+
+def test_rlimit_as_rejection_degrades_not_crashes(monkeypatch):
+    # macOS shape (simulated): Darwin rejects setrlimit(RLIMIT_AS) with
+    # exactly this ValueError. The child must NOT crash and must NOT
+    # silently skip — it degrades with a loud, announced warning. This
+    # is the regression guard for the macOS rotation-1 crash.
+    real = resource.setrlimit
+
+    def darwin(which, pair):
+        if which == resource.RLIMIT_AS:
+            raise ValueError("current limit exceeds maximum limit")
+        return real(which, pair)
+
+    monkeypatch.setattr(resource, "setrlimit", darwin)
+    warnings = _child._apply_rlimits(
+        {"max_rss_bytes": 256 * 2**20, "cpu_seconds": 60}
+    )
+    assert len(warnings) == 1
+    assert "memory net is OFF" in warnings[0]
+    assert "RLIMIT_AS" in warnings[0]
+    # The CPU cap (which Darwin DOES accept) still applied — only the
+    # unsupported net degraded.
+    assert "RLIMIT_CPU" not in warnings[0]
+
+
+def test_rlimit_never_raises_the_hard_limit(monkeypatch):
+    # The Darwin crash was setrlimit raising the hard limit; we clamp to
+    # the existing hard limit so the call only ever LOWERS. Prove the
+    # target passed to setrlimit never exceeds the current hard limit.
+    seen = {}
+    real_get = resource.getrlimit
+    monkeypatch.setattr(
+        resource, "getrlimit", lambda w: (0, 512 * 2**20)  # finite hard
+    )
+
+    def capture(which, pair):
+        seen[which] = pair
+
+    monkeypatch.setattr(resource, "setrlimit", capture)
+    _child._apply_rlimits({"max_rss_bytes": 4096 * 2**20})  # ask for MORE
+    soft, hard = seen[resource.RLIMIT_AS]
+    assert soft == hard == 512 * 2**20  # clamped to existing hard, not raised
+
+
+def test_preflight_exercises_the_limit_path():
+    # Fix 2: preflight must send a limits block so it reaches
+    # _apply_rlimits — a null job that skipped it passed on macOS where
+    # every real trial then crashed.
+    probe = sandbox._limits_job_block(TrialLimits(), probe=True)
+    assert probe["max_rss_bytes"] == sandbox._PREFLIGHT_PROBE_RSS
+    # A caller's explicit cap is probed as-is.
+    probe2 = sandbox._limits_job_block(
+        TrialLimits(max_rss_bytes=333 * 2**20), probe=True
+    )
+    assert probe2["max_rss_bytes"] == 333 * 2**20
+    # A real trial's block keeps the caller's None (no probe fill).
+    real = sandbox._limits_job_block(TrialLimits(), probe=False)
+    assert real["max_rss_bytes"] is None
+
+
+def test_trial_report_surfaces_degraded_warning(tmp_path, monkeypatch):
+    # End-to-end parent surfacing: a child that reports a degraded net
+    # must land it in TrialReport.warnings AND detail (loud), on an
+    # otherwise-completed trial.
+    path, parent_run, tip, n_parent = _parent_store(tmp_path)
+    root, bundle = _candidate_dir(tmp_path)
+
+    degraded = "memory cap (RLIMIT_AS) could not be applied (darwin: ...); the memory net is OFF for this trial"
+
+    def fake_run_child(job, *, env, wall_clock, python_flags=()):
+        tail = {
+            "outcome": "completed",
+            "fork_run_id": job["fork_run_id"],
+            "events_appended": 1,
+            "behavior_failures": 0,
+            "detail": "",
+            "warnings": [degraded],
+        }
+        import json as _json
+
+        return 0, _json.dumps(tail), "", False
+
+    monkeypatch.setattr(sandbox, "_run_child", fake_run_child)
+    report = run_forked_trial(
+        path,
+        parent_run_id=parent_run,
+        at_event=tip,
+        pack_source=PackSource(root_dir=str(root), expected_bundle_hash=bundle),
+        scenario="scenario.py",
+        limits=TrialLimits(max_rss_bytes=256 * 2**20),
+    )
+    assert report.outcome == "completed"
+    assert report.warnings == (degraded,)
+    assert "degraded" in report.detail
+    assert "memory net is OFF" in report.detail
+
+
+def test_real_trial_with_memory_cap_completes_on_linux(tmp_path):
+    # Integration: a real trial carrying a memory cap runs clean on
+    # Linux (the net applied, no degradation) — proving the portable
+    # path did not break the platform where RLIMIT_AS works.
+    path, parent_run, tip, n_parent = _parent_store(tmp_path)
+    root, bundle = _candidate_dir(tmp_path)
+
+    report = run_forked_trial(
+        path,
+        parent_run_id=parent_run,
+        at_event=tip,
+        pack_source=PackSource(root_dir=str(root), expected_bundle_hash=bundle),
+        scenario="scenario.py",
+        limits=TrialLimits(max_rss_bytes=1024 * 2**20, wall_clock_seconds=60),
+    )
+    assert report.outcome == "completed", report.detail
+    assert report.warnings == ()
+    _parent_untouched(path, parent_run, n_parent)

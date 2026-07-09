@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 
+_LIMIT_WARNINGS: list[str] = []
+
+
 def _report(
     outcome: str,
     *,
@@ -39,6 +42,11 @@ def _report(
                 "events_appended": events_appended,
                 "behavior_failures": behavior_failures,
                 "detail": detail[:500],
+                # Degraded-limit warnings (v1.7.1): a resource net that
+                # could not be applied on this platform is announced,
+                # never silently skipped. The parent folds these into
+                # TrialReport.warnings and TrialReport.detail.
+                "warnings": list(_LIMIT_WARNINGS),
             }
         ),
         flush=True,
@@ -46,19 +54,67 @@ def _report(
     raise SystemExit(exit_code)
 
 
-def _apply_rlimits(limits: dict[str, Any]) -> None:
-    """POSIX resource caps; on platforms without ``resource`` the
-    wall-clock and budget nets still hold (stated in the design)."""
+def _apply_rlimits(limits: dict[str, Any]) -> list[str]:
+    """Apply POSIX resource caps portably, returning a warning for any
+    cap that could not be set on this platform.
+
+    RLIMIT_AS (the memory net) is settable on Linux but rejected by the
+    Darwin kernel (``ValueError: current limit exceeds maximum limit``
+    — Darwin does not support address-space limiting). Rather than
+    crash (a trial child that can't start is useless) or silently skip
+    (a memory net that quietly does nothing is worse than one that
+    announces it is off), an unsettable cap DEGRADES: we record a loud
+    warning and let the wall-clock kill and event budget — which are
+    unaffected — remain the active nets. We never RAISE a hard limit
+    (that needs privilege and is what triggered the Darwin crash): the
+    target is clamped to the existing hard limit, so the call only ever
+    lowers, and the strong soft==hard cap is preserved where the kernel
+    allows it. Returns the list of degradation warnings (empty when all
+    requested caps applied).
+    """
+    warnings: list[str] = []
     try:
         import resource
     except ImportError:  # pragma: no cover — Windows
-        return
+        if limits.get("max_rss_bytes"):
+            warnings.append(_mem_off("no `resource` module on this platform"))
+        return warnings
+
+    def _cap(kind: str, name: str, requested: int) -> None:
+        limit = getattr(resource, name)
+        _, hard = resource.getrlimit(limit)
+        target = (
+            requested
+            if hard == resource.RLIM_INFINITY
+            else min(requested, hard)
+        )
+        try:
+            resource.setrlimit(limit, (target, target))
+        except (ValueError, OSError) as e:
+            warnings.append(
+                _mem_off(f"{sys.platform}: {type(e).__name__}: {e}")
+                if kind == "memory"
+                else (
+                    f"CPU cap (RLIMIT_CPU) could not be applied on "
+                    f"{sys.platform}: {type(e).__name__}: {e}"
+                )
+            )
+
     max_rss = limits.get("max_rss_bytes")
     if max_rss:
-        resource.setrlimit(resource.RLIMIT_AS, (max_rss, max_rss))
+        _cap("memory", "RLIMIT_AS", max_rss)
     cpu = limits.get("cpu_seconds")
     if cpu:
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+        _cap("cpu", "RLIMIT_CPU", cpu)
+    return warnings
+
+
+def _mem_off(reason: str) -> str:
+    return (
+        f"memory cap (RLIMIT_AS) could not be applied ({reason}); the "
+        f"memory net is OFF for this trial — the wall-clock kill and "
+        f"event budget still bound a runaway"
+    )
 
 
 def _materialize_pack(job: dict[str, Any]) -> Any:
@@ -138,18 +194,28 @@ def _resolve_scenario(
 def main() -> None:
     job = json.loads(sys.stdin.read())
 
-    # Preflight (v1.7): a null job that only proves the child could
-    # START — i.e. that importing activegraph under the sandbox env
-    # succeeded, which happens before this function even runs. Reaching
-    # here at all means the heavy import chain worked; echo the marker
-    # and exit clean. No fork, no store, no candidate touched.
+    # Apply resource limits BEFORE the preflight branch (v1.7.1): the
+    # limit-application path is exactly what varies by host (Darwin
+    # rejects RLIMIT_AS), so preflight must exercise it to be a real
+    # go/no-go gate — a null job that skipped it would pass on a box
+    # where every real trial then crashed. Degradation warnings are
+    # stashed for _report and echoed on the preflight tail.
+    _LIMIT_WARNINGS.extend(_apply_rlimits(job.get("limits", {})))
+
+    # Preflight (v1.7): a null job that proves the child could START —
+    # importing activegraph under the sandbox env succeeded (before this
+    # function ran) AND resource limits could be applied (just above).
+    # Echo the marker plus any degradation warnings and exit clean. No
+    # fork, no store, no candidate touched.
     if job.get("preflight"):
-        print(json.dumps({"preflight": "ok"}), flush=True)
+        print(
+            json.dumps({"preflight": "ok", "warnings": list(_LIMIT_WARNINGS)}),
+            flush=True,
+        )
         raise SystemExit(0)
 
     fork_run_id = str(job["fork_run_id"])
     initial = int(job.get("initial_events", 0))
-    _apply_rlimits(job.get("limits", {}))
 
     def counts(rt: Any) -> tuple[int, int]:
         return (
