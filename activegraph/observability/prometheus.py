@@ -12,6 +12,7 @@ follow Prometheus conventions (``_total`` for counters, ``_seconds`` /
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 
@@ -31,6 +32,8 @@ class PrometheusMetrics:
         self._counters: dict[tuple[Any, ...], Any] = {}
         self._histograms: dict[tuple[Any, ...], Any] = {}
         self._gauges: dict[tuple[Any, ...], Any] = {}
+        self._instrument_locks: dict[tuple[Any, ...], threading.Lock] = {}
+        self._instrument_locks_lock = threading.Lock()
 
     @staticmethod
     def available() -> bool:
@@ -45,13 +48,16 @@ class PrometheusMetrics:
     def counter(self, name: str, tags: dict[str, str], value: float = 1.0) -> None:
         keys = tuple(sorted(tags.keys()))
         key = (name, keys)
-        c = self._counters.get(key)
-        if c is None:
-            c = self._client.Counter(
-                name, name.replace("_", " "), labelnames=keys,
-                registry=self._registry,
-            )
-            self._counters[key] = c
+        with self._creation_lock(("counter", *key)):
+            c = self._counters.get(key)
+            if c is None:
+                c = self._client.Counter(
+                    name,
+                    name.replace("_", " "),
+                    labelnames=keys,
+                    registry=self._registry,
+                )
+                self._counters[key] = c
         if keys:
             c.labels(**tags).inc(value)
         else:
@@ -60,13 +66,16 @@ class PrometheusMetrics:
     def histogram(self, name: str, tags: dict[str, str], value: float) -> None:
         keys = tuple(sorted(tags.keys()))
         key = (name, keys)
-        h = self._histograms.get(key)
-        if h is None:
-            h = self._client.Histogram(
-                name, name.replace("_", " "), labelnames=keys,
-                registry=self._registry,
-            )
-            self._histograms[key] = h
+        with self._creation_lock(("histogram", *key)):
+            h = self._histograms.get(key)
+            if h is None:
+                h = self._client.Histogram(
+                    name,
+                    name.replace("_", " "),
+                    labelnames=keys,
+                    registry=self._registry,
+                )
+                self._histograms[key] = h
         if keys:
             h.labels(**tags).observe(value)
         else:
@@ -75,17 +84,34 @@ class PrometheusMetrics:
     def gauge(self, name: str, tags: dict[str, str], value: float) -> None:
         keys = tuple(sorted(tags.keys()))
         key = (name, keys)
-        g = self._gauges.get(key)
-        if g is None:
-            g = self._client.Gauge(
-                name, name.replace("_", " "), labelnames=keys,
-                registry=self._registry,
-            )
-            self._gauges[key] = g
+        with self._creation_lock(("gauge", *key)):
+            g = self._gauges.get(key)
+            if g is None:
+                g = self._client.Gauge(
+                    name,
+                    name.replace("_", " "),
+                    labelnames=keys,
+                    registry=self._registry,
+                )
+                self._gauges[key] = g
         if keys:
             g.labels(**tags).set(value)
         else:
             g.set(value)
+
+    def _creation_lock(self, key: tuple[Any, ...]) -> threading.Lock:
+        """Return a per-instrument initialization lock.
+
+        The map lock is never held while prometheus_client code runs, so a
+        slow instrument creation cannot stall observations of another name.
+        """
+
+        with self._instrument_locks_lock:
+            lock = self._instrument_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._instrument_locks[key] = lock
+            return lock
 
 
 def _require_client() -> Any:

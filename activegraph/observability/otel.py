@@ -13,6 +13,7 @@ UpDownCounter deltas. Instruments are cached by
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 
@@ -31,6 +32,9 @@ class OpenTelemetryMetrics:
         self._histograms: dict[tuple[str, str, tuple[str, ...]], Any] = {}
         self._gauges: dict[tuple[str, str, tuple[str, ...]], Any] = {}
         self._gauge_values: dict[tuple[str, tuple[str, ...], tuple[Any, ...]], float] = {}
+        self._instrument_locks: dict[tuple[Any, ...], threading.Lock] = {}
+        self._instrument_locks_lock = threading.Lock()
+        self._gauge_value_lock = threading.Lock()
 
     @staticmethod
     def available() -> bool:
@@ -46,44 +50,62 @@ class OpenTelemetryMetrics:
     def counter(self, name: str, tags: dict[str, str], value: float = 1.0) -> None:
         keys = tuple(sorted(tags.keys()))
         key = ("counter", name, keys)
-        counter = self._counters.get(key)
-        if counter is None:
-            counter = self._meter.create_counter(
-                name,
-                description=name.replace("_", " "),
-            )
-            self._counters[key] = counter
+        with self._creation_lock(key):
+            counter = self._counters.get(key)
+            if counter is None:
+                counter = self._meter.create_counter(
+                    name,
+                    description=name.replace("_", " "),
+                )
+                self._counters[key] = counter
         counter.add(value, attributes=_attributes(tags))
 
     def histogram(self, name: str, tags: dict[str, str], value: float) -> None:
         keys = tuple(sorted(tags.keys()))
         key = ("histogram", name, keys)
-        histogram = self._histograms.get(key)
-        if histogram is None:
-            histogram = self._meter.create_histogram(
-                name,
-                description=name.replace("_", " "),
-            )
-            self._histograms[key] = histogram
+        with self._creation_lock(key):
+            histogram = self._histograms.get(key)
+            if histogram is None:
+                histogram = self._meter.create_histogram(
+                    name,
+                    description=name.replace("_", " "),
+                )
+                self._histograms[key] = histogram
         histogram.record(value, attributes=_attributes(tags))
 
     def gauge(self, name: str, tags: dict[str, str], value: float) -> None:
         keys = tuple(sorted(tags.keys()))
         key = ("gauge", name, keys)
-        gauge = self._gauges.get(key)
-        if gauge is None:
-            gauge = self._meter.create_up_down_counter(
-                name,
-                description=name.replace("_", " "),
-            )
-            self._gauges[key] = gauge
+        with self._creation_lock(key):
+            gauge = self._gauges.get(key)
+            if gauge is None:
+                gauge = self._meter.create_up_down_counter(
+                    name,
+                    description=name.replace("_", " "),
+                )
+                self._gauges[key] = gauge
 
         values_key = (name, keys, tuple(tags[k] for k in keys))
-        previous = self._gauge_values.get(values_key, 0.0)
-        delta = float(value) - previous
-        self._gauge_values[values_key] = float(value)
+        with self._gauge_value_lock:
+            previous = self._gauge_values.get(values_key, 0.0)
+            delta = float(value) - previous
+            self._gauge_values[values_key] = float(value)
         if delta:
             gauge.add(delta, attributes=_attributes(tags))
+
+    def _creation_lock(self, key: tuple[Any, ...]) -> threading.Lock:
+        """Return a per-instrument initialization lock.
+
+        Only the lock map is global; SDK instrument creation runs outside it
+        and therefore cannot delay observations of an unrelated metric name.
+        """
+
+        with self._instrument_locks_lock:
+            lock = self._instrument_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._instrument_locks[key] = lock
+            return lock
 
 
 def _attributes(tags: dict[str, str]) -> dict[str, Any]:

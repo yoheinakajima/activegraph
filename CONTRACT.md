@@ -7661,3 +7661,214 @@ they can become errors (not before 2.0).
    error is a MAJOR-version event. Until then the loader's contract
    is warn-and-load, and consumers may rely on a violating pack
    still loading.
+
+# v1.8 — EventSink outbound observation seam
+
+Opened 2026-07-09 as the first L1-adjacent runtime-hardening
+workstream. This amendment is governed by the runtime constitution's
+section 8 ``EventSink`` contract: a sink observes facts the runtime
+has already accepted; it is neither another state store nor a
+behavior hook. The interface is deliberately smaller than any first
+consumer so JSONL, front-end streaming, the lab, and later learning
+queues can share one invariant-preserving boundary.
+
+## v1.8 #1. `EventSink` observes accepted events and has no authority
+
+The public protocol is synchronous at the adapter boundary and has
+four methods:
+
+```python
+class EventSink(Protocol):
+    def open(self) -> None: ...
+    def on_event(self, event: Event, context: DeliveryContext) -> None: ...
+    def flush(self) -> None: ...
+    def close(self) -> None: ...
+```
+
+``on_event`` has no return value. Any value an implementation returns
+is ignored. The sink receives an isolated event copy, so mutating a
+payload cannot mutate the graph's in-memory log or projection. The
+context is a frozen value with ``run_id``, the event's one-based
+``sequence`` in the graph's currently materialized accepted log, and
+``mode: Literal["live", "replay_export"]``. Sequence, not timestamp,
+is the delivery-order authority. It is deliberately not the backend's
+internal ``seq`` column (which SQLite allocates across runs); after a
+normal load or fork it continues at history length + 1. A compaction
+horizon starts a new materialized-log position space, while event id
+remains the durable identity across that horizon. ``replay_export`` is
+reserved for the explicit historical-export path in #4; live dispatch
+never claims that mode.
+
+Lifecycle calls execute on the sink's worker, never on the event-emitting
+thread. ``open`` runs before the first delivery; a successful orderly
+close drains accepted queue entries, calls ``flush``, then ``close``.
+Lifecycle or delivery exceptions are observational failures only: they
+are recorded in sink status and metrics and never cross back into graph
+mutation, behavior scheduling, replay, fork, diff, or promotion.
+
+## v1.8 #2. Acceptance precedes an isolated bounded dispatch per attachment
+
+``Graph.add_sink`` is the primitive attachment API;
+``Runtime.add_sink`` delegates to it with the runtime's ``Metrics``
+backend. ``SinkConfig`` is the constructor/load/fork form for attaching
+one or more sinks with explicit ``name``, ``queue_capacity``, and
+``overflow_policy``. A bare ``EventSink`` uses the locked defaults:
+capacity 1024, ``drop_newest``, and its concrete class name as the
+attachment name. Names are unique within a graph because they are both
+status keys and metric-label values. Sinks are runtime-local resources:
+load and fork do not inherit them implicitly; callers attach them
+explicitly.
+
+The live acceptance boundary is ordered exactly:
+
+1. validate serializability when a durable store is attached;
+2. append to the graph's in-memory log;
+3. project the event;
+4. append it to the attached ``EventStore`` (when present);
+5. offer it, with its log sequence, to each sink's private bounded FIFO;
+6. notify the legacy synchronous listeners, including the runtime queue.
+
+If validation or durable append raises, step 5 is never reached. A sink
+therefore cannot observe an event rejected before acceptance. Sink offer
+precedes legacy listeners so a re-entrant listener cannot emit event
+N+1 before sinks have been offered event N, and so a legacy listener's
+exception cannot suppress observation of an already-accepted event.
+The sink fan-out is a dedicated path; ``Graph.add_listener`` keeps its
+historical synchronous behavior and is not redefined as this interface.
+
+Each attachment owns one daemon worker and one FIFO. The emit path uses
+a no-wait queue operation and never invokes adapter code, waits for
+capacity, drains, flushes, closes, or joins a worker. One hanging sink
+can fill only its own queue; it cannot delay another sink's worker or
+the runtime. Within one attachment, successful deliveries preserve the
+accepted per-run sequence. Across runs no total order is promised; an
+adapter instance shared by concurrent runs must be thread-safe, and the
+first-party JSONL and recording implementations are.
+
+Promotion delta events are ordinary accepted facts for observation even
+though behavior scheduling applies them quiescently. They therefore pass
+through step 5; the ``_promote_quiescent`` scheduling guard does not
+silence sinks.
+
+## v1.8 #3. Overflow is declared, counted, and queryable
+
+Every attachment selects one closed-set ``OverflowPolicy``:
+
+- ``drop_newest`` — reject the new offer and retain the queued prefix;
+- ``drop_oldest`` — evict the oldest waiting entry and accept the new
+  offer; delivered entries remain in increasing sequence with a visible
+  gap;
+- ``fail_sink`` — reject the triggering offer, mark the attachment
+  failed, and accept no later offers. Already-queued entries may drain
+  if the worker is able to continue.
+
+No policy waits for capacity. Every overflow increments the attachment's
+``dropped`` count with its reason. An ``on_event`` exception increments
+``errors`` and not ``delivered``; the worker continues so one bad record
+does not discard the bounded suffix silently. An ``open`` failure marks
+the attachment failed. ``SinkStatus`` exposes name, lifecycle state,
+capacity, current depth, policy, enqueued, delivered, dropped,
+error counts, and the last error. ``SinkHandle.status()``,
+``Graph.sink_statuses()`` / ``Runtime.sink_statuses()``, and bounded
+``flush_sinks`` / ``close_sinks`` calls are the in-process observability
+and lifecycle surface. A timeout reports incomplete flush/close; it does
+not wait forever on a hanging adapter.
+
+Four names are added to the locked standard metric table:
+
+- ``activegraph_sink_queue_depth{sink,run_id}`` (gauge);
+- ``activegraph_sink_events_delivered_total{sink}`` (counter);
+- ``activegraph_sink_events_dropped_total{sink,reason}`` (counter);
+- ``activegraph_sink_errors_total{sink,operation}`` (counter).
+
+The v0.8 #C4 cardinality rule remains unchanged: ``run_id`` appears only
+on the active-state queue-depth gauge, never on a sink counter. Status is
+the source of exact per-attachment counts even when ``NoOpMetrics`` is
+configured. Metric backend exceptions are best-effort and cannot turn a
+sink observation into a runtime failure.
+
+## v1.8 #4. Normal replay is silent; historical export is a separate mode
+
+``Graph._replay_event`` continues to append and project without live
+listeners OR sinks. ``Runtime.load`` and ``Runtime.fork`` rebuild history
+before explicitly requested sinks attach. Strict replay's fresh
+verification runtime inherits no sinks. Consequently normal load, fork,
+resume, snapshot reconstruction, and ``replay_strict`` never redeliver
+historical events, and adding sinks cannot change the event stream or the
+byte-level projected result.
+
+An explicit historical sink-export API is deferred in v1.8. The reserved
+``DeliveryContext(mode="replay_export")`` value is the compatibility stub:
+when an export API lands it MUST be an operator-invoked path, MUST preserve
+per-run sequence, and MUST mark every delivery ``replay_export``. It may
+not reuse live ``emit`` or enqueue behavior work. Until that API exists,
+no public path constructs replay-export deliveries.
+
+## v1.8 #5. JSONL is the first adapter and the conformance suite is the seam
+
+``JSONLEventSink`` is append-only UTF-8, one accepted event per line,
+with no rotation. Each line is canonical compact JSON with sorted keys:
+
+```json
+{"context":{"mode":"live","run_id":"...","sequence":1},"event":{"actor":"...","caused_by":null,"frame_id":null,"id":"evt_001","payload":{},"timestamp":"...","type":"goal.created"}}
+```
+
+It reuses the event-store JSON adapters for Decimal, date/datetime, and
+set normalization. Reopening appends; ``flush`` makes buffered bytes
+visible; ``close`` is idempotent. File rotation, OTel spans, Langfuse,
+websocket/SSE transport, and learning queues are later adapters, not
+v1.8 work.
+
+``activegraph.sinks.conformance.EventSinkConformance`` mirrors the store
+conformance pattern: a pytest-collectable abstract suite future adapters
+subclass with a factory and delivery reader. It exercises lifecycle,
+stable event/context round-trip, per-run order (including concurrent
+runs), post-acceptance delivery, broken-sink isolation, declared overflow,
+and normal-replay silence. ``RecordingSink`` is the thread-safe public
+test double for downstream suites. The first-party JSONL adapter passes
+the same suite; dispatch-specific acceptance tests additionally pin
+hanging-sink isolation, every overflow policy, event-copy isolation,
+promotion observation, and replay result identity.
+
+## v1.8 deliberately does NOT touch
+
+- No OTel span or trace export (ROADMAP Phase 5 remains deferred).
+- No new behavior hook and no sink-to-graph feedback channel.
+- No change to ``EventStore`` or ``GraphStore`` protocols or backends.
+- No historical export implementation beyond the typed mode reservation.
+- No Langfuse, UI transport, queue service, learning queue, or rotation.
+- No ``TrialExecutor``, authority/action-class, dev-override, or BabyAGI
+  product concepts.
+- No record/replay-hole work in this amendment; embeddings, direct
+  ``web_fetch``, and ambient wall-clock budgets remain the separate R5
+  workstream and begin only after this seam is fully green.
+
+## v1.8 clarification — durable append failure ends the live graph session
+
+The acceptance sequence in #2 preserves ``Graph.emit``'s established
+project-before-persist order.  An ``EventStore.append`` exception can therefore
+occur after the candidate event has entered this particular Graph instance's
+in-memory log and projection, even though it did not enter the durable log.  No
+sink is offered that candidate, and it is not counted as a sink drop: it never
+crossed the durable acceptance boundary.
+
+Such an exception leaves that live Graph instance indeterminate.  Continuing
+to emit on it is outside the runtime contract; the caller must discard it and
+load the run again from its EventStore before resuming.  In #1 and #2,
+``accepted log sequence`` consequently means the one-based materialized-log
+position on a live Graph that has not suffered a durable append failure.  It is
+delivery ordering metadata, not an EventStore commit receipt.  This
+clarification neither adds rollback to ``GraphStore`` nor changes an
+``EventStore`` protocol.
+
+## v1.8 clarification — exported gauge-series retirement is backend-owned
+
+The queue-depth metric follows the existing v0.8 cardinality schema:
+``run_id`` is admitted only on a gauge of current state and never on a
+counter or histogram.  An attachment publishes a final zero depth when its
+worker closes.  The three-method ``Metrics`` protocol deliberately has no
+label-removal operation, however, so it cannot promise that every backend
+immediately deletes the corresponding exported time series.  Prometheus,
+OpenTelemetry, and custom collector retention/expiry remain backend and
+operator responsibilities.  ``SinkStatus`` is the exact attachment-lifecycle
+authority; the gauge is a best-effort operational projection of it.

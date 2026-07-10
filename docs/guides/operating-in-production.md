@@ -11,15 +11,16 @@ you have a behavior that runs fine on your machine but you need to put
 it somewhere a team can rely on it, you are in the right place.
 
 The companion example is [`examples/operate_a_run.py`](https://github.com/yoheinakajima/activegraph/blob/main/examples/operate_a_run.py).
-Read it alongside this guide — every CLI command and library call shown
-here appears there. If the two ever disagree, the example is right.
+Read it alongside this guide as the executable spine of the operator loop.
+Focused sections below also show additive surfaces that the companion does
+not need; where the two demonstrate the same call, the example is right.
 
 ---
 
 ## The operator surface
 
 The framework treats the boundary between itself and the world it
-runs in as a load-bearing contract. Five primitives compose that
+runs in as a load-bearing contract. Six primitives compose that
 surface; together they make a run inspectable, observable, and
 recoverable without reading source code:
 
@@ -33,11 +34,15 @@ recoverable without reading source code:
    documented set of counters, histograms, and gauges. Custom backends
    (Datadog, statsd, internal collectors) implement the protocol —
    three methods.
-4. **`activegraph` CLI**: `inspect`, `replay`, `fork`, `diff`,
+4. **Event sinks**: the bounded, isolated `EventSink` protocol streams
+   accepted live events to observational adapters without putting adapter
+   I/O on the runtime hot path. `JSONLEventSink` is the first-party local
+   adapter; queue loss and failures are visible in status and metrics.
+5. **`activegraph` CLI**: `inspect`, `replay`, `fork`, `diff`,
    `export-trace`, `migrate`, `pack`, `quickstart`. The CLI is a thin
    wrapper around library APIs; anything it does, programmatic callers
    can do too.
-5. **Runtime introspection**: `runtime.status(recent=N)` returns a
+6. **Runtime introspection**: `runtime.status(recent=N)` returns a
    frozen snapshot of queue depth, budget remaining, registered
    behaviors, recent events, and current frame. The CLI's `inspect`
    command sits on top of this primitive.
@@ -54,10 +59,10 @@ for corrupted-payload recovery, `fork --record` for intentional
 re-recording).
 
 What the framework deliberately does **not** ship: a web UI, an HTTP
-server, a distributed runtime, real-time subscriptions, multi-model
-LLM routing, or streaming LLM responses. The framework is small,
-sharp, and operable. Plug in adapters at the boundaries where you
-need them.
+server, a distributed runtime, built-in websocket/SSE transport,
+multi-model LLM routing, or streaming LLM responses. The `EventSink`
+seam is the sanctioned boundary for a UI or transport adapter; those
+products and protocols are not baked into the runtime.
 
 ---
 
@@ -255,6 +260,63 @@ truth keeps the original. Redaction is a logging concern.
 
 ---
 
+## Event sinks
+
+An `EventSink` is offered every live event only after it has entered the
+log, updated the projection, and (when configured) reached the durable
+`EventStore`. Each attachment has its own bounded queue and daemon worker,
+so a slow or failing adapter cannot block behavior execution or another
+sink.
+
+```python
+from activegraph import (
+    Graph,
+    JSONLEventSink,
+    OverflowPolicy,
+    Runtime,
+    SinkConfig,
+)
+
+graph = Graph()
+rt = Runtime(
+    graph,
+    sinks=[
+        SinkConfig(
+            JSONLEventSink("accepted-events.jsonl"),
+            name="audit-jsonl",
+            queue_capacity=2048,
+            overflow_policy=OverflowPolicy.DROP_NEWEST,
+        )
+    ],
+)
+
+rt.run_goal("build the report")
+assert rt.flush_sinks(timeout=5.0)
+print(rt.sink_statuses())
+rt.close_sinks(timeout=5.0)
+```
+
+The defaults are capacity 1024 and `drop_newest`. The other declared
+policies are `drop_oldest` and `fail_sink`; none waits for capacity.
+Every overflow is counted in `SinkStatus` and the standard sink metrics.
+`RecordingSink` is the thread-safe in-memory double for application tests.
+Status snapshots include active sinks, timed-out closes that can be retried,
+and terminal close failures retained until their name is reused or removed.
+
+Normal `Runtime.load`, `fork`, and strict replay never redeliver history
+to live sinks. Passing `sinks=` to those APIs attaches them only after the
+recorded history (including snapshot-backed history) has rebuilt the graph;
+strict verification also completes before attachment. The first newly
+emitted event is the first delivery. Historical sink export is deliberately
+a separate future mode so an operator can never mistake replayed history for
+live activity.
+
+`JSONLEventSink` writes one canonical UTF-8 envelope per line with
+`context` (`run_id`, one-based sequence, `mode="live"`) and the complete
+event. It appends and does not rotate files.
+
+---
+
 ## Metrics
 
 The framework emits metrics through a three-method `Metrics` protocol:
@@ -267,7 +329,9 @@ class Metrics(Protocol):
 ```
 
 That's it. Three methods. No timers (use a histogram with a latency
-value). No summaries (Prometheus-specific). No custom types.
+value). No summaries (Prometheus-specific). No custom types. Implementations
+must be thread-safe because independent runtime and sink workers may share one
+metrics backend.
 
 ```python
 from activegraph.observability import PrometheusMetrics
@@ -320,6 +384,10 @@ keep working across framework versions.
 | `activegraph_tools_failed_total`                | counter   | `tool`, `reason`      |
 | `activegraph_tools_duration_seconds`            | histogram | `tool`                |
 | `activegraph_queue_depth`                       | gauge     | (none)                |
+| `activegraph_sink_queue_depth`                  | gauge     | `sink`, `run_id`      |
+| `activegraph_sink_events_delivered_total`       | counter   | `sink`                |
+| `activegraph_sink_events_dropped_total`         | counter   | `sink`, `reason`      |
+| `activegraph_sink_errors_total`                 | counter   | `sink`, `operation`   |
 | `activegraph_budget_cost_remaining_usd`         | gauge     | `run_id`              |
 | `activegraph_budget_events_remaining`           | gauge     | `run_id`              |
 | `activegraph_patterns_evaluated_total`          | counter   | (none)                |
@@ -335,10 +403,13 @@ test-pinned. New metrics get added in named releases, not silently.
 > cardinality is bounded by the number of concurrently active runs).
 > `run_id` MUST NOT appear as a tag on **counters or histograms**.
 
-This rule prevents the most common Prometheus operational disaster:
-unbounded cardinality from per-run labels accumulating forever. The
-budget gauges are the only exception, and they live only for the
-duration of a run.
+This schema rule keeps per-run labels off monotonic series, where they are
+especially dangerous. Budget gauges and per-sink queue-depth gauges are the
+exceptions. Active Graph publishes a final zero for a closing sink, but the
+three-method `Metrics` protocol has no label-removal operation: a Prometheus,
+OpenTelemetry, or custom backend may retain that zero-valued series until its
+own retention policy expires it. Plan collector retention accordingly; use
+`SinkStatus` as the exact in-process lifecycle authority.
 
 The conformance suite enforces this rule against the standard metric
 list. If you implement a custom `Metrics` backend, do the same.
@@ -346,7 +417,7 @@ list. If you implement a custom `Metrics` backend, do the same.
 ### Tag conventions
 
 Standard tag keys are: `event_type`, `behavior`, `tool`, `model`,
-`reason`, `run_id` (gauges only). Boolean tags (`cache_hit` is
+`sink`, `operation`, `reason`, `run_id` (gauges only). Boolean tags (`cache_hit` is
 modeled as a separate counter rather than a tag — see
 `activegraph_llm_cache_hits_total`). If your backend distinguishes
 booleans from strings, you won't have to special-case.

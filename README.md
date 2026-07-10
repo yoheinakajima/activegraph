@@ -72,6 +72,11 @@ are opt-in extras.
   and policies for a specific domain. The bundled
   [Diligence pack](activegraph/packs/diligence) is the reference:
   8 object types, 7 behaviors, 3 tools, recorded fixtures.
+- **Isolated event export.** `EventSink` streams accepted live events
+  through a bounded per-sink worker without putting adapter I/O on the
+  runtime hot path. `JSONLEventSink` is the first-party adapter; drops,
+  queue depth, and failures are explicit in status and metrics, and
+  normal replay never redelivers history.
 - **Per-error reference pages.** Every error message ends with a
   `More:` link to a page that explains when it fires, why, and how to
   fix it. Catalog at [docs.activegraph.ai/reference/errors](https://docs.activegraph.ai/reference/errors/).

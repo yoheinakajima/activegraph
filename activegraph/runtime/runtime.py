@@ -97,6 +97,13 @@ from activegraph.runtime.queue import EventQueue
 from activegraph.runtime.registry import Registry
 from activegraph.runtime.scheduler import DelayedQueue, ScheduledEntry
 from activegraph.runtime.view_builder import build_view
+from activegraph.sinks.base import (
+    EventSink,
+    OverflowPolicy,
+    SinkConfig,
+    SinkStatus,
+)
+from activegraph.sinks.dispatch import SinkHandle
 from activegraph.tools.base import Tool
 from activegraph.tools.cache import (
     CachedToolResponse,
@@ -249,8 +256,8 @@ class Runtime:
     ends the run. Construction wires the run-level choices: behaviors
     and tools (defaulting to the decorator registries), persistence
     (``persist_to=`` / ``store=``), the LLM provider with its retry
-    and replay caches, policy, frame, budget, and metrics. Failures
-    inside behaviors become ``behavior.failed`` events, not
+    and replay caches, policy, frame, budget, metrics, and outbound sinks.
+    Failures inside behaviors become ``behavior.failed`` events, not
     exceptions (CONTRACT v1.0 #4b) — read them from :attr:`errors`;
     exceptions surface only at construction and entry points.
     :meth:`Runtime.load` rebuilds a recorded run from its log;
@@ -283,6 +290,9 @@ class Runtime:
         tool_invoker: Any = None,  # defaults to DirectToolInvoker()
         # v0.8: observability
         metrics: Optional[Metrics] = None,
+        # v1.8: accepted-event observers. Bare sinks use SinkConfig defaults;
+        # workers start only after every other constructor check succeeds.
+        sinks: Optional[Iterable[EventSink | SinkConfig]] = None,
         # CONTRACT v1.3 #1 #2: opt-in native structured output. Default
         # False for the v1.3 cycle - native mode changes prompt hashes,
         # so flipping it must be a deliberate, cache-invalidating act.
@@ -292,6 +302,18 @@ class Runtime:
         # the runtime itself never calls it.
         embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> None:
+        initial_sink_configs = _normalize_sink_configs(sinks)
+        existing_sink_names = graph._sink_names_in_use()  # noqa: SLF001
+        for sink_config in initial_sink_configs:
+            sink_name = (
+                sink_config.name
+                if sink_config.name is not None
+                else type(sink_config.sink).__name__
+            )
+            if sink_name in existing_sink_names:
+                raise ValueError(
+                    f"sink name {sink_name!r} is already attached to this graph"
+                )
         self.graph = graph
         self.frame = frame
         self.policy = policy
@@ -437,7 +459,32 @@ class Runtime:
             )
             _resolve_and_validate_llm_models(source, self.llm_provider)
         from activegraph.runtime._live import track_runtime
+
+        try:
+            self._attach_sink_configs(initial_sink_configs)
+        except Exception:
+            graph._remove_listener(self._on_event)  # noqa: SLF001
+            raise
         track_runtime(self)
+
+    def _attach_sink_configs(self, configs: Iterable[SinkConfig]) -> None:
+        """Attach prevalidated configs atomically from the caller's view."""
+
+        attached_sinks: list[SinkHandle] = []
+        try:
+            for sink_config in configs:
+                attached_sinks.append(
+                    self.add_sink(
+                        sink_config.sink,
+                        name=sink_config.name,
+                        queue_capacity=sink_config.queue_capacity,
+                        overflow_policy=sink_config.overflow_policy,
+                    )
+                )
+        except Exception:
+            for attached_sink in attached_sinks:
+                self.graph.remove_sink(attached_sink, timeout=1.0)
+            raise
 
     # ---------- public surface ----------
 
@@ -476,6 +523,56 @@ class Runtime:
                 )
             )
         return out
+
+    # ---------- accepted-event sinks (CONTRACT v1.8) ----------
+
+    def add_sink(
+        self,
+        sink: EventSink,
+        *,
+        name: str | None = None,
+        queue_capacity: int = 1024,
+        overflow_policy: OverflowPolicy | str = OverflowPolicy.DROP_NEWEST,
+    ) -> SinkHandle:
+        """Attach a bounded, isolated observer for future accepted events.
+
+        Historical events already reconstructed by ``load`` or ``fork`` are
+        never offered.  The runtime's Metrics backend records queue depth,
+        successful delivery, declared drops, and adapter errors.
+        """
+
+        return self.graph.add_sink(
+            sink,
+            name=name,
+            queue_capacity=queue_capacity,
+            overflow_policy=overflow_policy,
+            metrics=self.metrics,
+        )
+
+    def remove_sink(
+        self,
+        sink: str | SinkHandle,
+        *,
+        timeout: float | None = 5.0,
+    ) -> bool:
+        """Detach, drain, and close one sink within ``timeout``."""
+
+        return self.graph.remove_sink(sink, timeout=timeout)
+
+    def sink_statuses(self) -> tuple[SinkStatus, ...]:
+        """Return exact local status snapshots for attached sinks."""
+
+        return self.graph.sink_statuses()
+
+    def flush_sinks(self, timeout: float | None = 5.0) -> bool:
+        """Flush all attached sinks, applying ``timeout`` to each worker."""
+
+        return self.graph.flush_sinks(timeout=timeout)
+
+    def close_sinks(self, timeout: float | None = 5.0) -> bool:
+        """Detach and close all sinks, applying ``timeout`` to each worker."""
+
+        return self.graph.close_sinks(timeout=timeout)
 
     # ---------- listener ----------
 
@@ -2518,6 +2615,7 @@ class Runtime:
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
         metrics: Optional[Metrics] = None,
+        sinks: Optional[Iterable[EventSink | SinkConfig]] = None,
         graph_store: Optional[GraphStore] = None,
         native_structured_output: bool = False,
         embedding_provider: Optional[EmbeddingProvider] = None,
@@ -2543,6 +2641,7 @@ class Runtime:
         an external graph database. The event log remains the source of
         truth — this only changes where the projection is materialized.
         """
+        sink_configs = _normalize_sink_configs(sinks)
         chosen = run_id or _most_recent_run_id(path)
         if chosen is None:
             raise FileNotFoundError(f"no runs found in {path}")
@@ -2588,6 +2687,7 @@ class Runtime:
             tool_cache=tcache,
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
             metrics=metrics,
+            sinks=None,
             native_structured_output=native_structured_output,
             embedding_provider=embedding_provider,
         )
@@ -2621,6 +2721,7 @@ class Runtime:
                 native_structured_output=native_structured_output,
             )
 
+        rt._attach_sink_configs(sink_configs)
         return rt
 
     def fork(
@@ -2637,6 +2738,8 @@ class Runtime:
         tools: Optional[Iterable[Tool]] = None,
         replay_tool_cache: bool = False,
         replay_reinvoke_deterministic: bool = False,
+        metrics: Optional[Metrics] = None,
+        sinks: Optional[Iterable[EventSink | SinkConfig]] = None,
         graph_store: Optional[GraphStore] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
     ) -> "Runtime":
@@ -2655,6 +2758,7 @@ class Runtime:
         an external graph database. The fork's event log remains the source
         of truth — this only changes where the projection is materialized.
         """
+        sink_configs = _normalize_sink_configs(sinks)
         from activegraph.store.sqlite import SQLiteEventStore
 
         store = self.graph.store
@@ -2773,6 +2877,8 @@ class Runtime:
             replay_tool_cache=replay_tool_cache,
             tool_cache=tcache,
             replay_reinvoke_deterministic=replay_reinvoke_deterministic,
+            metrics=metrics,
+            sinks=None,
             # CONTRACT v1.3 #1: forks inherit the parent's mode posture
             # so pre-populated caches stay reachable.
             native_structured_output=self.native_structured_output,
@@ -2793,6 +2899,7 @@ class Runtime:
         # v1.4: the fork inherits approvals still pending at the fork
         # point, rebuilt from its copied log.
         _rebuild_pending_approvals(rt, events)
+        rt._attach_sink_configs(sink_configs)
         return rt
 
     def diff(self, other: "Runtime") -> Diff:
@@ -3236,6 +3343,36 @@ def _now_iso() -> str:
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z")
     )
+
+
+def _normalize_sink_configs(
+    sinks: Optional[Iterable[EventSink | SinkConfig]],
+) -> list[SinkConfig]:
+    """Freeze and validate constructor/load/fork sink configuration.
+
+    No worker starts here. Resolving the complete iterable and its names
+    first prevents a late duplicate-name failure from leaking workers out of
+    a partially constructed Runtime.
+    """
+
+    if sinks is None:
+        return []
+    configs: list[SinkConfig] = []
+    names: set[str] = set()
+    for item in sinks:
+        config = item if isinstance(item, SinkConfig) else SinkConfig(sink=item)
+        if not isinstance(config.sink, EventSink):
+            raise TypeError(
+                "sink must implement open(), on_event(), flush(), and close()"
+            )
+        name = config.name if config.name is not None else type(config.sink).__name__
+        if name in names:
+            raise ValueError(
+                f"sink name {name!r} appears more than once; set SinkConfig.name"
+            )
+        names.add(name)
+        configs.append(config)
+    return configs
 
 
 def _first_goal(graph: Graph) -> Optional[str]:

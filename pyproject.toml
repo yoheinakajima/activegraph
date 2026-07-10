@@ -151,8 +151,9 @@ markers = [
 # it to both `files` and the per-module override below. The gate then
 # enforces the new module's strict-mode invariants going forward.
 #
-# Current baseline (v1.3 Phase 1): 41/41 allowlist modules pass
-# (100%). The burndown that closed the original 16-module gap is the
+# Current configured gate: 48/48 source files pass; the generated public-
+# surface audit is 46/46 modules (100%). The burndown that closed the
+# original 16-module gap is the
 # CONTRACT v1.1 #3 follow-on, landed as the v1.3 Phase 1 PR series;
 # TYPE_REPORT.md tracks the audit state.
 
@@ -203,9 +204,16 @@ files = [
     "activegraph/runtime/exec_errors.py",
     "activegraph/runtime/diff.py",
     "activegraph/runtime/patterns.py",
+    "activegraph/runtime/promote.py",
     "activegraph/runtime/registration_errors.py",
     "activegraph/runtime/runtime.py",
     "activegraph/runtime/scheduler.py",
+    "activegraph/sinks/__init__.py",
+    "activegraph/sinks/base.py",
+    "activegraph/sinks/conformance.py",
+    "activegraph/sinks/dispatch.py",
+    "activegraph/sinks/jsonl.py",
+    "activegraph/sinks/testing.py",
     "activegraph/store/base.py",
     "activegraph/store/errors.py",
     "activegraph/store/falkordb.py",
@@ -251,9 +259,16 @@ module = [
     "activegraph.runtime.exec_errors",
     "activegraph.runtime.diff",
     "activegraph.runtime.patterns",
+    "activegraph.runtime.promote",
     "activegraph.runtime.registration_errors",
     "activegraph.runtime.runtime",
     "activegraph.runtime.scheduler",
+    "activegraph.sinks",
+    "activegraph.sinks.base",
+    "activegraph.sinks.conformance",
+    "activegraph.sinks.dispatch",
+    "activegraph.sinks.jsonl",
+    "activegraph.sinks.testing",
     "activegraph.store.base",
     "activegraph.store.errors",
     "activegraph.store.falkordb",

@@ -8,8 +8,8 @@ build an Event and call emit.
 CONTRACT v0.5 #15: the projector is `apply_event(graph, event)`, a
 module-level function — the ONLY thing that mutates graph state. It is
 called from two paths:
-  - `Graph.emit` for live events (also persists + notifies listeners)
-  - `Graph._replay_event` for replay (silent: no persist, no notify)
+  - `Graph.emit` for live events (persists, offers sinks, notifies listeners)
+  - `Graph._replay_event` for replay (silent: no persist, sinks, or listeners)
 Two callers, one code path.
 
 CONTRACT #5 (provenance): every object/relation/patch carries a provenance
@@ -23,6 +23,7 @@ bumps on every patch.applied. Patches record `expected_version`.
 from __future__ import annotations
 
 import copy
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
@@ -33,6 +34,9 @@ from activegraph.core.ids import IDGen
 from activegraph.core.patch import Patch
 
 if TYPE_CHECKING:
+    from activegraph.observability.metrics import Metrics
+    from activegraph.sinks.base import EventSink, OverflowPolicy, SinkStatus
+    from activegraph.sinks.dispatch import SinkHandle
     from activegraph.store.base import EventStore
 
 
@@ -127,10 +131,11 @@ class Graph:
     method builds an event, appends it to the log, projects it into
     the materialized state (a pluggable :class:`GraphStore`,
     CONTRACT v1.2 #1), persists it when an ``EventStore`` is
-    attached, and notifies listeners. Read surfaces (``objects``,
+    attached, offers isolated sinks, and notifies listeners. Read surfaces (``objects``,
     ``relations``, ``neighborhood``, ``match_chain``) delegate to
     the projection's query hooks. Wiping the projection loses
-    nothing — replaying the log rebuilds it.
+    nothing — replaying the log rebuilds it. Accepted live events fan out
+    through bounded ``EventSink`` workers; replay never does.
     """
 
     def __init__(
@@ -157,6 +162,20 @@ class Graph:
 
         # listeners (the runtime queue subscribes here)
         self._listeners: list[Callable[[Event], None]] = []
+
+        # Serialize each graph's live acceptance + sink-offer boundary. RLock
+        # preserves the supported re-entrant listener shape while concurrent
+        # callers cannot reverse log/sink order. Legacy listeners run after
+        # this lock is released so their historical synchronous behavior does
+        # not make unrelated emitting threads wait on one another.
+        self._emit_lock = threading.RLock()
+
+        # CONTRACT v1.8: outbound accepted-event observers use a separate,
+        # isolated dispatch path.  They are not synchronous listeners and
+        # never run adapter code on emit's thread.
+        self._sinks: dict[str, SinkHandle] = {}
+        self._closing_sinks: dict[str, SinkHandle] = {}
+        self._terminal_sink_statuses: dict[str, SinkStatus] = {}
 
         # CONTRACT v0.5 #14: track which events were replayed (not live).
         # The trace printer renders them with a [replay.event] prefix.
@@ -307,7 +326,168 @@ class Graph:
     # ---------- listener API (runtime hooks here) ----------
 
     def add_listener(self, fn: Callable[[Event], None]) -> None:
-        self._listeners.append(fn)
+        with self._emit_lock:
+            self._listeners.append(fn)
+
+    def _remove_listener(self, fn: Callable[[Event], None]) -> bool:
+        """Remove one runtime-internal listener if it is attached."""
+
+        with self._emit_lock:
+            try:
+                self._listeners.remove(fn)
+            except ValueError:
+                return False
+            return True
+
+    # ---------- accepted-event sink API ----------
+
+    def add_sink(
+        self,
+        sink: EventSink,
+        *,
+        name: str | None = None,
+        queue_capacity: int = 1024,
+        overflow_policy: OverflowPolicy | str = "drop_newest",
+        metrics: Metrics | None = None,
+    ) -> SinkHandle:
+        """Attach one isolated outbound observer of accepted live events.
+
+        The returned handle owns a bounded FIFO and daemon worker.  A class
+        name is used when ``name`` is omitted; names must be unique within
+        the graph because they key both status and metrics.  Historical
+        events already present in the graph are never delivered.
+        """
+
+        from activegraph.observability.metrics import NoOpMetrics
+        from activegraph.sinks.base import EventSink as EventSinkProtocol
+        from activegraph.sinks.base import OverflowPolicy as SinkOverflowPolicy
+        from activegraph.sinks.dispatch import SinkHandle
+
+        if not isinstance(sink, EventSinkProtocol):
+            raise TypeError(
+                "sink must implement open(), on_event(), flush(), and close()"
+            )
+        resolved_name = name if name is not None else type(sink).__name__
+        if not resolved_name.strip():
+            raise ValueError("sink name must not be empty")
+        policy = SinkOverflowPolicy(overflow_policy)
+        with self._emit_lock:
+            if resolved_name in self._sinks or resolved_name in self._closing_sinks:
+                raise ValueError(
+                    f"sink name {resolved_name!r} is already attached to this graph"
+                )
+            handle = SinkHandle(
+                sink,
+                name=resolved_name,
+                run_id=self.run_id,
+                queue_capacity=queue_capacity,
+                overflow_policy=policy,
+                metrics=metrics if metrics is not None else NoOpMetrics(),
+                _owner_close=self._close_owned_sink,
+            )
+            self._terminal_sink_statuses.pop(resolved_name, None)
+            self._sinks[resolved_name] = handle
+        return handle
+
+    def remove_sink(
+        self,
+        sink: str | SinkHandle,
+        *,
+        timeout: float | None = 5.0,
+    ) -> bool:
+        """Detach, drain, and close one sink within ``timeout``."""
+
+        name = sink if isinstance(sink, str) else sink.name
+        with self._emit_lock:
+            handle = self._sinks.get(name)
+            if handle is not None:
+                if not isinstance(sink, str) and handle is not sink:
+                    return False
+                del self._sinks[name]
+                self._closing_sinks[name] = handle
+            else:
+                handle = self._closing_sinks.get(name)
+            if handle is None or (not isinstance(sink, str) and handle is not sink):
+                if isinstance(sink, str) and name in self._terminal_sink_statuses:
+                    del self._terminal_sink_statuses[name]
+                    return True
+                if not isinstance(sink, str):
+                    return sink.status().state.value == "closed"
+                return False
+        closed = handle._close_worker(  # noqa: SLF001 — graph owns handles
+            timeout=timeout
+        )
+        if closed or handle._is_terminal():  # noqa: SLF001 — graph owns handles
+            with self._emit_lock:
+                if self._closing_sinks.get(name) is handle:
+                    del self._closing_sinks[name]
+                    if not closed:
+                        self._terminal_sink_statuses[name] = handle.status()
+                    handle._owner_close = None  # noqa: SLF001 — release graph cycle
+        return closed
+
+    def _close_owned_sink(
+        self, handle: SinkHandle, timeout: float | None
+    ) -> bool:
+        """Detach and close a handle through its owning graph."""
+
+        return self.remove_sink(handle, timeout=timeout)
+
+    def sink_statuses(self) -> tuple[SinkStatus, ...]:
+        """Return active, closing, and retained failed status snapshots.
+
+        A timed-out close remains visible and retryable.  A terminal close
+        failure is retained until its name is reused or explicitly removed.
+        """
+
+        with self._emit_lock:
+            handles = tuple(self._sinks.values())
+            closing = tuple(self._closing_sinks.values())
+            terminal = tuple(self._terminal_sink_statuses.values())
+        return (
+            tuple(handle.status() for handle in handles)
+            + tuple(handle.status() for handle in closing)
+            + terminal
+        )
+
+    def _sink_names_in_use(self) -> frozenset[str]:
+        """Return names reserved by active or still-closing attachments."""
+
+        with self._emit_lock:
+            return frozenset(self._sinks) | frozenset(self._closing_sinks)
+
+    def flush_sinks(self, timeout: float | None = 5.0) -> bool:
+        """Flush every attached sink, with ``timeout`` applied per sink."""
+
+        with self._emit_lock:
+            handles = tuple(self._sinks.values()) + tuple(
+                self._closing_sinks.values()
+            )
+        results = [handle.flush(timeout=timeout) for handle in handles]
+        return all(results)
+
+    def close_sinks(self, timeout: float | None = 5.0) -> bool:
+        """Detach and close every sink, with ``timeout`` applied per sink."""
+
+        with self._emit_lock:
+            for name, handle in tuple(self._sinks.items()):
+                self._closing_sinks[name] = handle
+            self._sinks.clear()
+            handles = tuple(self._closing_sinks.items())
+        results: list[bool] = []
+        for name, handle in handles:
+            closed = handle._close_worker(  # noqa: SLF001 — graph owns handles
+                timeout=timeout
+            )
+            results.append(closed)
+            if closed or handle._is_terminal():  # noqa: SLF001 — graph owns handles
+                with self._emit_lock:
+                    if self._closing_sinks.get(name) is handle:
+                        del self._closing_sinks[name]
+                        if not closed:
+                            self._terminal_sink_statuses[name] = handle.status()
+                        handle._owner_close = None  # noqa: SLF001 — release graph cycle
+        return all(results)
 
     # ---------- store attachment (Runtime sets this) ----------
 
@@ -357,18 +537,46 @@ class Graph:
     # ---------- the only mutator (live path) ----------
 
     def emit(self, event: Event) -> Event:
-        """Append to log, project, persist (if attached), notify. CONTRACT #2."""
-        # Fail-fast serialization check at emit time so bad payloads never
-        # land in the in-memory log either (CONTRACT v0.5 #4).
-        if self._store is not None:
-            from activegraph.store.serde import validate_event
+        """Append, project, persist, offer sinks, then notify listeners."""
+        with self._emit_lock:
+            # Fail-fast serialization check at emit time so bad payloads never
+            # land in the in-memory log either (CONTRACT v0.5 #4).
+            if self._store is not None:
+                from activegraph.store.serde import validate_event
 
-            validate_event(event)
-        self._events.append(event)
-        apply_event(self, event)
-        if self._store is not None:
-            self._store.append(event)
-        for listener in self._listeners:
+                validate_event(event)
+            self._events.append(event)
+            apply_event(self, event)
+            if self._store is not None:
+                self._store.append(event)
+            # CONTRACT v1.8 #2: offer only after projection + durable append,
+            # and before legacy listeners. The position preserves order when
+            # a listener re-enters emit and prevents listener failure from
+            # suppressing observation of an already-accepted event.
+            if self._sinks:
+                from activegraph.sinks.base import DeliveryContext
+
+                context = DeliveryContext(
+                    run_id=self.run_id,
+                    sequence=len(self._events),
+                    mode="live",
+                )
+                for sink in tuple(self._sinks.values()):
+                    try:
+                        sink._offer(  # noqa: SLF001 — graph-only seam
+                            event, context
+                        )
+                    except Exception:
+                        # SinkHandle._offer is designed non-throwing; keep this
+                        # final containment boundary so an observer bug can
+                        # never turn accepted observation into graph control
+                        # flow.
+                        continue
+            listeners = tuple(self._listeners)
+        # Keep legacy callbacks synchronous, exception-propagating, and outside
+        # the sink-order lock. In particular, an existing listener may start a
+        # second emitting thread and wait for it without deadlocking Graph.
+        for listener in listeners:
             listener(event)
         return event
 

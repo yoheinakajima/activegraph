@@ -20,6 +20,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `Clock`
 - [x] `ConfigurationError`
 - [x] `CorruptedEventPayloadError`
+- [x] `DeliveryContext`
 - [x] `Diff`
 - [x] `DiscoveredPack`
 - [x] `DivergentObject`
@@ -28,6 +29,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `EmptySettings`
 - [x] `Event`
 - [x] `EventNotFoundError`
+- [x] `EventSink`
 - [x] `EventStore`
 - [x] `ExecutionError`
 - [x] `FalkorDBGraphStore`
@@ -46,6 +48,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `InvalidRuntimeConfiguration`
 - [x] `InvalidStoreURL`
 - [x] `InvalidToolRegistration`
+- [x] `JSONLEventSink`
 - [x] `LLMBehavior`
 - [x] `LLMBehaviorError`
 - [x] `Metrics`
@@ -59,6 +62,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `Object`
 - [x] `ObjectType`
 - [x] `OpenTelemetryMetrics`
+- [x] `OverflowPolicy`
 - [x] `Pack`
 - [x] `PackConflictError`
 - [x] `PackError`
@@ -75,6 +79,13 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `PendingApproval`
 - [x] `Policy`
 - [x] `PrometheusMetrics`
+- [x] `PromoteConflict`
+- [x] `PromoteConflictError`
+- [x] `PromoteLineageError`
+- [x] `PromotePlan`
+- [x] `PromoteResult`
+- [x] `RecordedDelivery`
+- [x] `RecordingSink`
 - [x] `RegistrationError`
 - [x] `Relation`
 - [x] `RelationBehavior`
@@ -87,6 +98,10 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `RuntimeStatus`
 - [x] `SQLiteEventStore`
 - [x] `SchemaVersionMismatch`
+- [x] `SinkConfig`
+- [x] `SinkHandle`
+- [x] `SinkState`
+- [x] `SinkStatus`
 - [x] `StorageError`
 - [x] `TickingClock`
 - [x] `Tool`
@@ -120,6 +135,11 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `pack`
 
 ## Ring 1 — importable but not in `__all__` (target 80% not-missing)
+
+### `activegraph._signature`
+
+- [x] `infer_tool_input_schema`
+- [x] `validate_handler_signature`
 
 ### `activegraph.cli.main`
 
@@ -157,6 +177,16 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `CachedEntry` — **one-line**
 - [ ] `LLMCache` — **missing**
 
+### `activegraph.llm.embedding`
+
+- [x] `EmbeddingProvider`
+- [x] `HashEmbeddingProvider`
+
+### `activegraph.llm.native`
+
+- [x] `inject_additional_properties_false`
+- [x] `native_schema_compatible`
+
 ### `activegraph.llm.openai`
 
 - [x] `OpenAIProvider`
@@ -190,6 +220,13 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `LLMMessage`
 - [x] `LLMResponse` — **one-line**
 - [x] `ToolCall`
+
+### `activegraph.llm.wire`
+
+- [x] `build_tool_name_map`
+- [x] `classify_provider_exception`
+- [x] `restore_tool_name`
+- [x] `sanitize_tool_name`
 
 ### `activegraph.observability.logging`
 
@@ -264,6 +301,18 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `PackRuntimeState` — **one-line**
 - [x] `load_pack_into_runtime` — **one-line**
 
+### `activegraph.packs.manifest`
+
+- [x] `CapabilityDecl` — **one-line**
+- [x] `PackManifest`
+- [x] `PackManifestError`
+- [x] `compute_bundle_hash`
+- [x] `compute_content_hash`
+- [x] `load_manifest`
+- [x] `verify_bundle_hash`
+- [x] `verify_content_hash`
+- [x] `verify_surface`
+
 ### `activegraph.packs.scaffold`
 
 - [x] `normalize_pack_name`
@@ -299,6 +348,12 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `Tok` — **one-line**
 - [x] `parse` — **one-line**
 
+### `activegraph.runtime.promote`
+
+- [x] `build_base_graph`
+- [x] `compute_promote_plan`
+- [x] `promote_warnings`
+
 ### `activegraph.runtime.queue`
 
 - [ ] `EventQueue` — **missing**
@@ -321,6 +376,23 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 - [ ] `build_view` — **missing**
 
+### `activegraph.sandbox`
+
+- [x] `PackSource`
+- [x] `SandboxStartupError`
+- [x] `TrialLimits`
+- [x] `TrialReport`
+- [x] `preflight`
+- [x] `run_forked_trial`
+
+### `activegraph.sandbox._child`
+
+- [ ] `main` — **missing**
+
+### `activegraph.sinks.conformance`
+
+- [x] `EventSinkConformance`
+
 ### `activegraph.store.base`
 
 - [x] `replay_into`
@@ -336,6 +408,16 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 ### `activegraph.store.postgres`
 
 - [x] `PostgresEventStore` — **one-line**
+
+### `activegraph.store.retention`
+
+- [x] `RetentionPinnedError`
+- [x] `SnapshotIntegrityError` — **one-line**
+- [x] `compact`
+- [x] `pins`
+- [x] `retire`
+- [x] `state_hash_of` — **one-line**
+- [x] `verify_snapshot`
 
 ### `activegraph.store.serde`
 
@@ -380,20 +462,20 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### `activegraph.trace.printer`
 
-- [ ] `Trace` — **missing**
+- [x] `Trace`
 - [ ] `format_event` — **missing**
 
 ## Summary
 
 ### Ring 0 — public surface (target 100%)
 
-- **106/106 fully documented (100.0%)** — gap to 100% full: **0 symbols**
-- **106/106 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
+- **121/121 fully documented (100.0%)** — gap to 100% full: **0 symbols**
+- **121/121 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)
 
-- **63/124 fully documented (50.8%)** — v1.1 burndown target is 100% full
-- **107/124 not-missing (86.3%)** — gate threshold is 80% not-missing
+- **97/161 fully documented (60.2%)** — v1.1 burndown target is 100% full
+- **144/161 not-missing (89.4%)** — gate threshold is 80% not-missing
 
 Ring 1 is **above** the 80% gate threshold. The gate enforces the threshold; individual missing-Ring-1 symbols are v1.1 burndown items, not gate exemptions.
 

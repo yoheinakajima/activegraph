@@ -29,7 +29,8 @@ class Metrics(Protocol):
     """Three methods, all best-effort, all non-throwing.
 
     Implementations MUST tolerate unknown metric names. Unknown tag keys
-    are also accepted; cardinality discipline is the caller's job.
+    are also accepted; cardinality discipline is the caller's job. Methods
+    may be called concurrently by independent runtime and sink workers.
     """
 
     def counter(self, name: str, tags: dict[str, str], value: float = 1.0) -> None: ...
@@ -165,6 +166,30 @@ METRIC_NAMES: tuple[MetricSpec, ...] = (
         "gauge",
         (),
         "Current depth of the runtime's event queue.",
+    ),
+    MetricSpec(
+        "activegraph_sink_queue_depth",
+        "gauge",
+        ("sink", "run_id"),
+        "Waiting deliveries in one attached sink's bounded queue.",
+    ),
+    MetricSpec(
+        "activegraph_sink_events_delivered_total",
+        "counter",
+        ("sink",),
+        "Events successfully handled by an attached sink.",
+    ),
+    MetricSpec(
+        "activegraph_sink_events_dropped_total",
+        "counter",
+        ("sink", "reason"),
+        "Sink deliveries rejected or evicted under declared policy.",
+    ),
+    MetricSpec(
+        "activegraph_sink_errors_total",
+        "counter",
+        ("sink", "operation"),
+        "Adapter lifecycle or on_event failures isolated by sink workers.",
     ),
     MetricSpec(
         "activegraph_budget_cost_remaining_usd",
