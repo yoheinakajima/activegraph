@@ -7909,6 +7909,15 @@ first rebuilt hash mismatch raises ``ReplayDivergenceError`` at the new
 ``embedding.requested`` event, and a missing recorded response fails before
 any provider contact.  Thus strict replay never contacts an embedding system.
 
+A ``Runtime.embed`` call made directly by operator code has no causal behavior
+event and the source text is deliberately absent from the log, so strict
+*behavior* verification cannot re-execute that operator action.  It treats the
+direct request/response pair as recorded external input rather than derived
+behavior output.  ``Runtime.load(..., replay_embedding_cache=True)`` still
+hydrates the recorded return, and repeating the same direct call serves it
+offline.  Behavior-derived ``ctx.embed`` calls are the requests strict replay
+rebuilds and hash-verifies.
+
 The provider object stays public because Python cannot make it private and
 existing pack configuration already reads ``runtime.embedding_provider``.
 Calling ``provider.embed`` directly is therefore possible but explicitly
