@@ -8086,3 +8086,66 @@ or network work and declares that absence honestly.
 - No artifact upload/storage subsystem; the typed empty-or-reference field is
   the compatibility seam.
 - No BabyAGI product concept and no executor-specific field on Runtime.
+
+# v1.8 — R3 explicit `dev.override`
+
+Opened only after R5 and R4 were independently green.  This amendment
+implements the runtime constitution's section 3 / D013 as an auditable local
+receipt, not as a generic ``force=`` flag and not as an authority system.
+
+## v1.8 #13. Every override is a log fact before it is usable
+
+``Runtime.dev_override`` requires non-empty ``actor``, ``reason``, exact
+``target_gate``, exact ``scope``, and ``resulting_authority``.  It first emits
+``dev.override`` with all five fields, then returns frozen ``DevOverride``
+containing the run id and accepted event id.  If event acceptance or durable
+append fails, no receipt is returned and the caller must discard/reload the
+indeterminate Graph under the existing v1.8 append-failure rule.
+
+``Runtime.dev_overrides()`` reconstructs receipts from the current run log,
+so load/fork/replay see the same explicit marker.  A receipt contributes zero
+score and does not mutate graph authority, pack settings, approvals, policy,
+promotion state, or a behavior registry merely by existing.
+
+## v1.8 #14. Use is exact, local, and opt-in at the gate
+
+``Runtime.validate_dev_override(receipt, target_gate, scope,
+required_authority)`` returns true only when:
+
+1. the receipt names this runtime's run;
+2. the referenced accepted event is a byte-for-field ``dev.override`` match;
+3. target gate and scope match exactly (no prefix or wildcard widening); and
+4. the required authority is no greater than the receipt's resulting
+   authority.
+
+The closed local authority order is ``R0 < R1 < R2 < R3``.  ``R4`` is not a
+valid resulting or required authority on this path.  A downstream local gate
+must explicitly call the validator and decide what its bypass means; the
+runtime never scans for an override and silently disables checks.  This keeps
+the mechanism useful to local tooling while preventing a broad ambient
+"developer mode" from changing unrelated decisions.
+
+## v1.8 #15. Promotion, logging, and governance are non-bypassable here
+
+``Runtime.dev_override`` rejects every target in the ``promote`` /
+``promotion`` namespace, every event-log/logging target, and any request for
+``R4``.  ``validate_dev_override`` applies the same deny-list even to a
+fabricated receipt.  There is no ``force=`` parameter added to ``promote`` and
+no receipt parameter on its conflict path: re-forking remains the only escape
+from a fail-closed promotion conflict.
+
+The event itself uses ordinary ``Graph.emit`` and cannot suppress its own
+logging, EventStore append, EventSink offer, or replay.  The actor and reason
+are mandatory provenance, not optional comments.  Governance-level authority
+requires the dedicated action-class/gate workstream; this trace marker cannot
+grant it.
+
+## v1.8 R3 deliberately does NOT touch
+
+- No canonical ``action_class`` enforcement (R2 remains a separate coordinated
+  workstream) and no mapping from legacy risk labels.
+- No change to promotion, approval semantics, policy evaluation, pack settings,
+  scoring, EventStore/GraphStore/EventSink, or TrialExecutor.
+- No global environment switch, wildcard scope, implicit gate discovery,
+  remote override service, or governance authority.
+- No BabyAGI level, badge, score, or product concept.
