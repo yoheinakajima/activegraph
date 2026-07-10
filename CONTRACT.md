@@ -7860,3 +7860,15 @@ position on a live Graph that has not suffered a durable append failure.  It is
 delivery ordering metadata, not an EventStore commit receipt.  This
 clarification neither adds rollback to ``GraphStore`` nor changes an
 ``EventStore`` protocol.
+
+## v1.8 clarification — exported gauge-series retirement is backend-owned
+
+The queue-depth metric follows the existing v0.8 cardinality schema:
+``run_id`` is admitted only on a gauge of current state and never on a
+counter or histogram.  An attachment publishes a final zero depth when its
+worker closes.  The three-method ``Metrics`` protocol deliberately has no
+label-removal operation, however, so it cannot promise that every backend
+immediately deletes the corresponding exported time series.  Prometheus,
+OpenTelemetry, and custom collector retention/expiry remain backend and
+operator responsibilities.  ``SinkStatus`` is the exact attachment-lifecycle
+authority; the gauge is a best-effort operational projection of it.
