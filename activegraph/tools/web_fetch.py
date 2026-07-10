@@ -40,6 +40,13 @@ class WebFetchOutput(BaseModel):
     deterministic=False,
 )
 def web_fetch(args: WebFetchInput, ctx: ToolContext) -> WebFetchOutput:
+    if ctx.external_io_mode not in {"runtime_recorded", "live_unrecorded"}:
+        raise ToolError(
+            "tool.unrecorded_external_io",
+            "direct web_fetch is unrecorded; use runtime tool dispatch or "
+            "set external_io_mode='live_unrecorded' explicitly",
+            payload_extras={"url": args.url},
+        )
     import urllib.error
     import urllib.request
 

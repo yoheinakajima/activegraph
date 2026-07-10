@@ -84,7 +84,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `PromoteLineageError`
 - [x] `PromotePlan`
 - [x] `PromoteResult`
-- [x] `RecordedDelivery`
+- [ ] `RecordedDelivery` — **one-line**
 - [x] `RecordingSink`
 - [x] `RegistrationError`
 - [x] `Relation`
@@ -100,7 +100,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `SchemaVersionMismatch`
 - [x] `SinkConfig`
 - [x] `SinkHandle`
-- [x] `SinkState`
+- [ ] `SinkState` — **one-line**
 - [x] `SinkStatus`
 - [x] `StorageError`
 - [x] `TickingClock`
@@ -469,7 +469,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### Ring 0 — public surface (target 100%)
 
-- **121/121 fully documented (100.0%)** — gap to 100% full: **0 symbols**
+- **119/121 fully documented (98.3%)** — gap to 100% full: **2 symbols**
 - **121/121 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)

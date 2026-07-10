@@ -17,6 +17,8 @@ Provides:
                      enforce via signal/select; the runtime does NOT
                      forcibly preempt (no thread/signal magic).
   - logger:          a `logging.Logger` named "activegraph.tools.<tool>"
+  - external_io_mode: runtime dispatch marks recorded I/O; direct external
+                     I/O must explicitly select ``live_unrecorded``.
 
 Does NOT provide a graph reference. Tools that need to read graph
 state (e.g. `graph_query`) close over the Graph at registration time
@@ -30,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 if TYPE_CHECKING:
     from activegraph.frame import Frame
@@ -46,7 +48,10 @@ class ToolContext:
     job), the decorator's ``timeout_seconds`` (advisory; the runtime
     does not preempt), and a per-tool logger. No graph reference —
     tools that need graph state close over it explicitly at
-    registration (see ``make_graph_query_tool``).
+    registration (see ``make_graph_query_tool``). ``external_io_mode``
+    defaults to ``"forbid"``; runtime dispatch supplies
+    ``"runtime_recorded"`` and an intentional replay bypass must say
+    ``"live_unrecorded"``.
     """
 
     behavior_name: str
@@ -57,3 +62,6 @@ class ToolContext:
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("activegraph.tools")
     )
+    external_io_mode: Literal[
+        "forbid", "runtime_recorded", "live_unrecorded"
+    ] = "forbid"

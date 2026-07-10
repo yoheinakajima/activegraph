@@ -8,9 +8,8 @@ Public surface:
   AnthropicProvider      — reference implementation
   OpenAIProvider         — second concrete provider, surface parity
                            with AnthropicProvider (v1.0.1 #5)
+  EmbeddingCache         — content-keyed replay cache for Runtime.embed
   EmbeddingProvider      — Protocol for text-embedding providers
-                           (v1.3); the runtime holds one for packs,
-                           it never calls it itself
   HashEmbeddingProvider  — deterministic, dependency-free test double
                            for embedding plumbing
   RecordedLLMProvider    — fixture-backed provider for tests
@@ -32,6 +31,7 @@ Public surface:
 from activegraph.llm.anthropic import AnthropicProvider
 from activegraph.llm.cache import LLMCache
 from activegraph.llm.embedding import EmbeddingProvider, HashEmbeddingProvider
+from activegraph.llm.embedding_cache import EmbeddingCache
 from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.llm.openai import OpenAIProvider
 from activegraph.llm.parsing import parse_structured_response
@@ -49,6 +49,7 @@ from activegraph.llm.types import LLMMessage, LLMResponse, ToolCall
 __all__ = [
     "AnthropicProvider",
     "AssembledPrompt",
+    "EmbeddingCache",
     "EmbeddingProvider",
     "HashEmbeddingProvider",
     "LLMBehaviorError",

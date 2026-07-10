@@ -28,6 +28,14 @@ No breaking changes. Applications that want an event stream attach an
 Call `flush_sinks` / `close_sinks` at an application's orderly shutdown
 boundary when externally buffered delivery must complete.
 
+Embedding consumers should call `Runtime.embed` or `ctx.embed` instead of
+invoking `runtime.embedding_provider.embed` directly; the provider object
+remains available for compatibility, but direct calls are outside the
+record/replay guarantee. Direct `web_fetch.fn(...)` calls now fail closed
+unless their `ToolContext` explicitly opts into
+`external_io_mode="live_unrecorded"`; normal runtime tool dispatch is
+unchanged.
+
 ### Added
 
 - **`EventSink`: isolated outbound observation for accepted live events**
@@ -65,6 +73,27 @@ boundary when externally buffered delivery must complete.
   accepted log/projection state is already fixed.** Historical export is
   deferred behind the reserved `replay_export` delivery marker; OTel spans,
   Langfuse, UI transports, and learning queues remain future adapters.
+- **Runtime-owned embedding record/replay** (CONTRACT v1.8 #6).
+  `Runtime.embed` and the packs-facing `Context.embed` emit
+  `embedding.requested` / `embedding.responded`, hash model + ordered text
+  inputs without logging source text, record validated vectors, and replay
+  through `EmbeddingCache.from_events` with zero provider contact. Load/fork
+  gain `replay_embedding_cache`; strict replay always enables it, rejects
+  request-hash drift with `ReplayDivergenceError`, and never falls through to
+  a live provider. Direct provider calls remain possible but explicitly
+  forfeit replay guarantees; adopting `ctx.embed` in `activegraph-packs` is a
+  named downstream follow-up.
+- **Fail-closed direct `web_fetch`** (CONTRACT v1.8 #7). The existing runtime
+  tool loop remains the recorded/replayable path. Calling the reference tool
+  body outside it raises `tool.unrecorded_external_io` before network contact
+  unless the caller explicitly selects `live_unrecorded` mode.
+- **Recorded cooperative wall-budget truncation** (CONTRACT v1.8 #8).
+  `runtime.budget_exhausted` now records the accepted-event/tick/queue stop
+  position for `max_seconds`. Strict replay disables monotonic-clock reads and
+  stops at that recorded sequence, reproducing the queued suffix instead of
+  racing CI speed. Parent-side subprocess trial kills remain an explicit R4
+  follow-up: their `TrialReport` is operational evidence, not yet replayable
+  truncation provenance.
 
 ## [v1.7.1] — 2026-07-09
 

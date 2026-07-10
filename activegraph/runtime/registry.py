@@ -77,6 +77,7 @@ def _is_lifecycle(event: Event) -> bool:
         or event.type.startswith("runtime.")
         or event.type.startswith("llm.")
         or event.type.startswith("tool.")
+        or event.type.startswith("embedding.")
     )
 
 

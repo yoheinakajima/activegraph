@@ -1,13 +1,11 @@
-"""The ``EmbeddingProvider`` Protocol. v1.3.
+"""The ``EmbeddingProvider`` Protocol. v1.3, runtime-owned in v1.8.
 
 The runtime's second provider seam, next to :class:`LLMProvider`.
-The runtime itself never calls it — retrieval, ranking, and score
-blending are pack concerns (the memory capability lives downstream) —
-but the seam lives here so every pack finds embeddings the same way
-(``runtime.embedding_provider``) instead of each pack growing its own
-configuration channel. Locked by the July 2026 agent-readiness
-review: keyword-overlap-only memory retrieval missed obvious queries,
-and the blocking gap was that nothing standard could hold an embedder.
+Retrieval, ranking, and score blending remain pack concerns, but calls
+flow through :meth:`Runtime.embed` / ``Context.embed`` so external I/O
+is represented by ``embedding.requested`` / ``embedding.responded``
+events and can replay from recorded vectors.  Calling a provider object
+directly remains possible but forfeits that replay guarantee.
 
 Deliberately minimal: one method plus a default-model declaration.
 Cost accounting, batching hints, and dimension negotiation can widen
