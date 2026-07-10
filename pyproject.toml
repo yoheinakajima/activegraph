@@ -151,7 +151,7 @@ markers = [
 # it to both `files` and the per-module override below. The gate then
 # enforces the new module's strict-mode invariants going forward.
 #
-# Current configured gate: 51/51 source files pass; the generated public-
+# Current configured gate: 52/52 source files pass; the generated public-
 # surface audit is 46/46 modules (100%). The burndown that closed the
 # original 16-module gap is the
 # CONTRACT v1.1 #3 follow-on, landed as the v1.3 Phase 1 PR series;
@@ -201,6 +201,7 @@ files = [
     "activegraph/policy.py",
     "activegraph/runtime/budget.py",
     "activegraph/runtime/config_errors.py",
+    "activegraph/runtime/dev_override.py",
     "activegraph/runtime/errors.py",
     "activegraph/runtime/exec_errors.py",
     "activegraph/runtime/diff.py",
@@ -259,6 +260,7 @@ module = [
     "activegraph.policy",
     "activegraph.runtime.budget",
     "activegraph.runtime.config_errors",
+    "activegraph.runtime.dev_override",
     "activegraph.runtime.errors",
     "activegraph.runtime.exec_errors",
     "activegraph.runtime.diff",

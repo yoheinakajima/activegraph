@@ -42,6 +42,7 @@ from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.policy import Policy
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, DivergentObject, DivergentRelation
+from activegraph.runtime.dev_override import DevOverride
 from activegraph.runtime.promote import (
     PromoteConflict,
     PromotePlan,
@@ -156,6 +157,7 @@ __all__ = [
     "CorruptedEventPayloadError",
     "Diff",
     "DeliveryContext",
+    "DevOverride",
     "DiscoveredPack",
     "DivergentObject",
     "DivergentRelation",

@@ -88,6 +88,13 @@ from activegraph.policy import Policy
 from activegraph.runtime.behavior_graph import BehaviorGraph
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, compute_diff
+from activegraph.runtime.dev_override import (
+    DevOverride,
+    authority_allows,
+    gate_is_forbidden,
+    receipt_from_event,
+    validate_override_request,
+)
 from activegraph.runtime.promote import (
     PromotePlan,
     PromoteResult,
@@ -608,6 +615,85 @@ class Runtime:
 
         return self.graph.close_sinks(timeout=timeout)
 
+    def dev_override(
+        self,
+        *,
+        actor: str,
+        reason: str,
+        target_gate: str,
+        scope: str,
+        resulting_authority: str,
+    ) -> DevOverride:
+        """Record and return one exact, run-local developer override receipt.
+
+        The event must cross normal graph/store acceptance before this method
+        returns. Promotion, event logging, and R4 governance authority are
+        rejected before emission.
+        """
+
+        validate_override_request(
+            actor=actor,
+            reason=reason,
+            target_gate=target_gate,
+            scope=scope,
+            resulting_authority=resulting_authority,
+        )
+        event = Event(
+            id=self.graph.ids.event(),
+            type="dev.override",
+            payload={
+                "actor": actor,
+                "reason": reason,
+                "target_gate": target_gate,
+                "scope": scope,
+                "resulting_authority": resulting_authority,
+            },
+            actor=actor,
+            frame_id=self.frame.id if self.frame else None,
+            caused_by=None,
+            timestamp=self.graph.clock.now(),
+        )
+        self.graph.emit(event)
+        receipt = receipt_from_event(event, run_id=self.graph.run_id)
+        assert receipt is not None
+        return receipt
+
+    def dev_overrides(self) -> list[DevOverride]:
+        """Reconstruct accepted developer override receipts from the log."""
+
+        receipts: list[DevOverride] = []
+        for event in self.graph.events:
+            receipt = receipt_from_event(event, run_id=self.graph.run_id)
+            if receipt is not None:
+                receipts.append(receipt)
+        return receipts
+
+    def validate_dev_override(
+        self,
+        receipt: DevOverride,
+        *,
+        target_gate: str,
+        scope: str,
+        required_authority: str,
+    ) -> bool:
+        """Validate an exact receipt for one local gate decision.
+
+        No wildcard, prefix, cross-run, promotion, event-log, or R4 match is
+        possible. The referenced event must still exist with identical fields.
+        """
+
+        if receipt.run_id != self.graph.run_id or gate_is_forbidden(target_gate):
+            return False
+        if target_gate != receipt.target_gate or scope != receipt.scope:
+            return False
+        if not authority_allows(receipt.resulting_authority, required_authority):
+            return False
+        event = self._find_event(receipt.event_id)
+        if event is None:
+            return False
+        recorded = receipt_from_event(event, run_id=self.graph.run_id)
+        return recorded == receipt
+
     # ---------- listener ----------
 
     def _on_event(self, event: Event) -> None:
@@ -641,6 +727,9 @@ class Runtime:
             # deliberately keeps `pack.loaded` queue-visible so pack-aware
             # behaviors can subscribe, but `approval.*` is suppressed.
             or event.type.startswith("approval.")
+            # v1.8 R3: an override is a trace marker/receipt, not behavior
+            # scheduling input or an ambient developer-mode switch.
+            or event.type.startswith("dev.")
         ):
             return
         self._queue.push(event)

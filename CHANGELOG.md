@@ -36,6 +36,10 @@ unless their `ToolContext` explicitly opts into
 `external_io_mode="live_unrecorded"`; normal runtime tool dispatch is
 unchanged.
 
+Local tooling that bypasses a gate must call `Runtime.dev_override` first and
+validate the returned receipt at that exact gate/scope. There is no global dev
+mode, wildcard scope, promotion override, logging override, or `R4` grant.
+
 ### Added
 
 - **`EventSink`: isolated outbound observation for accepted live events**
@@ -110,6 +114,16 @@ unchanged.
   child, including the configured limit and accepted-event stop sequence.
   Load/replay observes the killed prefix from the log and never re-races the
   timeout, closing the R5 subprocess half at the R4 result authority.
+- **Explicit, log-backed `dev.override` receipts** (CONTRACT v1.8 #13–#15).
+  `Runtime.dev_override` requires actor, reason, exact target gate, exact scope,
+  and a resulting authority bounded to `R0`–`R3`; the accepted event id/run id
+  become a frozen `DevOverride`. `dev_overrides()` reconstructs receipts from
+  load/fork history, while `validate_dev_override()` requires an exact
+  byte-for-field event match and refuses wildcards, cross-run use, authority
+  widening, promotion/logging targets, and `R4`. Merely recording a receipt
+  changes no policy, approval, promotion, scoring, or registry state, and the
+  marker is suppressed from behavior scheduling. Durable append failure
+  returns no usable receipt.
 
 ## [v1.7.1] — 2026-07-09
 

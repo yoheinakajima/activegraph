@@ -666,6 +666,34 @@ events into your aggregator:
   and emits a structured log record. The framework's logging will
   carry it through.
 
+### A local gate needs a development override
+
+There is no global development mode. Record one exact receipt, then make the
+local gate validate it for the same target, scope, and required authority:
+
+```python
+receipt = rt.dev_override(
+    actor="local-developer",
+    reason="exercise fixture approval in a local run",
+    target_gate="pack.fixture.approval",
+    scope="pack:demo/fixture:one",
+    resulting_authority="R2",
+)
+
+if rt.validate_dev_override(
+    receipt,
+    target_gate="pack.fixture.approval",
+    scope="pack:demo/fixture:one",
+    required_authority="R1",
+):
+    run_local_fixture_path()
+```
+
+`dev.override` is accepted into the ordinary event log before a receipt is
+returned. It cannot target promotion conflicts or event logging, cannot grant
+`R4`, and contributes zero score. A receipt does nothing unless the exact
+local gate explicitly validates it.
+
 ---
 
 ## Capacity planning
