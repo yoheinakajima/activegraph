@@ -11,6 +11,12 @@ For the design, the worked recorded-segment-replay example, the
 `extra_packs` cross-pack path, and the honest per-platform limits, see
 `trial-isolation-design.md` in the repository root.
 
+CONTRACT v1.8 #9–#12 also exposes this default behind `TrialExecutor`.
+Executors accept a versioned JSON `TrialSpecification` and return a
+provider-neutral `TrialResult`; the legacy `run_forked_trial` function still
+returns `TrialReport` unchanged. This is an adapter boundary, not a new
+security claim.
+
 !!! note "Import path"
     The sandbox surface lives under `activegraph.sandbox` and is
     imported from there (`from activegraph.sandbox import
@@ -31,6 +37,31 @@ For the design, the worked recorded-segment-replay example, the
 ## Running a trial
 
 ::: activegraph.sandbox.run_forked_trial
+
+## Executor interface
+
+::: activegraph.sandbox.TrialExecutor
+
+::: activegraph.sandbox.TrialSpecification
+
+::: activegraph.sandbox.TrialResult
+
+::: activegraph.sandbox.TrialBudgetUse
+
+::: activegraph.sandbox.TrialArtifactReference
+
+::: activegraph.sandbox.TrialEventLogReference
+
+::: activegraph.sandbox.TrialFailureDetails
+
+::: activegraph.sandbox.TrialIsolationGuarantees
+
+::: activegraph.sandbox.LocalSubprocessTrialExecutor
+
+::: activegraph.sandbox.RecordingTrialExecutor
+
+Reusable adapter tests live at
+`activegraph.sandbox.conformance.TrialExecutorConformance`.
 
 ## Startup preflight
 

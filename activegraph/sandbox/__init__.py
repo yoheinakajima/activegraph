@@ -54,6 +54,11 @@ shared SQLite file directly and touch other runs; per-run
 authorization inside one SQLite file is not something SQLite gives us
 honestly, so that caveat is stated rather than solved. The evolution
 pack's static gates remain the pre-execution filter.
+
+CONTRACT v1.8 #9–#12 exposes this implementation as
+``LocalSubprocessTrialExecutor`` behind the serialized ``TrialExecutor``
+protocol. ``run_forked_trial`` remains the compatibility wrapper returning
+``TrialReport``.
 """
 
 from __future__ import annotations
@@ -63,7 +68,7 @@ import logging
 import os
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -370,7 +375,7 @@ def preflight(
     return warnings
 
 
-def run_forked_trial(
+def _run_forked_trial_local(
     store_path: str,
     *,
     parent_run_id: str,
@@ -381,7 +386,9 @@ def run_forked_trial(
     label: str = "trial",
     extra_packs: tuple[PackSource, ...] = (),
 ) -> TrialReport:
-    """Fork the parent at ``at_event`` and trial the candidate pack in
+    """Local implementation behind :class:`LocalSubprocessTrialExecutor`.
+
+    Fork the parent at ``at_event`` and trial the candidate pack in
     a fresh subprocess. CONTRACT v1.5 #1.
 
     The fork is created HERE, in the parent process, with full
@@ -484,6 +491,27 @@ def run_forked_trial(
     behavior_failures = 0
     try:
         fork_view = Runtime.load(store_path, run_id=fork_run_id, behaviors=[])
+        if timed_out:
+            from activegraph.core.event import Event
+
+            stop_sequence = len(fork_view.graph.events)
+            fork_view.graph.emit(
+                Event(
+                    id=fork_view.graph.ids.event(),
+                    type="trial.wall_clock_exhausted",
+                    payload={
+                        "executor": "local_subprocess",
+                        "wall_clock_seconds": limits.wall_clock_seconds,
+                        "stop_position": {
+                            "accepted_sequence": stop_sequence,
+                        },
+                    },
+                    actor="trial_executor",
+                    frame_id=None,
+                    caused_by=None,
+                    timestamp=fork_view.graph.clock.now(),
+                )
+            )
         events_appended = max(
             0, len(fork_view.graph.events) - initial_events
         )
@@ -500,3 +528,71 @@ def run_forked_trial(
         exit_code=exit_code,
         warnings=warnings,
     )
+
+
+def run_forked_trial(
+    store_path: str,
+    *,
+    parent_run_id: str,
+    at_event: str,
+    pack_source: PackSource,
+    scenario: str = "",
+    limits: TrialLimits = TrialLimits(),
+    label: str = "trial",
+    extra_packs: tuple[PackSource, ...] = (),
+) -> TrialReport:
+    """Run a forked trial through the default local TrialExecutor.
+
+    This compatibility surface preserves the v1.5 ``TrialReport`` return.
+    New orchestration code may construct :class:`TrialSpecification` and call
+    a :class:`TrialExecutor` directly for a provider-neutral result.
+    """
+
+    specification = TrialSpecification(
+        store_path=store_path,
+        parent_run_id=parent_run_id,
+        at_event=at_event,
+        pack_source=pack_source,
+        scenario=scenario,
+        limits=limits,
+        label=label,
+        extra_packs=extra_packs,
+    )
+    return LocalSubprocessTrialExecutor().execute(
+        specification.to_json()
+    ).to_report()
+
+
+from activegraph.sandbox.executor import (  # noqa: E402
+    LocalSubprocessTrialExecutor,
+    RecordingTrialExecutor,
+    TrialArtifactReference,
+    TrialBudgetUse,
+    TrialEventLogReference,
+    TrialExecutor,
+    TrialFailureDetails,
+    TrialIsolationGuarantees,
+    TrialResult,
+    TrialSpecification,
+)
+
+
+__all__ = [
+    "LocalSubprocessTrialExecutor",
+    "PackSource",
+    "RecordingTrialExecutor",
+    "SandboxStartupError",
+    "TRIAL_OUTCOMES",
+    "TrialArtifactReference",
+    "TrialBudgetUse",
+    "TrialEventLogReference",
+    "TrialExecutor",
+    "TrialFailureDetails",
+    "TrialIsolationGuarantees",
+    "TrialLimits",
+    "TrialReport",
+    "TrialResult",
+    "TrialSpecification",
+    "preflight",
+    "run_forked_trial",
+]

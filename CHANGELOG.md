@@ -91,9 +91,25 @@ unchanged.
   `runtime.budget_exhausted` now records the accepted-event/tick/queue stop
   position for `max_seconds`. Strict replay disables monotonic-clock reads and
   stops at that recorded sequence, reproducing the queued suffix instead of
-  racing CI speed. Parent-side subprocess trial kills remain an explicit R4
-  follow-up: their `TrialReport` is operational evidence, not yet replayable
-  truncation provenance.
+  racing CI speed. Parent-side subprocess trial kills were deferred to the R4
+  result authority and are closed by the `TrialExecutor` item below.
+- **`TrialExecutor` provider boundary with local default** (CONTRACT v1.8
+  #9–#12). `TrialSpecification` canonicalizes pinned trial intent into
+  versioned JSON; the runtime-checkable protocol returns `TrialResult` with
+  structured status, budget use, artifact references, event-log reference,
+  failure details, warnings, and declared isolation guarantees.
+  `LocalSubprocessTrialExecutor` delegates to the existing fresh-interpreter
+  implementation, and `run_forked_trial` remains the behavior-compatible
+  `TrialReport` wrapper. `RecordingTrialExecutor` and
+  `TrialExecutorConformance` make future adapters testable without adding a
+  Docker/E2B/Modal provider now. The local adapter explicitly declares shared
+  filesystem and unconfined network/syscalls: subprocess is crash isolation,
+  not a security sandbox.
+- **Parent-side trial wall kills are now recorded.** The local executor appends
+  `trial.wall_clock_exhausted` to the fork after killing/reaping a timed-out
+  child, including the configured limit and accepted-event stop sequence.
+  Load/replay observes the killed prefix from the log and never re-races the
+  timeout, closing the R5 subprocess half at the R4 result authority.
 
 ## [v1.7.1] — 2026-07-09
 
