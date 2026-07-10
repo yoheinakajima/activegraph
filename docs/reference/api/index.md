@@ -8,10 +8,12 @@ sidebar.
 
 Two conventions apply across the reference:
 
-- **Public surface only.** Symbols listed in `activegraph.__all__`
-  and the pack-level `__all__`s appear here. Internal symbols
-  (those starting with `_`, or those not re-exported) are not in
-  the reference; treat them as implementation details.
+- **Public surface and contracted extension suites.** Symbols listed in
+  `activegraph.__all__` and the pack-level `__all__`s appear here. A named
+  conformance suite may also appear at its documented module path so adapter
+  authors can validate implementations without widening the root namespace.
+  Other symbols starting with `_`, or not re-exported, are implementation
+  details.
 - **No source dumps.** The reference renders the API contract,
   not the implementation. Readers who want source go to
   [GitHub](https://github.com/yoheinakajima/activegraph).
@@ -35,8 +37,8 @@ blocks where they appear.
   URL parsing, migration.
 - [Packs](packs.md) — the pack format primitives.
 - [Errors](errors.md) — the `ActiveGraphError` hierarchy.
-- [Observability](observability.md) — the metrics protocol and
-  shipped backends.
+- [Observability](observability.md) — accepted-event sinks, the metrics
+  protocol, and shipped backends.
 - [Diligence pack](packs/diligence.md) — the v0.9 reference pack.
 
 ## Docstring coverage

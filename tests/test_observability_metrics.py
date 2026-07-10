@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from activegraph import Graph, Runtime, behavior, clear_registry
@@ -214,6 +217,53 @@ class TestPrometheusMetricsOptional:
         assert "activegraph_behaviors_duration_seconds" in names
         assert "activegraph_queue_depth" in names
 
+    def test_concurrent_first_use_creates_one_instrument(self, monkeypatch):
+        from activegraph.observability.prometheus import PrometheusMetrics
+
+        if not PrometheusMetrics.available():
+            pytest.skip("prometheus_client not installed")
+        import prometheus_client
+
+        registry = prometheus_client.CollectorRegistry()
+        metrics = PrometheusMetrics(registry=registry)
+        original_counter = metrics._client.Counter
+        first_entered = threading.Event()
+        second_entered = threading.Event()
+        release = threading.Event()
+        call_lock = threading.Lock()
+        call_count = 0
+
+        def gated_counter(*args, **kwargs):
+            nonlocal call_count
+            with call_lock:
+                call_count += 1
+                current = call_count
+            if current == 1:
+                first_entered.set()
+                release.wait(timeout=2.0)
+            else:
+                second_entered.set()
+            return original_counter(*args, **kwargs)
+
+        monkeypatch.setattr(metrics._client, "Counter", gated_counter)
+        start = threading.Barrier(3)
+
+        def observe() -> None:
+            start.wait()
+            metrics.counter("activegraph_race_total", {"sink": "shared"})
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(observe) for _ in range(2)]
+            start.wait()
+            assert first_entered.wait(timeout=2.0)
+            raced_into_constructor = second_entered.wait(timeout=0.05)
+            release.set()
+            for future in futures:
+                future.result(timeout=2.0)
+
+        assert raced_into_constructor is False
+        assert call_count == 1
+
 
 class TestOpenTelemetryMetricsOptional:
     """OpenTelemetry is opt-in. If installed, basic emission works."""
@@ -267,6 +317,56 @@ class TestOpenTelemetryMetricsOptional:
         queue_dp = queue_data.data_points[0]
         assert queue_dp.attributes == {}
         assert queue_dp.value == 5.0
+
+    def test_concurrent_gauge_updates_serialize_previous_value(self):
+        from activegraph.observability.otel import OpenTelemetryMetrics
+
+        if not OpenTelemetryMetrics.available():
+            pytest.skip("opentelemetry-api/opentelemetry-sdk not installed")
+
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+        class GatedValues(dict):
+            def __init__(self):
+                super().__init__()
+                self.first_entered = threading.Event()
+                self.second_entered = threading.Event()
+                self.release = threading.Event()
+                self.call_lock = threading.Lock()
+                self.call_count = 0
+
+            def get(self, key, default=None):
+                with self.call_lock:
+                    self.call_count += 1
+                    current = self.call_count
+                if current == 1:
+                    self.first_entered.set()
+                    self.release.wait(timeout=2.0)
+                else:
+                    self.second_entered.set()
+                return super().get(key, default)
+
+        reader = InMemoryMetricReader()
+        provider = MeterProvider(metric_readers=[reader])
+        metrics = OpenTelemetryMetrics(meter=provider.get_meter("activegraph.race"))
+        values = GatedValues()
+        metrics._gauge_values = values
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(metrics.gauge, "activegraph_race_depth", {}, 1.0)
+            assert values.first_entered.wait(timeout=2.0)
+            second = pool.submit(metrics.gauge, "activegraph_race_depth", {}, 2.0)
+            raced_into_read = values.second_entered.wait(timeout=0.05)
+            values.release.set()
+            first.result(timeout=2.0)
+            second.result(timeout=2.0)
+
+        assert raced_into_read is False
+        metric = _otel_metrics_by_name(reader.get_metrics_data())[
+            "activegraph_race_depth"
+        ]
+        assert metric.data.data_points[0].value == 2.0
 
 
 def _otel_metrics_by_name(metrics_data):

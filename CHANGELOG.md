@@ -13,6 +13,59 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased] — v1.8.0
+
+The outbound-observation hardening release: accepted runtime events now
+have a sanctioned, typed, bounded export seam. Additive on 1.7.1; the
+existing synchronous `Graph.add_listener` behavior and every default run
+remain unchanged when no sink is attached.
+
+### Migration
+
+No breaking changes. Applications that want an event stream attach an
+`EventSink` explicitly through `Runtime(..., sinks=...)`,
+`Runtime.add_sink`, or `Graph.add_sink`; the default remains no sinks.
+Call `flush_sinks` / `close_sinks` at an application's orderly shutdown
+boundary when externally buffered delivery must complete.
+
+### Added
+
+- **`EventSink`: isolated outbound observation for accepted live events**
+  (CONTRACT v1.8 #1–#4). The four-method protocol (`open`, `on_event`,
+  `flush`, `close`) receives an isolated event copy plus frozen
+  `DeliveryContext(run_id, sequence, mode)`. Offers occur after projection
+  and durable append but before legacy listeners, preserving re-entrant
+  per-run order without giving adapters veto or mutation authority. Each
+  attachment owns a bounded FIFO and daemon worker; hanging, raising, or
+  backpressured sinks cannot block the runtime or one another. Queue
+  capacity and `drop_newest` / `drop_oldest` / `fail_sink` overflow policy
+  are explicit through `SinkConfig`, `SinkStatus`, and `SinkHandle`.
+- **Observable sink loss and health.** Four cardinality-rule-compliant standard
+  metrics join the locked table: sink queue depth, delivered, dropped, and
+  errors. Exact local counters remain queryable through `sink_statuses()`
+  even under the default `NoOpMetrics`; bounded `flush_sinks` /
+  `close_sinks` report a hanging adapter instead of waiting forever. Timed-out
+  closes remain visible and retryable, and terminal close failures retain a
+  status snapshot until removed or replaced. Sink metrics are coalesced and
+  published by the isolated worker, so even a blocked metrics backend cannot
+  enter the sink-offer hot path; the Prometheus and OpenTelemetry adapters now
+  serialize concurrent lazy instrument creation.
+- **`JSONLEventSink` + reusable conformance suite** (CONTRACT v1.8 #5).
+  JSONL is append-only UTF-8, one canonical context/event envelope per
+  line, using the store's Decimal/date/set normalization; no rotation.
+  `EventSinkConformance` mirrors the EventStore extension-test pattern,
+  and thread-safe `RecordingSink` is the downstream test double.
+- **Replay guard pinned at public boundaries.** `Runtime.load(...,
+  sinks=...)` and `fork(..., sinks=...)` attach sinks only after ordinary or
+  snapshot-backed history is projected; strict load completes sink-free
+  verification before attachment, and normal replay emits no live deliveries.
+  **Replay determinism is untouched because sinks are
+  absent from `_replay_event` and strict verification, have no graph or
+  scheduling return channel, and observe only a copied event after the
+  accepted log/projection state is already fixed.** Historical export is
+  deferred behind the reserved `replay_export` delivery marker; OTel spans,
+  Langfuse, UI transports, and learning queues remain future adapters.
+
 ## [v1.7.1] — 2026-07-09
 
 A macOS trial-child fix, surfaced BECAUSE 1.7.0's import fix let the
