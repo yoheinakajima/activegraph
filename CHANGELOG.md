@@ -13,14 +13,19 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased] — v1.9.0
+## [1.9.0] — 2026-07-10
 
 The canonical action-class authority release (CONTRACT v1.9 #1–#3, ADR
-0016/0017 in activegraph-vision). Stacks on the unreleased v1.8.0 below.
-Additive: every existing run, pack, and static approval configuration
+0016/0017 in activegraph-vision), shipping together with the
+outbound-observation hardening work (CONTRACT v1.8 #1–#15), which was
+staged as an unreleased v1.8.0 and never published separately. Additive
+on 1.7.1: every existing run, pack, and static approval configuration
 behaves byte-identically until a caller invokes the new API
 (regression-locked by `tests/test_legacy_byte_identity.py` against a
-pre-v1.9 golden event log).
+pre-v1.9 golden event log). Accepted runtime events gain a sanctioned,
+typed, bounded export seam; the existing synchronous
+`Graph.add_listener` behavior and every default run remain unchanged
+when no sink is attached.
 
 ### Added
 
@@ -54,42 +59,6 @@ pre-v1.9 golden event log).
   event id. `authority.*` events are behavior-scheduling-suppressed like
   `approval.*` and `dev.*`.
 
-### Migration
-
-No breaking changes and no action required. Capabilities may start
-declaring `action_class` alongside `risk_class`; a capability without
-one is simply ineligible for the new path's automation (it fails closed
-to approval). Legacy `risk_class` policy surfaces are untouched and
-their removal remains a later versioned migration.
-
-
-
-The outbound-observation hardening release: accepted runtime events now
-have a sanctioned, typed, bounded export seam. Additive on 1.7.1; the
-existing synchronous `Graph.add_listener` behavior and every default run
-remain unchanged when no sink is attached.
-
-### Migration
-
-No breaking changes. Applications that want an event stream attach an
-`EventSink` explicitly through `Runtime(..., sinks=...)`,
-`Runtime.add_sink`, or `Graph.add_sink`; the default remains no sinks.
-Call `flush_sinks` / `close_sinks` at an application's orderly shutdown
-boundary when externally buffered delivery must complete.
-
-Embedding consumers should call `Runtime.embed` or `ctx.embed` instead of
-invoking `runtime.embedding_provider.embed` directly; the provider object
-remains available for compatibility, but direct calls are outside the
-record/replay guarantee. Direct `web_fetch.fn(...)` calls now fail closed
-unless their `ToolContext` explicitly opts into
-`external_io_mode="live_unrecorded"`; normal runtime tool dispatch is
-unchanged.
-
-Local tooling that bypasses a gate must call `Runtime.dev_override` first and
-validate the returned receipt at that exact gate/scope. There is no global dev
-mode, wildcard scope, promotion override, logging override, or `R4` grant.
-
-### Added
 
 - **`EventSink`: isolated outbound observation for accepted live events**
   (CONTRACT v1.8 #1–#4). The four-method protocol (`open`, `on_event`,
@@ -173,6 +142,32 @@ mode, wildcard scope, promotion override, logging override, or `R4` grant.
   changes no policy, approval, promotion, scoring, or registry state, and the
   marker is suppressed from behavior scheduling. Durable append failure
   returns no usable receipt.
+
+### Migration
+
+No breaking changes and no action required. Capabilities may start
+declaring `action_class` alongside `risk_class`; a capability without
+one is simply ineligible for the new path's automation (it fails closed
+to approval). Legacy `risk_class` policy surfaces are untouched and
+their removal remains a later versioned migration.
+
+Applications that want an event stream attach an `EventSink` explicitly
+through `Runtime(..., sinks=...)`, `Runtime.add_sink`, or
+`Graph.add_sink`; the default remains no sinks. Call `flush_sinks` /
+`close_sinks` at an application's orderly shutdown boundary when
+externally buffered delivery must complete.
+
+Embedding consumers should call `Runtime.embed` or `ctx.embed` instead of
+invoking `runtime.embedding_provider.embed` directly; the provider object
+remains available for compatibility, but direct calls are outside the
+record/replay guarantee. Direct `web_fetch.fn(...)` calls now fail closed
+unless their `ToolContext` explicitly opts into
+`external_io_mode="live_unrecorded"`; normal runtime tool dispatch is
+unchanged.
+
+Local tooling that bypasses a gate must call `Runtime.dev_override` first and
+validate the returned receipt at that exact gate/scope. There is no global dev
+mode, wildcard scope, promotion override, logging override, or `R4` grant.
 
 ## [v1.7.1] — 2026-07-09
 
