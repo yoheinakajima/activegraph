@@ -7985,3 +7985,104 @@ not replayable truncation provenance.
   claim the parent-side kill is replayable before the TrialExecutor seam.
 - No OTel spans, action-class work, GraphStore/EventStore/EventSink changes,
   or BabyAGI product concepts.
+
+# v1.8 — R4 `TrialExecutor` extraction
+
+Opened after R5 was independently green.  This amendment implements the
+runtime constitution's section 8 ``TrialExecutor`` boundary without changing
+the proven local-subprocess trial mechanics from v1.5/v1.7.1.  The interface
+is the deliverable; additional execution providers are not.
+
+## v1.8 #9. The executor boundary is serialized and pinned
+
+``TrialExecutor`` is a runtime-checkable protocol with two members:
+
+```python
+class TrialExecutor(Protocol):
+    @property
+    def isolation_guarantees(self) -> TrialIsolationGuarantees: ...
+    def execute(self, serialized_specification: str) -> TrialResult: ...
+```
+
+The wire value is versioned canonical JSON produced by
+``TrialSpecification.to_json`` and parsed by ``from_json``.  Version 1 contains
+the store path, parent run id, fork event id, immutable ``PackSource`` pin,
+ordered extra-pack pins, scenario reference, ``TrialLimits``, and label.  It
+contains no live Runtime, callable, provider client, ambient environment, or
+unserialized Python object.  ``PackSource.expected_bundle_hash`` remains the
+artifact pin verified before import; the serializer preserves the existing
+empty-pin compatibility posture rather than silently inventing one.
+
+Unknown schema versions, malformed types, and missing required identity fields
+fail before an executor starts work.  Adapters receive bytes-equivalent intent
+across process/provider boundaries and may not reinterpret the trial by reading
+ambient parent state.
+
+## v1.8 #10. Results have one provider-neutral structured shape
+
+``TrialResult`` contains:
+
+- ``status`` from the locked ``TRIAL_OUTCOMES`` set;
+- ``budget_use`` (events appended, behavior failures, and requested limits);
+- ordered ``artifacts`` as ``TrialArtifactReference`` values (empty is an
+  honest result when the executor produced no external artifact);
+- ``event_log`` as a ``TrialEventLogReference`` naming store and fork run;
+- optional ``failure`` as ``TrialFailureDetails`` rather than parsed prose;
+- the adapter's ``TrialIsolationGuarantees`` plus warnings, exit code, and
+  human detail.
+
+``TrialReport`` remains the compatibility return from
+``run_forked_trial``.  ``TrialResult.to_report`` is lossless for its legacy
+fields; the wrapper constructs a serialized specification, delegates to
+``LocalSubprocessTrialExecutor``, and returns that report.  Existing callers
+and sandbox tests therefore keep their exact API and outcome meanings while
+new orchestration code depends only on the narrow executor protocol.
+
+Every adapter declares process, filesystem, network, syscall, environment,
+and security-sandbox guarantees.  Claims are descriptive contract data, not
+marketing labels.  In particular the local adapter declares a fresh
+interpreter and closed environment allow-list, but shared host filesystem,
+unconfined network/syscalls, and ``security_sandbox=False``.
+
+## v1.8 #11. Local subprocess is the behavior-preserving default
+
+``LocalSubprocessTrialExecutor`` delegates to the existing parent-fork / child
+job / store-reread implementation.  The environment allow-list, explicit
+computed-PYTHONPATH code channel, bundle/manifest verification, limits,
+stderr-tail handling, warnings, exit/outcome mapping, parent-run isolation,
+and store-authoritative counts remain unchanged.  ``run_forked_trial`` is now
+the compatibility function over this default, not a second execution path.
+
+R5 deferred the parent-side wall kill until one parent-owned result authority
+existed.  The local executor now supplies it.  When ``communicate`` times out,
+the parent kills and reaps the child, then appends
+``trial.wall_clock_exhausted`` to the fork with the configured limit and the
+accepted-event sequence immediately before the marker.  The marker is an
+external stop fact: load/replay projects the killed prefix and never re-races
+the clock.  A failure to append the marker is surfaced in result detail; it is
+never silently claimed as recorded.  This closes the R5 parent-kill gap for
+the local executor without pretending the child made an atomic final write.
+
+## v1.8 #12. Conformance and recording doubles define the adapter seam
+
+``TrialExecutorConformance`` is a pytest-compatible abstract suite in the
+EventStore/EventSink style.  Adapters provide a fresh executor and serialized
+valid specification; inherited cases verify schema round-trip, fail-loud
+malformed input, declared isolation, and the complete provider-neutral result
+shape.  The first-party local adapter passes it.
+
+``RecordingTrialExecutor`` is the public deterministic test double.  It parses
+and records every specification, returns caller-supplied ``TrialResult`` values
+in order, and raises on exhaustion.  It performs no fork, process, filesystem,
+or network work and declares that absence honestly.
+
+## v1.8 R4 deliberately does NOT touch
+
+- No Docker, E2B, Replit, Modal, remote queue, or other executor adapter.
+- No security-sandbox claim for the local subprocess and no new syscall,
+  filesystem, or network confinement.
+- No changes to child pack materialization, manifest policy, promotion,
+  EventStore/GraphStore/EventSink, or action-class authority.
+- No artifact upload/storage subsystem; the typed empty-or-reference field is
+  the compatibility seam.
+- No BabyAGI product concept and no executor-specific field on Runtime.
