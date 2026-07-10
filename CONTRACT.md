@@ -8149,3 +8149,122 @@ grant it.
 - No global environment switch, wildcard scope, implicit gate discovery,
   remote override service, or governance authority.
 - No BabyAGI level, badge, score, or product concept.
+
+## v1.9 #1. `action_class` is the canonical authority field on the capability surface
+
+ADR 0016 (activegraph-vision) lands at the runtime boundary. The closed set
+``R0 | R1 | R2 | R3 | R4`` is the canonical consequence vocabulary for
+authority, approval ceilings, and any future level-derived autonomy:
+
+- ``R0`` observe — ingest and read; no external effect.
+- ``R1`` derive — produce candidates, projections, suggestions, local drafts.
+- ``R2`` reversible — routine bounded action with a clean undo.
+- ``R3`` outward — irreversible or materially consequential external action.
+- ``R4`` governance — self-modification adoption, credential mutation,
+  authority changes, evidence/source deletion.
+
+``CapabilityDecl`` gains an OPTIONAL ``action_class`` field (default ``""`` =
+undeclared), validated against the closed set when present, in all three
+places the declaration lives: the manifest schema
+(``[[surface.capabilities]].action_class``), ``Pack.capabilities``
+construction, and ``verify_surface``'s two-way check. The two-way check
+requires agreement exactly like ``risk_class``: a pair declared on both sides
+must carry the same ``action_class`` (including the empty/undeclared value —
+a class present in the manifest but absent on the ``Pack``, or vice versa, is
+the relabeling swap the decision surface must catch).
+
+``risk_class`` remains exactly what it was: a REQUIRED, validated,
+closed-set (``low|medium|high|critical``) legacy/operational field. The two
+fields are separate policy dimensions and neither is ever derived from the
+other:
+
+- **No inference, ever.** No code path in this runtime maps
+  ``low|medium|high|critical`` to ``R0``–``R4`` or back. There is no lookup
+  table, no default-by-risk, no heuristic. A capability declared with only
+  ``risk_class`` simply has no ``action_class`` — and is therefore ineligible
+  for the new authority path's automation (v1.9 #2 fails closed).
+- **Both may coexist** on one declaration; an implementation that consults
+  both must name the dimensions explicitly (here: ``action_class`` drives the
+  authority ceiling; ``risk_class`` drives nothing in this runtime and stays
+  available to downstream legacy policy such as the Tool Gateway's
+  ``auto_approve_risk_classes``).
+
+## v1.9 #2. The instance authority ceiling and the fixed evaluation order
+
+``Runtime`` gains an instance-local automatic-authority ceiling with the
+closed value set ``none | R0 | R1 | R2`` (ordered ``none < R0 < R1 < R2``),
+default ``none``. It is readable via ``Runtime.authority_ceiling()`` and
+settable ONLY through the explicit, logged API
+``Runtime.set_authority_ceiling(ceiling, actor=..., reason=...)``, which
+validates the value and the non-empty provenance fields, emits
+``authority.ceiling_changed`` (old, new, actor, reason), and only then
+returns. The event is the durable record: the current ceiling is always the
+last accepted ``authority.ceiling_changed`` in the run log, so ``load`` /
+``fork`` / replay see the same ceiling without new snapshot state. The
+runtime stays level-agnostic (ADR 0017): a product REQUESTS a ceiling change
+through this API; the runtime enforces the class and the gate and never
+computes a level.
+
+``Runtime.evaluate_capability_authority(capability=..., action_class=...,
+capability_ceiling=None, ...)`` is the one policy decision on the new
+authority path. Its evaluation order is FIXED and closed:
+
+1. **Missing/invalid class fails closed.** ``action_class`` absent, empty,
+   or outside the closed set → ``require_approval``
+   (``fail_closed_missing_action_class`` / ``fail_closed_invalid_action_class``).
+   An invalid ``capability_ceiling`` fails closed the same way — a garbled
+   local policy must never widen anything.
+2. **``R4`` → ``governance_gate``, always.** Never auto-approved, never
+   reduced to a plain approval, at every ceiling. The dedicated governance
+   gate is downstream's to implement; this decision routes to it.
+3. **``R3`` → ``require_approval``, always,** at every ceiling.
+4. **``R0``–``R2``** are auto-eligible iff the class rank is ≤ the EFFECTIVE
+   ceiling — the stricter of the instance ceiling and the caller-supplied
+   ``capability_ceiling`` (per-capability local policy, same closed value
+   set). Below-or-at → ``auto_approve``; above the instance ceiling →
+   ``require_approval`` (``above_ceiling``); inside the instance ceiling but
+   above a stricter local one → ``require_approval``
+   (``stricter_local_policy``). Local policy can therefore always LOWER,
+   and can never raise, what the instance ceiling allows.
+
+The ceiling value set itself encodes the ADR's enforcement rule: ``R3`` and
+``R4`` are not representable as ceiling values, so no level or product
+request can make them routine.
+
+## v1.9 #3. Every authority decision on the new path is an audit event
+
+``evaluate_capability_authority`` emits ``authority.decision`` BEFORE
+returning, carrying: the capability key, the ``action_class`` exactly as
+declared (including empty), the instance ceiling in force, the
+``capability_ceiling`` (when supplied) and the effective ceiling, the matched
+policy (the closed vocabulary of v1.9 #2: ``fail_closed_missing_action_class``,
+``fail_closed_invalid_action_class``, ``fail_closed_invalid_capability_ceiling``,
+``governance_gate_r4``, ``approval_required_r3``, ``within_ceiling``,
+``above_ceiling``, ``stricter_local_policy``), the decision
+(``auto_approve | require_approval | governance_gate``), and a human-readable
+reason. The returned frozen ``AuthorityDecision`` mirrors the payload plus the
+accepted event id, so a downstream gateway can attach the audit reference to
+its own approval objects.
+
+``authority.*`` events are runtime bookkeeping: like ``approval.*`` and
+``dev.*`` they are suppressed from behavior matching (they persist, project,
+export through sinks, and replay — they just never schedule behaviors).
+
+## v1.9 deliberately does NOT touch
+
+- **No legacy behavior change.** ``ctx.propose_object`` approvals, pack
+  policies, ``pending_approvals`` / ``approve``, and every existing static
+  approval configuration behave byte-identically when the new API is not
+  called (regression-tested against a golden event log). Nothing consults the
+  new ceiling unless a caller invokes the new path.
+- **No ``risk_class`` removal or relabeling.** Legacy removal is a later
+  versioned migration (ADR 0016 rule 5), never a silent relabel.
+- **No automatic mapping** between ``risk_class`` and ``action_class`` — in
+  either direction, anywhere, including tests and fixtures.
+- **No product/level concept.** ``effective_level`` derivation is BabyAGI's
+  (ADR 0017); the runtime only enforces the requested ceiling.
+- **No governance-gate implementation.** ``R4`` decisions route to
+  ``governance_gate``; the gate itself (owner verification, dedicated
+  surfaces) remains the evolution/adoption workstream's.
+- **No auto-run enablement in any product** — v0.3's job, gated on
+  effective L3.

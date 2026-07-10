@@ -40,6 +40,7 @@ from activegraph.runtime.scheduler import InvalidActivateAfter
 from activegraph.frame import Frame
 from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.policy import Policy
+from activegraph.runtime.authority import AuthorityDecision
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, DivergentObject, DivergentRelation
 from activegraph.runtime.dev_override import DevOverride
@@ -148,6 +149,7 @@ __all__ = [
     "AmbiguousBehaviorError",
     "AmbiguousToolError",
     "ApprovalNotFoundError",
+    "AuthorityDecision",
     "Behavior",
     "BehaviorFailure",
     "BehaviorNotFoundError",

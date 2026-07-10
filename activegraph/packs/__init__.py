@@ -639,8 +639,15 @@ class Pack:
         # risk class; (provider, capability) pairs unique within the
         # pack. Lazy import — manifest.py imports nothing from this
         # module at import time, but keep the seam one-directional.
+        # v1.9: the optional canonical action_class is validated against
+        # its own closed set when declared; it is never derived from
+        # risk_class (ADR 0016 — no mapping between the vocabularies).
         if self.capabilities:
-            from activegraph.packs.manifest import _RISK_CLASSES, CapabilityDecl
+            from activegraph.packs.manifest import (
+                _ACTION_CLASSES,
+                _RISK_CLASSES,
+                CapabilityDecl,
+            )
 
             for c in self.capabilities:
                 if not isinstance(c, CapabilityDecl):
@@ -654,6 +661,13 @@ class Pack:
                         f"{c.provider}.{c.capability} has risk_class "
                         f"{c.risk_class!r}; must be one of "
                         f"low|medium|high|critical"
+                    )
+                if c.action_class and c.action_class not in _ACTION_CLASSES:
+                    raise PackValidationError(
+                        f"Pack {self.name!r}: capability "
+                        f"{c.provider}.{c.capability} has action_class "
+                        f"{c.action_class!r}; must be one of "
+                        f"R0|R1|R2|R3|R4 (or omitted)"
                     )
             _check_unique(
                 [f"{c.provider}.{c.capability}" for c in self.capabilities],

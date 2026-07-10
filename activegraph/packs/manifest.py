@@ -69,6 +69,10 @@ _SPECIFIER_RE = re.compile(
     r"^\s*(~=|==|!=|<=|>=|<|>|===)\s*[\w.*+!-]+\s*(,\s*(~=|==|!=|<=|>=|<|>|===)\s*[\w.*+!-]+\s*)*$"
 )
 _RISK_CLASSES = frozenset({"low", "medium", "high", "critical"})
+# CONTRACT v1.9 #1 / ADR 0016: the canonical consequence classes for
+# authority. Closed set; NEVER derived from _RISK_CLASSES (there is no
+# mapping between the two vocabularies, by decision).
+_ACTION_CLASSES = frozenset({"R0", "R1", "R2", "R3", "R4"})
 _AUTHORED_BY = frozenset({"human", "agent"})
 _HASH_PREFIX = "sha256:"
 
@@ -120,12 +124,22 @@ class PackManifestError(PackError, ValueError):
 @dataclass(frozen=True)
 class CapabilityDecl:
     """One ``[[surface.capabilities]]`` entry: a gateway capability
-    this pack's host wiring registers, with its risk class."""
+    this pack's host wiring registers, with its risk class.
+
+    ``action_class`` (CONTRACT v1.9 #1, ADR 0016) is the OPTIONAL
+    canonical consequence class — ``R0|R1|R2|R3|R4`` — that drives the
+    authority path; ``""`` means undeclared, which makes the capability
+    ineligible for the new path's automation (it fails closed to
+    approval). ``risk_class`` stays the required legacy/operational
+    label; the two fields are separate policy dimensions and neither is
+    ever inferred from the other.
+    """
 
     provider: str
     capability: str
     risk_class: str
     credential_ref: str = ""
+    action_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -307,12 +321,21 @@ def load_manifest(path: str | Path) -> PackManifest:
                 f"surface.capabilities[{i}].risk_class {risk!r} must be "
                 f"one of low|medium|high|critical"
             )
+        # v1.9: optional canonical action_class, closed set when present.
+        # Absent/"" = undeclared. Never defaulted from risk_class.
+        action = str(cap.get("action_class", ""))
+        if action and action not in _ACTION_CLASSES:
+            violations.append(
+                f"surface.capabilities[{i}].action_class {action!r} must "
+                f"be one of R0|R1|R2|R3|R4 (or absent)"
+            )
         capabilities.append(
             CapabilityDecl(
                 provider=str(cap.get("provider", "")),
                 capability=str(cap.get("capability", "")),
                 risk_class=risk,
                 credential_ref=str(cap.get("credential_ref", "")),
+                action_class=action,
             )
         )
     consumes_v = surface.get("consumes", [])
@@ -420,12 +443,14 @@ def verify_surface(manifest: PackManifest, pack: Any) -> None:
     # so the loader can two-way check it exactly like behaviors/tools.
     # Keyed by (provider, capability); a declared pair must also agree
     # on risk_class — a relabeled risk class is precisely the swap the
-    # decision surface needs to catch.
+    # decision surface needs to catch. v1.9 extends the same agreement
+    # rule to action_class (including the empty/undeclared value: a
+    # class present on one side and absent on the other is a relabel).
     declared_caps = {
-        (c.provider, c.capability): c.risk_class for c in manifest.capabilities
+        (c.provider, c.capability): c for c in manifest.capabilities
     }
     actual_caps = {
-        (c.provider, c.capability): c.risk_class
+        (c.provider, c.capability): c
         for c in getattr(pack, "capabilities", ())
     }
     for key in sorted(set(declared_caps) - set(actual_caps)):
@@ -438,10 +463,18 @@ def verify_surface(manifest: PackManifest, pack: Any) -> None:
             f"in manifest"
         )
     for key in sorted(set(declared_caps) & set(actual_caps)):
-        if declared_caps[key] != actual_caps[key]:
+        if declared_caps[key].risk_class != actual_caps[key].risk_class:
             violations.append(
                 f"capabilities: {key[0]}.{key[1]} risk_class mismatch — "
-                f"manifest {declared_caps[key]!r}, Pack {actual_caps[key]!r}"
+                f"manifest {declared_caps[key].risk_class!r}, "
+                f"Pack {actual_caps[key].risk_class!r}"
+            )
+        declared_action = getattr(declared_caps[key], "action_class", "")
+        actual_action = getattr(actual_caps[key], "action_class", "")
+        if declared_action != actual_action:
+            violations.append(
+                f"capabilities: {key[0]}.{key[1]} action_class mismatch — "
+                f"manifest {declared_action!r}, Pack {actual_action!r}"
             )
     if violations:
         raise PackManifestError(
