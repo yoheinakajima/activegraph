@@ -13,7 +13,56 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased] — v1.8.0
+## [Unreleased] — v1.9.0
+
+The canonical action-class authority release (CONTRACT v1.9 #1–#3, ADR
+0016/0017 in activegraph-vision). Stacks on the unreleased v1.8.0 below.
+Additive: every existing run, pack, and static approval configuration
+behaves byte-identically until a caller invokes the new API
+(regression-locked by `tests/test_legacy_byte_identity.py` against a
+pre-v1.9 golden event log).
+
+### Added
+
+- **`action_class` on the capability declaration surface** (CONTRACT
+  v1.9 #1). `CapabilityDecl` gains an optional `action_class` field with
+  the closed set `R0 | R1 | R2 | R3 | R4` (`""` = undeclared), validated
+  in the manifest schema (`[[surface.capabilities]].action_class`), at
+  `Pack` construction, and two-way in `verify_surface` exactly like
+  `risk_class` — a class present on one side and absent on the other is
+  a caught relabel. `pack.loaded` payloads carry `action_class` only
+  when declared, so legacy packs' events are unchanged. There is no
+  mapping between `risk_class` and `action_class`, in either direction,
+  anywhere.
+- **The instance authority ceiling** (CONTRACT v1.9 #2).
+  `Runtime.authority_ceiling()` (default `"none"`) and
+  `Runtime.set_authority_ceiling(ceiling, actor=..., reason=...)` with
+  the closed value set `none | R0 | R1 | R2` — `R3`/`R4` are rejected as
+  ceiling values by construction. Changes are log facts
+  (`authority.ceiling_changed`), so `load`/`fork`/replay reconstruct the
+  ceiling with no snapshot state.
+- **`Runtime.evaluate_capability_authority(...)`** — the one policy
+  decision on the new authority path, with the fixed evaluation order:
+  missing/invalid class fails closed to approval; `R4` →
+  `governance_gate`, always; `R3` → `require_approval`, always; `R0`–`R2`
+  auto-approve iff at or below the effective ceiling (the stricter of
+  the instance ceiling and an optional per-capability
+  `capability_ceiling`, which can only ever lower). Every call emits an
+  `authority.decision` audit event naming the capability, declared
+  class, ceilings, matched policy, decision, and reason (CONTRACT v1.9
+  #3); the returned frozen `AuthorityDecision` carries the accepted
+  event id. `authority.*` events are behavior-scheduling-suppressed like
+  `approval.*` and `dev.*`.
+
+### Migration
+
+No breaking changes and no action required. Capabilities may start
+declaring `action_class` alongside `risk_class`; a capability without
+one is simply ineligible for the new path's automation (it fails closed
+to approval). Legacy `risk_class` policy surfaces are untouched and
+their removal remains a later versioned migration.
+
+
 
 The outbound-observation hardening release: accepted runtime events now
 have a sanctioned, typed, bounded export seam. Additive on 1.7.1; the

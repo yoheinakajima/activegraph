@@ -65,7 +65,7 @@ import traceback
 
 def _monotonic() -> float:
     return _time.monotonic()
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Iterable, NamedTuple, Optional, Union, cast
@@ -85,6 +85,12 @@ from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.llm.provider import LLMProvider
 from activegraph.llm.types import LLMMessage, ToolCall
 from activegraph.policy import Policy
+from activegraph.runtime.authority import (
+    AUTHORITY_CEILINGS,
+    AuthorityDecision,
+    evaluate_action_authority,
+    validate_ceiling,
+)
 from activegraph.runtime.behavior_graph import BehaviorGraph
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, compute_diff
@@ -694,6 +700,123 @@ class Runtime:
         recorded = receipt_from_event(event, run_id=self.graph.run_id)
         return recorded == receipt
 
+    # ---------- action-class authority (CONTRACT v1.9) ----------
+
+    def authority_ceiling(self) -> str:
+        """The instance automatic-authority ceiling currently in force.
+
+        The last accepted ``authority.ceiling_changed`` event decides;
+        with none recorded the default is ``"none"`` (nothing
+        auto-approves). Reading from the log — like ``dev_overrides`` —
+        means ``load``, ``fork``, and replay see the same ceiling
+        without any snapshot state.
+        """
+
+        ceiling = "none"
+        for event in self.graph.events:
+            if event.type != "authority.ceiling_changed":
+                continue
+            value = event.payload.get("ceiling")
+            if isinstance(value, str) and value in AUTHORITY_CEILINGS:
+                ceiling = value
+        return ceiling
+
+    def set_authority_ceiling(
+        self,
+        ceiling: str,
+        *,
+        actor: str,
+        reason: str,
+    ) -> str:
+        """Change the instance automatic-authority ceiling. Logged, explicit.
+
+        ``ceiling`` must be in the closed set ``none | R0 | R1 | R2`` —
+        ``R3``/``R4`` are rejected loudly because outward and governance
+        actions can never be made routine (CONTRACT v1.9 #2). ``actor``
+        and ``reason`` are mandatory provenance, exactly like a dev
+        override. Emits ``authority.ceiling_changed`` (the durable
+        record) and returns the accepted event id. The runtime stays
+        level-agnostic: a product REQUESTS a ceiling here; enforcement
+        of classes and gates never moves.
+        """
+
+        validate_ceiling(ceiling)
+        for name, value in (("actor", actor), ("reason", reason)):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"set_authority_ceiling {name} must be a non-empty string"
+                )
+        previous = self.authority_ceiling()
+        event = Event(
+            id=self.graph.ids.event(),
+            type="authority.ceiling_changed",
+            payload={
+                "ceiling": ceiling,
+                "previous_ceiling": previous,
+                "actor": actor,
+                "reason": reason,
+            },
+            actor=actor,
+            frame_id=self.frame.id if self.frame else None,
+            caused_by=None,
+            timestamp=self.graph.clock.now(),
+        )
+        self.graph.emit(event)
+        return event.id
+
+    def evaluate_capability_authority(
+        self,
+        *,
+        capability: str,
+        action_class: str,
+        capability_ceiling: Optional[str] = None,
+        actor: str = "runtime",
+        caused_by: Optional[str] = None,
+    ) -> AuthorityDecision:
+        """Evaluate one capability action on the canonical authority path.
+
+        The fixed evaluation order (CONTRACT v1.9 #2): missing/invalid
+        ``action_class`` fails closed to approval; ``R4`` routes to the
+        dedicated governance gate, always; ``R3`` requires approval,
+        always; ``R0``–``R2`` auto-approve iff at or below the EFFECTIVE
+        ceiling — the stricter of the instance ceiling and
+        ``capability_ceiling`` (per-capability local policy, which can
+        only ever lower). The legacy ``risk_class`` label is not an
+        input and is never consulted or mapped (ADR 0016).
+
+        Every call emits an ``authority.decision`` audit event naming
+        the capability, the declared class, the ceilings, the matched
+        policy, and the decision (CONTRACT v1.9 #3); the returned frozen
+        :class:`AuthorityDecision` carries the accepted event id.
+        """
+
+        decision = evaluate_action_authority(
+            capability=capability,
+            action_class=action_class,
+            ceiling=self.authority_ceiling(),
+            capability_ceiling=capability_ceiling,
+        )
+        event = Event(
+            id=self.graph.ids.event(),
+            type="authority.decision",
+            payload={
+                "capability": decision.capability,
+                "action_class": decision.action_class,
+                "ceiling": decision.ceiling,
+                "capability_ceiling": decision.capability_ceiling,
+                "effective_ceiling": decision.effective_ceiling,
+                "matched_policy": decision.matched_policy,
+                "decision": decision.decision,
+                "reason": decision.reason,
+            },
+            actor=actor,
+            frame_id=self.frame.id if self.frame else None,
+            caused_by=caused_by,
+            timestamp=self.graph.clock.now(),
+        )
+        self.graph.emit(event)
+        return replace(decision, event_id=event.id)
+
     # ---------- listener ----------
 
     def _on_event(self, event: Event) -> None:
@@ -730,6 +853,10 @@ class Runtime:
             # v1.8 R3: an override is a trace marker/receipt, not behavior
             # scheduling input or an ambient developer-mode switch.
             or event.type.startswith("dev.")
+            # v1.9: authority ceiling changes and decisions are runtime
+            # bookkeeping — they persist, project, export, and replay,
+            # but never schedule behaviors (CONTRACT v1.9 #3).
+            or event.type.startswith("authority.")
         ):
             return
         self._queue.push(event)

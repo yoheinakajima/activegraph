@@ -73,7 +73,7 @@ deterministic = true
 
 def _write_pack(tmp_path, manifest_text=GOOD_MANIFEST):
     root = tmp_path / "meeting_notes"
-    root.mkdir()
+    root.mkdir(parents=True)
     (root / "manifest.toml").write_text(manifest_text)
     (root / "__init__.py").write_text("# pack module\n")
     return root
@@ -406,3 +406,84 @@ def test_surface_check_covers_capabilities_two_way(tmp_path):
     with pytest.raises(PackManifestError) as exc:
         verify_surface(m, relabeled)
     assert any("risk_class mismatch" in v for v in exc.value.violations)
+
+
+# ------------------------------------------- action_class (CONTRACT v1.9)
+
+
+def test_action_class_is_optional_and_closed_set(tmp_path):
+    from activegraph.packs.manifest import CapabilityDecl
+
+    # Absent → undeclared ("").
+    m = load_manifest(_write_pack(tmp_path))
+    assert m.capabilities[0].action_class == ""
+
+    # Present and valid → parsed as-is.
+    declared = GOOD_MANIFEST.replace(
+        'risk_class = "medium"', 'risk_class = "medium"\naction_class = "R2"'
+    )
+    m = load_manifest(_write_pack(tmp_path / "declared", declared))
+    assert m.capabilities[0].action_class == "R2"
+    assert m.capabilities[0] == CapabilityDecl(
+        provider="meeting",
+        capability="export_summary",
+        risk_class="medium",
+        credential_ref="",
+        action_class="R2",
+    )
+
+
+def test_action_class_outside_closed_set_is_a_violation(tmp_path):
+    # Including legacy risk labels: there is no mapping between the
+    # vocabularies, so "medium" is as invalid as "R9" (ADR 0016).
+    for bad in ("R9", "r2", "medium"):
+        text = GOOD_MANIFEST.replace(
+            'risk_class = "medium"',
+            f'risk_class = "medium"\naction_class = "{bad}"',
+        )
+        root = tmp_path / f"bad_{bad.lower()}"
+        with pytest.raises(PackManifestError, match="action_class"):
+            load_manifest(_write_pack(root, text))
+
+
+def _pack_with_capability(action_class=""):
+    from activegraph.packs.manifest import CapabilityDecl
+
+    return Pack(
+        name="meeting_notes",
+        version="0.1.0",
+        object_types=_pack().object_types,
+        capabilities=(
+            CapabilityDecl(
+                provider="meeting",
+                capability="export_summary",
+                risk_class="medium",
+                action_class=action_class,
+            ),
+        ),
+    )
+
+
+def test_surface_check_requires_action_class_agreement(tmp_path):
+    declared = GOOD_MANIFEST.replace(
+        'risk_class = "medium"', 'risk_class = "medium"\naction_class = "R2"'
+    )
+    m = load_manifest(_write_pack(tmp_path, declared))
+
+    # Agreement on both sides: clean.
+    verify_surface(m, _pack_with_capability(action_class="R2"))
+
+    # A relabel between manifest and Pack is caught...
+    with pytest.raises(PackManifestError) as exc:
+        verify_surface(m, _pack_with_capability(action_class="R3"))
+    assert any("action_class mismatch" in v for v in exc.value.violations)
+
+    # ...and so is a class present on only one side (either side).
+    with pytest.raises(PackManifestError) as exc:
+        verify_surface(m, _pack_with_capability(action_class=""))
+    assert any("action_class mismatch" in v for v in exc.value.violations)
+
+    undeclared = load_manifest(_write_pack(tmp_path / "undeclared"))
+    with pytest.raises(PackManifestError) as exc:
+        verify_surface(undeclared, _pack_with_capability(action_class="R2"))
+    assert any("action_class mismatch" in v for v in exc.value.violations)

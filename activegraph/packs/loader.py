@@ -902,12 +902,20 @@ def _build_pack_loaded_payload(pack: Pack, settings_obj: BaseModel) -> dict:
         # v1.4: the declared gateway-capability surface (manifest spec
         # Q8) — graph-readable, so decision surfaces and catalogs read
         # a pack's declared outbound reach without importing it.
+        # v1.9: action_class joins the payload ONLY when declared, so a
+        # pack without it produces a byte-identical pack.loaded event to
+        # pre-v1.9 runtimes (the legacy-invariance rule).
         "capabilities": [
             {
                 "provider": c.provider,
                 "capability": c.capability,
                 "risk_class": c.risk_class,
                 "credential_ref": c.credential_ref,
+                **(
+                    {"action_class": c.action_class}
+                    if getattr(c, "action_class", "")
+                    else {}
+                ),
             }
             for c in getattr(pack, "capabilities", ())
         ],
