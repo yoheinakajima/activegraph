@@ -7872,3 +7872,107 @@ immediately deletes the corresponding exported time series.  Prometheus,
 OpenTelemetry, and custom collector retention/expiry remain backend and
 operator responsibilities.  ``SinkStatus`` is the exact attachment-lifecycle
 authority; the gauge is a best-effort operational projection of it.
+
+# v1.8 — R5 record/replay closure
+
+Opened 2026-07-09 after the EventSink seam was fully green.  This amendment
+implements the runtime constitution's sections 4 and 5: external I/O is a
+recorded input, and a clock read that can change output is external I/O too.
+It closes the three verified holes without changing the EventStore,
+GraphStore, or EventSink protocols.
+
+## v1.8 #6. Embeddings use a runtime-owned request/response path
+
+``Runtime.embed(texts, model=None)`` is the sanctioned embedding entry point;
+``Context.embed`` is the packs-facing delegate.  The configured
+``EmbeddingProvider`` remains a deliberately small provider protocol, but the
+runtime now owns invocation exactly as it owns LLM and tool invocation.
+Every call emits one ``embedding.requested`` / ``embedding.responded`` pair.
+
+The request key is
+``sha256(canonical_json({"model": model, "texts": texts}))``.  The request
+event records that key as ``inputs_hash`` plus the model, input count, and
+cache-hit flag; it does NOT record the source text.  The response event records
+the complete ordered vectors, model, input hash, vector count, dimensions, and
+cache-hit flag.  The runtime refuses provider output whose vector count does
+not match the text count, whose dimensions differ within the batch, or whose
+components are non-finite/non-numeric.  A malformed response is never cached
+or recorded as a successful return.
+
+``EmbeddingCache`` is content-keyed and has ``from_events`` parity with
+``LLMCache``.  ``Runtime.load(..., replay_embedding_cache=True)`` harvests the
+loaded log; ``fork(..., replay_embedding_cache=True)`` harvests the parent's
+full log.  A cache hit returns defensive vector copies and makes zero provider
+calls.  Strict replay always enables and pre-populates this cache regardless
+of the user flag.  It also consumes the recorded request-hash sequence: the
+first rebuilt hash mismatch raises ``ReplayDivergenceError`` at the new
+``embedding.requested`` event, and a missing recorded response fails before
+any provider contact.  Thus strict replay never contacts an embedding system.
+
+The provider object stays public because Python cannot make it private and
+existing pack configuration already reads ``runtime.embedding_provider``.
+Calling ``provider.embed`` directly is therefore possible but explicitly
+forfeits ActiveGraph replay guarantees: no request/response events or replay
+cache can exist around a call the runtime did not own.  ``activegraph-packs``
+must mechanically replace direct provider calls with ``ctx.embed`` (or
+``runtime.embed`` outside a behavior); that adoption is a named follow-up in
+the packs repository and is not part of this repository's change.
+
+## v1.8 #7. Direct `web_fetch` is fail-closed unless live I/O is explicit
+
+The sanctioned ``web_fetch`` path is the existing runtime tool dispatcher,
+which validates arguments, emits ``tool.requested`` / ``tool.responded``, and
+serves replay from ``ToolCache``.  Calling the decorated tool body directly
+cannot manufacture equivalent runtime provenance, so the direct path refuses
+before opening a socket unless its ``ToolContext`` explicitly declares
+``external_io_mode="live_unrecorded"``.  Runtime dispatch constructs the
+context with ``external_io_mode="runtime_recorded"``.
+
+This fail-closed choice is narrower than teaching one reference tool to append
+events without a Runtime, which would create a second event-id, persistence,
+budget, and cache authority.  Explicit live-unrecorded mode is an operator
+escape hatch for one-off acquisition only.  Its name states the consequence:
+the return cannot be reproduced from the ActiveGraph log.  The default direct
+context remains ``"forbid"`` and raises ``ToolError`` with reason
+``tool.unrecorded_external_io`` before network contact.
+
+## v1.8 #8. Cooperative wall-budget truncation is a recorded replay input
+
+``runtime.budget_exhausted`` remains the terminal budget event.  When
+``max_seconds`` ends a cooperative runtime loop, its payload additionally
+records a ``stop_position`` containing the number of accepted materialized-log
+events before the marker, the runtime event tick, and the remaining immediate
+and delayed queue depths.  Sequence is the authority; elapsed seconds are
+diagnostic only.
+
+Strict replay extracts that recorded stop position before it fires any
+behavior.  It disables ambient monotonic-clock checks, evaluates every
+non-wall budget dimension normally, and makes ``budget.remaining`` become
+false at the recorded accepted-event sequence.  The reconstructed run emits
+its budget marker at the same event boundary and leaves the same queued suffix
+unprocessed.  If a recorded wall-budget marker lacks a valid stop position,
+strict replay fails loudly rather than racing the local clock.  Runs with no
+recorded wall stop retain the existing live ``max_seconds`` behavior.
+
+The parent-side ``sandbox.run_forked_trial`` timeout is a process kill, not a
+cooperative Runtime budget check: the killed interpreter cannot atomically
+append a final event, and the parent currently returns a ``TrialReport`` rather
+than re-entering the fork as an event writer.  Recording/replaying that kill is
+explicitly still outside the guarantee in this amendment.  R4's
+``TrialExecutor`` extraction is the next allowed point to add a single
+parent-owned result/log-reference authority; until then the report's
+``limits_exceeded`` outcome and wall-clock detail are operational evidence,
+not replayable truncation provenance.
+
+## v1.8 R5 deliberately does NOT touch
+
+- No changes to ``activegraph-packs``; its ``ctx.embed`` adoption is the named
+  downstream follow-up.
+- No raw embedding text in events, no provider-specific embedding adapter,
+  batching scheduler, pricing, or dimension registry.
+- No second tool dispatcher and no implicit permission for unrecorded network
+  access.
+- No attempt to turn a subprocess wall timeout into a security sandbox or to
+  claim the parent-side kill is replayable before the TrialExecutor seam.
+- No OTel spans, action-class work, GraphStore/EventStore/EventSink changes,
+  or BabyAGI product concepts.
