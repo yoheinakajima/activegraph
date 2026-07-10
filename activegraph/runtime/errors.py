@@ -17,6 +17,8 @@ to ``__init__`` and snapshot-tested individually:
   3. **length_mismatch** — the recorded stream and the live re-run
      produced different numbers of events. A behavior was added, removed,
      or short-circuits differently.
+  4. **embedding_hash_mismatch** — a runtime-owned embedding request was
+     rebuilt with different model/text content than the recorded call.
 
 The signature ``ReplayDivergenceError(event_id=..., expected=..., actual=...)``
 is preserved from v0.5 so existing call sites and tests stay valid; the
@@ -82,12 +84,15 @@ def _build_message(
     three replay-divergence shapes. The discriminator is the input shape:
 
       - ``expected`` starts with ``prompt_hash=`` -> prompt_hash_mismatch
+      - ``expected`` starts with ``embedding_hash=`` -> embedding hash mismatch
       - ``expected`` is ``"<no recorded event>"`` or ``actual is None`` ->
         length_mismatch
       - otherwise -> type_mismatch
     """
     if isinstance(expected, str) and expected.startswith("prompt_hash="):
         return _prompt_hash_message(event_id, expected, actual)
+    if isinstance(expected, str) and expected.startswith("embedding_hash="):
+        return _embedding_hash_message(event_id, expected, actual)
     if expected == _NO_RECORDED_EVENT_SENTINEL or actual is None:
         return _length_message(event_id, expected, actual)
     return _type_message(event_id, expected, actual)
@@ -124,6 +129,33 @@ def _prompt_hash_message(
             f"\n"
             f"To see the full recorded prompt for this event:\n"
             f"    activegraph inspect <parent-run> --event {event_id}"
+        ),
+    )
+
+
+def _embedding_hash_message(
+    event_id: str,
+    expected: str,
+    actual: str | None,
+) -> tuple[str, str, str, str, str]:
+    actual_str = actual if actual is not None else "<no live request>"
+    return (
+        "embedding_hash_mismatch",
+        f"replay diverged at {event_id}: embedding input hash mismatch",
+        (
+            f"Event {event_id} rebuilt a different runtime-owned embedding "
+            f"request than the recorded run:\n"
+            f"  recorded:  {expected}\n"
+            f"  live:      {actual_str}"
+        ),
+        (
+            "Embedding replay keys on the model and complete ordered text "
+            "batch. Serving recorded vectors under a different content hash "
+            "would silently corrupt retrieval results and provenance."
+        ),
+        (
+            "Restore the recorded model/text construction or intentionally "
+            "fork before this request and record a new embedding response."
         ),
     )
 

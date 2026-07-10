@@ -21,6 +21,7 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `ConfigurationError`
 - [x] `CorruptedEventPayloadError`
 - [x] `DeliveryContext`
+- [x] `DevOverride`
 - [x] `Diff`
 - [x] `DiscoveredPack`
 - [x] `DivergentObject`
@@ -182,6 +183,12 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [x] `EmbeddingProvider`
 - [x] `HashEmbeddingProvider`
 
+### `activegraph.llm.embedding_cache`
+
+- [x] `CachedEmbedding` — **one-line**
+- [x] `EmbeddingCache` — **one-line**
+- [x] `hash_embedding_request` — **one-line**
+
 ### `activegraph.llm.native`
 
 - [x] `inject_additional_properties_false`
@@ -329,6 +336,13 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 - [ ] `BehaviorGraph` — **missing**
 - [ ] `Counters` — **missing**
 
+### `activegraph.runtime.dev_override`
+
+- [x] `authority_allows` — **one-line**
+- [x] `gate_is_forbidden` — **one-line**
+- [x] `receipt_from_event` — **one-line**
+- [x] `validate_override_request` — **one-line**
+
 ### `activegraph.runtime.diff`
 
 - [ ] `compute_diff` — **missing**
@@ -388,6 +402,23 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 ### `activegraph.sandbox._child`
 
 - [ ] `main` — **missing**
+
+### `activegraph.sandbox.conformance`
+
+- [x] `TrialExecutorConformance`
+
+### `activegraph.sandbox.executor`
+
+- [x] `LocalSubprocessTrialExecutor` — **one-line**
+- [x] `RecordingTrialExecutor` — **one-line**
+- [x] `TrialArtifactReference` — **one-line**
+- [x] `TrialBudgetUse` — **one-line**
+- [x] `TrialEventLogReference` — **one-line**
+- [x] `TrialExecutor` — **one-line**
+- [x] `TrialFailureDetails` — **one-line**
+- [x] `TrialIsolationGuarantees` — **one-line**
+- [x] `TrialResult` — **one-line**
+- [x] `TrialSpecification` — **one-line**
 
 ### `activegraph.sinks.conformance`
 
@@ -469,13 +500,13 @@ Classification: ``full`` (≥3 lines OR has Args/Returns/Raises/Examples), ``one
 
 ### Ring 0 — public surface (target 100%)
 
-- **121/121 fully documented (100.0%)** — gap to 100% full: **0 symbols**
-- **121/121 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
+- **122/122 fully documented (100.0%)** — gap to 100% full: **0 symbols**
+- **122/122 not-missing (100.0%)** — gap to 100% not-missing: **0 symbols** (these need `docstring_gaps.toml` exemptions for the gate to pass)
 
 ### Ring 1 — importable but not in `__all__` (target 80% not-missing)
 
-- **97/161 fully documented (60.2%)** — v1.1 burndown target is 100% full
-- **144/161 not-missing (89.4%)** — gate threshold is 80% not-missing
+- **98/179 fully documented (54.7%)** — v1.1 burndown target is 100% full
+- **162/179 not-missing (90.5%)** — gate threshold is 80% not-missing
 
 Ring 1 is **above** the 80% gate threshold. The gate enforces the threshold; individual missing-Ring-1 symbols are v1.1 burndown items, not gate exemptions.
 

@@ -7872,3 +7872,280 @@ immediately deletes the corresponding exported time series.  Prometheus,
 OpenTelemetry, and custom collector retention/expiry remain backend and
 operator responsibilities.  ``SinkStatus`` is the exact attachment-lifecycle
 authority; the gauge is a best-effort operational projection of it.
+
+# v1.8 — R5 record/replay closure
+
+Opened 2026-07-09 after the EventSink seam was fully green.  This amendment
+implements the runtime constitution's sections 4 and 5: external I/O is a
+recorded input, and a clock read that can change output is external I/O too.
+It closes the three verified holes without changing the EventStore,
+GraphStore, or EventSink protocols.
+
+## v1.8 #6. Embeddings use a runtime-owned request/response path
+
+``Runtime.embed(texts, model=None)`` is the sanctioned embedding entry point;
+``Context.embed`` is the packs-facing delegate.  The configured
+``EmbeddingProvider`` remains a deliberately small provider protocol, but the
+runtime now owns invocation exactly as it owns LLM and tool invocation.
+Every call emits one ``embedding.requested`` / ``embedding.responded`` pair.
+
+The request key is
+``sha256(canonical_json({"model": model, "texts": texts}))``.  The request
+event records that key as ``inputs_hash`` plus the model, input count, and
+cache-hit flag; it does NOT record the source text.  The response event records
+the complete ordered vectors, model, input hash, vector count, dimensions, and
+cache-hit flag.  The runtime refuses provider output whose vector count does
+not match the text count, whose dimensions differ within the batch, or whose
+components are non-finite/non-numeric.  A malformed response is never cached
+or recorded as a successful return.
+
+``EmbeddingCache`` is content-keyed and has ``from_events`` parity with
+``LLMCache``.  ``Runtime.load(..., replay_embedding_cache=True)`` harvests the
+loaded log; ``fork(..., replay_embedding_cache=True)`` harvests the parent's
+full log.  A cache hit returns defensive vector copies and makes zero provider
+calls.  Strict replay always enables and pre-populates this cache regardless
+of the user flag.  It also consumes the recorded request-hash sequence: the
+first rebuilt hash mismatch raises ``ReplayDivergenceError`` at the new
+``embedding.requested`` event, and a missing recorded response fails before
+any provider contact.  Thus strict replay never contacts an embedding system.
+
+A ``Runtime.embed`` call made directly by operator code has no causal behavior
+event and the source text is deliberately absent from the log, so strict
+*behavior* verification cannot re-execute that operator action.  It treats the
+direct request/response pair as recorded external input rather than derived
+behavior output.  ``Runtime.load(..., replay_embedding_cache=True)`` still
+hydrates the recorded return, and repeating the same direct call serves it
+offline.  Behavior-derived ``ctx.embed`` calls are the requests strict replay
+rebuilds and hash-verifies.
+
+The provider object stays public because Python cannot make it private and
+existing pack configuration already reads ``runtime.embedding_provider``.
+Calling ``provider.embed`` directly is therefore possible but explicitly
+forfeits ActiveGraph replay guarantees: no request/response events or replay
+cache can exist around a call the runtime did not own.  ``activegraph-packs``
+must mechanically replace direct provider calls with ``ctx.embed`` (or
+``runtime.embed`` outside a behavior); that adoption is a named follow-up in
+the packs repository and is not part of this repository's change.
+
+## v1.8 #7. Direct `web_fetch` is fail-closed unless live I/O is explicit
+
+The sanctioned ``web_fetch`` path is the existing runtime tool dispatcher,
+which validates arguments, emits ``tool.requested`` / ``tool.responded``, and
+serves replay from ``ToolCache``.  Calling the decorated tool body directly
+cannot manufacture equivalent runtime provenance, so the direct path refuses
+before opening a socket unless its ``ToolContext`` explicitly declares
+``external_io_mode="live_unrecorded"``.  Runtime dispatch constructs the
+context with ``external_io_mode="runtime_recorded"``.
+
+This fail-closed choice is narrower than teaching one reference tool to append
+events without a Runtime, which would create a second event-id, persistence,
+budget, and cache authority.  Explicit live-unrecorded mode is an operator
+escape hatch for one-off acquisition only.  Its name states the consequence:
+the return cannot be reproduced from the ActiveGraph log.  The default direct
+context remains ``"forbid"`` and raises ``ToolError`` with reason
+``tool.unrecorded_external_io`` before network contact.
+
+## v1.8 #8. Cooperative wall-budget truncation is a recorded replay input
+
+``runtime.budget_exhausted`` remains the terminal budget event.  When
+``max_seconds`` ends a cooperative runtime loop, its payload additionally
+records a ``stop_position`` containing the number of accepted materialized-log
+events before the marker, the runtime event tick, and the remaining immediate
+and delayed queue depths.  Sequence is the authority; elapsed seconds are
+diagnostic only.
+
+Strict replay extracts that recorded stop position before it fires any
+behavior.  It disables ambient monotonic-clock checks, evaluates every
+non-wall budget dimension normally, and makes ``budget.remaining`` become
+false at the recorded accepted-event sequence.  The reconstructed run emits
+its budget marker at the same event boundary and leaves the same queued suffix
+unprocessed.  If a recorded wall-budget marker lacks a valid stop position,
+strict replay fails loudly rather than racing the local clock.  Runs with no
+recorded wall stop retain the existing live ``max_seconds`` behavior.
+
+The parent-side ``sandbox.run_forked_trial`` timeout is a process kill, not a
+cooperative Runtime budget check: the killed interpreter cannot atomically
+append a final event, and the parent currently returns a ``TrialReport`` rather
+than re-entering the fork as an event writer.  Recording/replaying that kill is
+explicitly still outside the guarantee in this amendment.  R4's
+``TrialExecutor`` extraction is the next allowed point to add a single
+parent-owned result/log-reference authority; until then the report's
+``limits_exceeded`` outcome and wall-clock detail are operational evidence,
+not replayable truncation provenance.
+
+## v1.8 R5 deliberately does NOT touch
+
+- No changes to ``activegraph-packs``; its ``ctx.embed`` adoption is the named
+  downstream follow-up.
+- No raw embedding text in events, no provider-specific embedding adapter,
+  batching scheduler, pricing, or dimension registry.
+- No second tool dispatcher and no implicit permission for unrecorded network
+  access.
+- No attempt to turn a subprocess wall timeout into a security sandbox or to
+  claim the parent-side kill is replayable before the TrialExecutor seam.
+- No OTel spans, action-class work, GraphStore/EventStore/EventSink changes,
+  or BabyAGI product concepts.
+
+# v1.8 — R4 `TrialExecutor` extraction
+
+Opened after R5 was independently green.  This amendment implements the
+runtime constitution's section 8 ``TrialExecutor`` boundary without changing
+the proven local-subprocess trial mechanics from v1.5/v1.7.1.  The interface
+is the deliverable; additional execution providers are not.
+
+## v1.8 #9. The executor boundary is serialized and pinned
+
+``TrialExecutor`` is a runtime-checkable protocol with two members:
+
+```python
+class TrialExecutor(Protocol):
+    @property
+    def isolation_guarantees(self) -> TrialIsolationGuarantees: ...
+    def execute(self, serialized_specification: str) -> TrialResult: ...
+```
+
+The wire value is versioned canonical JSON produced by
+``TrialSpecification.to_json`` and parsed by ``from_json``.  Version 1 contains
+the store path, parent run id, fork event id, immutable ``PackSource`` pin,
+ordered extra-pack pins, scenario reference, ``TrialLimits``, and label.  It
+contains no live Runtime, callable, provider client, ambient environment, or
+unserialized Python object.  ``PackSource.expected_bundle_hash`` remains the
+artifact pin verified before import; the serializer preserves the existing
+empty-pin compatibility posture rather than silently inventing one.
+
+Unknown schema versions, malformed types, and missing required identity fields
+fail before an executor starts work.  Adapters receive bytes-equivalent intent
+across process/provider boundaries and may not reinterpret the trial by reading
+ambient parent state.
+
+## v1.8 #10. Results have one provider-neutral structured shape
+
+``TrialResult`` contains:
+
+- ``status`` from the locked ``TRIAL_OUTCOMES`` set;
+- ``budget_use`` (events appended, behavior failures, and requested limits);
+- ordered ``artifacts`` as ``TrialArtifactReference`` values (empty is an
+  honest result when the executor produced no external artifact);
+- ``event_log`` as a ``TrialEventLogReference`` naming store and fork run;
+- optional ``failure`` as ``TrialFailureDetails`` rather than parsed prose;
+- the adapter's ``TrialIsolationGuarantees`` plus warnings, exit code, and
+  human detail.
+
+``TrialReport`` remains the compatibility return from
+``run_forked_trial``.  ``TrialResult.to_report`` is lossless for its legacy
+fields; the wrapper constructs a serialized specification, delegates to
+``LocalSubprocessTrialExecutor``, and returns that report.  Existing callers
+and sandbox tests therefore keep their exact API and outcome meanings while
+new orchestration code depends only on the narrow executor protocol.
+
+Every adapter declares process, filesystem, network, syscall, environment,
+and security-sandbox guarantees.  Claims are descriptive contract data, not
+marketing labels.  In particular the local adapter declares a fresh
+interpreter and closed environment allow-list, but shared host filesystem,
+unconfined network/syscalls, and ``security_sandbox=False``.
+
+## v1.8 #11. Local subprocess is the behavior-preserving default
+
+``LocalSubprocessTrialExecutor`` delegates to the existing parent-fork / child
+job / store-reread implementation.  The environment allow-list, explicit
+computed-PYTHONPATH code channel, bundle/manifest verification, limits,
+stderr-tail handling, warnings, exit/outcome mapping, parent-run isolation,
+and store-authoritative counts remain unchanged.  ``run_forked_trial`` is now
+the compatibility function over this default, not a second execution path.
+
+R5 deferred the parent-side wall kill until one parent-owned result authority
+existed.  The local executor now supplies it.  When ``communicate`` times out,
+the parent kills and reaps the child, then appends
+``trial.wall_clock_exhausted`` to the fork with the configured limit and the
+accepted-event sequence immediately before the marker.  The marker is an
+external stop fact: load/replay projects the killed prefix and never re-races
+the clock.  A failure to append the marker is surfaced in result detail; it is
+never silently claimed as recorded.  This closes the R5 parent-kill gap for
+the local executor without pretending the child made an atomic final write.
+
+## v1.8 #12. Conformance and recording doubles define the adapter seam
+
+``TrialExecutorConformance`` is a pytest-compatible abstract suite in the
+EventStore/EventSink style.  Adapters provide a fresh executor and serialized
+valid specification; inherited cases verify schema round-trip, fail-loud
+malformed input, declared isolation, and the complete provider-neutral result
+shape.  The first-party local adapter passes it.
+
+``RecordingTrialExecutor`` is the public deterministic test double.  It parses
+and records every specification, returns caller-supplied ``TrialResult`` values
+in order, and raises on exhaustion.  It performs no fork, process, filesystem,
+or network work and declares that absence honestly.
+
+## v1.8 R4 deliberately does NOT touch
+
+- No Docker, E2B, Replit, Modal, remote queue, or other executor adapter.
+- No security-sandbox claim for the local subprocess and no new syscall,
+  filesystem, or network confinement.
+- No changes to child pack materialization, manifest policy, promotion,
+  EventStore/GraphStore/EventSink, or action-class authority.
+- No artifact upload/storage subsystem; the typed empty-or-reference field is
+  the compatibility seam.
+- No BabyAGI product concept and no executor-specific field on Runtime.
+
+# v1.8 — R3 explicit `dev.override`
+
+Opened only after R5 and R4 were independently green.  This amendment
+implements the runtime constitution's section 3 / D013 as an auditable local
+receipt, not as a generic ``force=`` flag and not as an authority system.
+
+## v1.8 #13. Every override is a log fact before it is usable
+
+``Runtime.dev_override`` requires non-empty ``actor``, ``reason``, exact
+``target_gate``, exact ``scope``, and ``resulting_authority``.  It first emits
+``dev.override`` with all five fields, then returns frozen ``DevOverride``
+containing the run id and accepted event id.  If event acceptance or durable
+append fails, no receipt is returned and the caller must discard/reload the
+indeterminate Graph under the existing v1.8 append-failure rule.
+
+``Runtime.dev_overrides()`` reconstructs receipts from the current run log,
+so load/fork/replay see the same explicit marker.  A receipt contributes zero
+score and does not mutate graph authority, pack settings, approvals, policy,
+promotion state, or a behavior registry merely by existing.
+
+## v1.8 #14. Use is exact, local, and opt-in at the gate
+
+``Runtime.validate_dev_override(receipt, target_gate, scope,
+required_authority)`` returns true only when:
+
+1. the receipt names this runtime's run;
+2. the referenced accepted event is a byte-for-field ``dev.override`` match;
+3. target gate and scope match exactly (no prefix or wildcard widening); and
+4. the required authority is no greater than the receipt's resulting
+   authority.
+
+The closed local authority order is ``R0 < R1 < R2 < R3``.  ``R4`` is not a
+valid resulting or required authority on this path.  A downstream local gate
+must explicitly call the validator and decide what its bypass means; the
+runtime never scans for an override and silently disables checks.  This keeps
+the mechanism useful to local tooling while preventing a broad ambient
+"developer mode" from changing unrelated decisions.
+
+## v1.8 #15. Promotion, logging, and governance are non-bypassable here
+
+``Runtime.dev_override`` rejects every target in the ``promote`` /
+``promotion`` namespace, every event-log/logging target, and any request for
+``R4``.  ``validate_dev_override`` applies the same deny-list even to a
+fabricated receipt.  There is no ``force=`` parameter added to ``promote`` and
+no receipt parameter on its conflict path: re-forking remains the only escape
+from a fail-closed promotion conflict.
+
+The event itself uses ordinary ``Graph.emit`` and cannot suppress its own
+logging, EventStore append, EventSink offer, or replay.  The actor and reason
+are mandatory provenance, not optional comments.  Governance-level authority
+requires the dedicated action-class/gate workstream; this trace marker cannot
+grant it.
+
+## v1.8 R3 deliberately does NOT touch
+
+- No canonical ``action_class`` enforcement (R2 remains a separate coordinated
+  workstream) and no mapping from legacy risk labels.
+- No change to promotion, approval semantics, policy evaluation, pack settings,
+  scoring, EventStore/GraphStore/EventSink, or TrialExecutor.
+- No global environment switch, wildcard scope, implicit gate discovery,
+  remote override service, or governance authority.
+- No BabyAGI level, badge, score, or product concept.

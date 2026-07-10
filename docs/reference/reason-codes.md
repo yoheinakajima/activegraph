@@ -42,6 +42,7 @@ Custom providers may raise `LLMBehaviorError` with a provider-specific
 | `tool.fixture_missing` | `tool.responded.error`, `behavior.failed` | Recorded tool cache has no fixture for the tool-call hash. |
 | `tool.unknown_tool` | `behavior.failed` | LLM asked for a tool the behavior did not declare. |
 | `tool.max_turns_exhausted` | `behavior.failed` | LLM/tool turn loop reached `max_tool_turns` without a final non-tool response. |
+| `tool.unrecorded_external_io` | direct `ToolError` | `web_fetch` was called outside recorded runtime dispatch without explicitly selecting live-unrecorded mode. |
 
 ## Budget
 

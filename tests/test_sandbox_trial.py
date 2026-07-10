@@ -210,6 +210,17 @@ def test_wall_clock_blow_kills_the_child(tmp_path):
     )
     assert report.outcome == "limits_exceeded"
     assert "wall clock" in report.detail
+    fork = Runtime.load(path, run_id=report.fork_run_id, behaviors=[])
+    marker = next(
+        event
+        for event in fork.graph.events
+        if event.type == "trial.wall_clock_exhausted"
+    )
+    assert marker.payload["executor"] == "local_subprocess"
+    assert marker.payload["wall_clock_seconds"] == 3.0
+    assert marker.payload["stop_position"]["accepted_sequence"] == (
+        len(fork.graph.events) - 1
+    )
     _parent_untouched(path, parent_run, n_parent)
 
 

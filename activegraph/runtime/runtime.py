@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
 import random as _random
 import time as _time
@@ -79,6 +80,7 @@ from activegraph.core.view import View
 from activegraph.frame import Frame
 from activegraph.llm.cache import LLMCache
 from activegraph.llm.embedding import EmbeddingProvider
+from activegraph.llm.embedding_cache import EmbeddingCache, hash_embedding_request
 from activegraph.llm.errors import LLMBehaviorError, MissingProviderError
 from activegraph.llm.provider import LLMProvider
 from activegraph.llm.types import LLMMessage, ToolCall
@@ -86,6 +88,13 @@ from activegraph.policy import Policy
 from activegraph.runtime.behavior_graph import BehaviorGraph
 from activegraph.runtime.budget import Budget
 from activegraph.runtime.diff import Diff, compute_diff
+from activegraph.runtime.dev_override import (
+    DevOverride,
+    authority_allows,
+    gate_is_forbidden,
+    receipt_from_event,
+    validate_override_request,
+)
 from activegraph.runtime.promote import (
     PromotePlan,
     PromoteResult,
@@ -156,6 +165,8 @@ class Context:
     #                ctx.propose_object(...) can reach the runtime.
     settings: Any = None
     _runtime: Any = None
+    _behavior_name: Optional[str] = None
+    _event_id: Optional[str] = None
 
     def pack_settings(self, pack_name: str) -> Any:
         """Look up settings for any loaded pack by name. Returns the
@@ -190,6 +201,31 @@ class Context:
             object_type=object_type, data=data, reason=reason
         )
         return proposal_id
+
+    def embed(
+        self,
+        texts: list[str],
+        *,
+        model: Optional[str] = None,
+    ) -> list[list[float]]:
+        """Embed text through the runtime's recorded/replayable I/O path.
+
+        Packs should use this method instead of calling
+        ``runtime.embedding_provider.embed`` directly.  The latter cannot be
+        prohibited in Python, but it bypasses the event pair and replay cache.
+        """
+
+        if self._runtime is None:
+            from activegraph.runtime.exec_errors import RuntimeContextRequiredError
+
+            raise RuntimeContextRequiredError(method="ctx.embed")
+        result: list[list[float]] = self._runtime.embed(
+            texts,
+            model=model,
+            actor=self._behavior_name or "runtime",
+            caused_by=self._event_id,
+        )
+        return result
 
 
 class BehaviorFailure(NamedTuple):
@@ -297,10 +333,10 @@ class Runtime:
         # False for the v1.3 cycle - native mode changes prompt hashes,
         # so flipping it must be a deliberate, cache-invalidating act.
         native_structured_output: bool = False,
-        # v1.3: embedding seam. The runtime holds it for packs (memory
-        # and retrieval capabilities read runtime.embedding_provider);
-        # the runtime itself never calls it.
+        # v1.8 R5: runtime-owned embedding invocation and replay cache.
         embedding_provider: Optional[EmbeddingProvider] = None,
+        replay_embedding_cache: bool = False,
+        embedding_cache: Optional[EmbeddingCache] = None,
     ) -> None:
         initial_sink_configs = _normalize_sink_configs(sinks)
         existing_sink_names = graph._sink_names_in_use()  # noqa: SLF001
@@ -322,11 +358,16 @@ class Runtime:
         self.replay_strict = replay_strict
         # CONTRACT v0.6 #3: provider is set once at construction.
         self.llm_provider: Optional[LLMProvider] = llm_provider
-        # v1.3: second provider seam, same set-once convention. None
-        # means the application didn't configure one; packs degrade
-        # (e.g. lexical-only retrieval) or fail loud per their own
-        # contract.
+        # v1.3 provider seam, invoked through Runtime.embed since v1.8 R5.
         self.embedding_provider: Optional[EmbeddingProvider] = embedding_provider
+        self.replay_embedding_cache = bool(replay_embedding_cache)
+        self._embedding_cache = (
+            embedding_cache if embedding_cache is not None else EmbeddingCache()
+        )
+        self._strict_expected_embedding_hashes: Optional[list[str]] = None
+        # Strict replay installs a recorded max_seconds stop boundary here.
+        # When present, no ambient monotonic read is permitted.
+        self._strict_wall_stop_sequence: Optional[int] = None
         # CONTRACT v1.3 #4: raised only inside promote()'s apply phase
         # so delta events skip behavior enqueueing (see _on_event).
         self._promote_quiescent: bool = False
@@ -574,6 +615,85 @@ class Runtime:
 
         return self.graph.close_sinks(timeout=timeout)
 
+    def dev_override(
+        self,
+        *,
+        actor: str,
+        reason: str,
+        target_gate: str,
+        scope: str,
+        resulting_authority: str,
+    ) -> DevOverride:
+        """Record and return one exact, run-local developer override receipt.
+
+        The event must cross normal graph/store acceptance before this method
+        returns. Promotion, event logging, and R4 governance authority are
+        rejected before emission.
+        """
+
+        validate_override_request(
+            actor=actor,
+            reason=reason,
+            target_gate=target_gate,
+            scope=scope,
+            resulting_authority=resulting_authority,
+        )
+        event = Event(
+            id=self.graph.ids.event(),
+            type="dev.override",
+            payload={
+                "actor": actor,
+                "reason": reason,
+                "target_gate": target_gate,
+                "scope": scope,
+                "resulting_authority": resulting_authority,
+            },
+            actor=actor,
+            frame_id=self.frame.id if self.frame else None,
+            caused_by=None,
+            timestamp=self.graph.clock.now(),
+        )
+        self.graph.emit(event)
+        receipt = receipt_from_event(event, run_id=self.graph.run_id)
+        assert receipt is not None
+        return receipt
+
+    def dev_overrides(self) -> list[DevOverride]:
+        """Reconstruct accepted developer override receipts from the log."""
+
+        receipts: list[DevOverride] = []
+        for event in self.graph.events:
+            receipt = receipt_from_event(event, run_id=self.graph.run_id)
+            if receipt is not None:
+                receipts.append(receipt)
+        return receipts
+
+    def validate_dev_override(
+        self,
+        receipt: DevOverride,
+        *,
+        target_gate: str,
+        scope: str,
+        required_authority: str,
+    ) -> bool:
+        """Validate an exact receipt for one local gate decision.
+
+        No wildcard, prefix, cross-run, promotion, event-log, or R4 match is
+        possible. The referenced event must still exist with identical fields.
+        """
+
+        if receipt.run_id != self.graph.run_id or gate_is_forbidden(target_gate):
+            return False
+        if target_gate != receipt.target_gate or scope != receipt.scope:
+            return False
+        if not authority_allows(receipt.resulting_authority, required_authority):
+            return False
+        event = self._find_event(receipt.event_id)
+        if event is None:
+            return False
+        recorded = receipt_from_event(event, run_id=self.graph.run_id)
+        return recorded == receipt
+
     # ---------- listener ----------
 
     def _on_event(self, event: Event) -> None:
@@ -607,6 +727,9 @@ class Runtime:
             # deliberately keeps `pack.loaded` queue-visible so pack-aware
             # behaviors can subscribe, but `approval.*` is suppressed.
             or event.type.startswith("approval.")
+            # v1.8 R3: an override is a trace marker/receipt, not behavior
+            # scheduling input or an ambient developer-mode switch.
+            or event.type.startswith("dev.")
         ):
             return
         self._queue.push(event)
@@ -738,6 +861,25 @@ class Runtime:
                         registered=tuple(self.tool_registry.keys()),
                     )
 
+    def _start_budget(self) -> None:
+        """Start live timing or the clock-free strict-replay budget."""
+
+        self.budget.start(
+            read_wall_clock=self._strict_wall_stop_sequence is None
+        )
+
+    def _budget_remaining(self) -> bool:
+        """Evaluate limits, reproducing a recorded wall stop when installed."""
+
+        if self._strict_wall_stop_sequence is None:
+            return self.budget.remaining()
+        if not self.budget.remaining(check_wall_clock=False):
+            return False
+        if len(self.graph.events) >= self._strict_wall_stop_sequence:
+            self.budget.mark_exhausted("max_seconds")
+            return False
+        return True
+
     def run_goal(self, goal: str, *, actor: str = "user") -> None:
         self._ensure_registry()
         # Stamp the run row's goal (best-effort; only meaningful with a store).
@@ -756,28 +898,152 @@ class Runtime:
             caused_by=None,
             timestamp=self.graph.clock.now(),
         )
-        self.budget.start()
+        self._start_budget()
         self.graph.emit(ev)
         self.run_until_idle()
 
     def run_until_idle(self) -> None:
         self._ensure_registry()
         if self.budget._start is None:
-            self.budget.start()
+            self._start_budget()
         self._loop(stop=lambda: False)
         self._emit_idle_or_exhausted()
 
     def run_until(self, predicate: Callable[[Graph], bool]) -> None:
         self._ensure_registry()
         if self.budget._start is None:
-            self.budget.start()
+            self._start_budget()
         self._loop(stop=lambda: predicate(self.graph))
         self._emit_idle_or_exhausted()
+
+    def embed(
+        self,
+        texts: list[str],
+        *,
+        model: Optional[str] = None,
+        actor: str = "runtime",
+        caused_by: Optional[str] = None,
+    ) -> list[list[float]]:
+        """Embed ``texts`` through a recorded, content-keyed runtime path.
+
+        The request event stores only a content hash, never the input text;
+        the response event stores the ordered vectors so replay can return
+        without provider contact.  Behavior code normally reaches this path
+        through :meth:`Context.embed`, which supplies causal metadata.
+        """
+
+        if not isinstance(texts, list) or any(
+            not isinstance(text, str) for text in texts
+        ):
+            raise TypeError("texts must be a list of strings")
+        provider = self.embedding_provider
+        resolved_model = model
+        if resolved_model is None:
+            if provider is None:
+                raise RuntimeError(
+                    "Runtime.embed() requires embedding_provider= when model is omitted"
+                )
+            resolved_model = provider.default_model
+        if not isinstance(resolved_model, str) or not resolved_model:
+            raise ValueError("embedding model must be a non-empty string")
+
+        inputs_hash = hash_embedding_request(
+            texts=list(texts), model=resolved_model
+        )
+        cached = (
+            self._embedding_cache.get(inputs_hash)
+            if self.replay_embedding_cache
+            else None
+        )
+        request = self._emit_embedding_event(
+            "embedding.requested",
+            {
+                "inputs_hash": inputs_hash,
+                "model": resolved_model,
+                "input_count": len(texts),
+                "cache_hit": cached is not None,
+            },
+            actor=actor,
+            caused_by=caused_by,
+        )
+
+        if self.replay_strict and self._strict_expected_embedding_hashes is not None:
+            expected = (
+                self._strict_expected_embedding_hashes.pop(0)
+                if self._strict_expected_embedding_hashes
+                else None
+            )
+            if expected is None or expected != inputs_hash:
+                raise ReplayDivergenceError(
+                    event_id=request.id,
+                    expected=f"embedding_hash={expected or '<no recorded request>'}",
+                    actual=f"embedding_hash={inputs_hash}",
+                )
+
+        if cached is not None:
+            vectors = cached
+        else:
+            if self.replay_strict:
+                # Strict replay is never allowed to fall through to external
+                # embedding I/O, even if a provider object is configured.
+                raise ReplayDivergenceError(
+                    event_id=request.id,
+                    expected=f"embedding_response={inputs_hash}",
+                    actual=None,
+                )
+            if provider is None:
+                exc = RuntimeError(
+                    "Runtime.embed() requires an embedding_provider= on cache miss"
+                )
+                self._emit_embedding_error(
+                    request=request,
+                    inputs_hash=inputs_hash,
+                    model=resolved_model,
+                    exc=exc,
+                    actor=actor,
+                )
+                raise exc
+            try:
+                raw_vectors = provider.embed(
+                    texts=list(texts), model=resolved_model
+                )
+                vectors = _validate_embedding_vectors(texts, raw_vectors)
+            except Exception as exc:
+                self._emit_embedding_error(
+                    request=request,
+                    inputs_hash=inputs_hash,
+                    model=resolved_model,
+                    exc=exc,
+                    actor=actor,
+                )
+                raise
+            self._embedding_cache.record(
+                inputs_hash,
+                vectors,
+                requesting_event_id=request.id,
+            )
+
+        dimensions = len(vectors[0]) if vectors else 0
+        self._emit_embedding_event(
+            "embedding.responded",
+            {
+                "inputs_hash": inputs_hash,
+                "model": resolved_model,
+                "vectors": [list(vector) for vector in vectors],
+                "vector_count": len(vectors),
+                "dimensions": dimensions,
+                "cache_hit": cached is not None,
+                "error": None,
+            },
+            actor=actor,
+            caused_by=request.id,
+        )
+        return [list(vector) for vector in vectors]
 
     # ---------- loop ----------
 
     def _loop(self, *, stop: Callable[[], bool]) -> None:
-        while (self._queue or self._delayed) and self.budget.remaining():
+        while (self._queue or self._delayed) and self._budget_remaining():
             if stop():
                 return
             # Always drain main queue first. Delayed entries are checked
@@ -789,7 +1055,7 @@ class Runtime:
                 self._tick += 1
                 matches = cast(Registry, self.registry).match(event, self.graph)
                 for b, rels, p_matches in matches:
-                    if not self.budget.remaining():
+                    if not self._budget_remaining():
                         break
                     # v0.7: activate_after defers invocation. Schedule and
                     # emit `behavior.scheduled` instead of invoking now.
@@ -804,7 +1070,7 @@ class Runtime:
                         self._emit_pattern_matched(b, event, p_matches)
                     if isinstance(b, RelationBehavior):
                         for r in rels:
-                            if not self.budget.remaining():
+                            if not self._budget_remaining():
                                 break
                             self._invoke_relation(b, r, event, p_matches)
                     elif isinstance(b, LLMBehavior):
@@ -847,7 +1113,7 @@ class Runtime:
     def _fire_due_delayed(self) -> None:
         due = self._delayed.pop_due(self._tick)
         for entry in due:
-            if not self.budget.remaining():
+            if not self._budget_remaining():
                 # Re-push and exit — budget exhausted before all due
                 # entries fired; preserved for next run_until_idle.
                 self._delayed.push(entry)
@@ -921,6 +1187,8 @@ class Runtime:
             matches=list(matches or []),
             settings=self._pack_settings_for_behavior(b),
             _runtime=self,
+            _behavior_name=b.name,
+            _event_id=event.id,
         )
 
         # v0.8: count and time the handler call. Only function behaviors
@@ -942,6 +1210,8 @@ class Runtime:
         _t0 = _monotonic()
         try:
             b.run(event, bgraph, ctx)
+        except ReplayDivergenceError:
+            raise
         except Exception as e:
             self.metrics.histogram(
                 "activegraph_behaviors_duration_seconds",
@@ -1022,6 +1292,8 @@ class Runtime:
             matches=list(matches or []),
             settings=self._pack_settings_for_behavior(b),
             _runtime=self,
+            _behavior_name=b.name,
+            _event_id=event.id,
         )
 
         self._emit_lifecycle(
@@ -1085,7 +1357,7 @@ class Runtime:
         response = None  # final non-tool response
 
         for turn_idx in range(max(1, b.max_tool_turns)):
-            if not self.budget.remaining():
+            if not self._budget_remaining():
                 self._emit_behavior_failed(
                     b.name,
                     event.id,
@@ -1150,7 +1422,7 @@ class Runtime:
             first_attempt_request_id: Optional[str] = None
             retry_caused_by: Optional[str] = None
             for attempt_index in range(max_attempts):
-                if attempt_index > 0 and not self.budget.remaining():
+                if attempt_index > 0 and not self._budget_remaining():
                     self._emit_behavior_failed(
                         b.name,
                         event.id,
@@ -1407,7 +1679,7 @@ class Runtime:
                         extras={"tool": call.name},
                     )
                     return
-                if not self.budget.remaining():
+                if not self._budget_remaining():
                     self._emit_behavior_failed(
                         b.name, event.id,
                         RuntimeError("budget exhausted before tool call"),
@@ -1519,6 +1791,8 @@ class Runtime:
         bgraph._tool_request_event_ids = list(tool_request_event_ids)  # noqa: SLF001
         try:
             cast("Callable[..., None]", b.handler)(event, bgraph, ctx, response.parsed)
+        except ReplayDivergenceError:
+            raise
         except LLMBehaviorError as e:
             self._emit_behavior_failed(
                 b.name, event.id, e, reason=e.reason,
@@ -1659,6 +1933,7 @@ class Runtime:
                 idempotency_key=str(uuid.uuid4()),
                 timeout_seconds=tool.timeout_seconds,
                 logger=logging.getLogger(f"activegraph.tools.{tool.name}"),
+                external_io_mode="runtime_recorded",
             )
             try:
                 tool_response = self._tool_invoker.invoke(tool, input_obj, tool_ctx)
@@ -1789,6 +2064,55 @@ class Runtime:
         )
         self.graph.emit(ev)
         return ev
+
+    def _emit_embedding_event(
+        self,
+        type_: str,
+        payload: dict[str, Any],
+        *,
+        actor: str,
+        caused_by: Optional[str],
+    ) -> Event:
+        """Append one runtime-owned embedding request/response event."""
+
+        event = Event(
+            id=self.graph.ids.event(),
+            type=type_,
+            payload=payload,
+            actor=actor,
+            frame_id=self.frame.id if self.frame else None,
+            caused_by=caused_by,
+            timestamp=self.graph.clock.now(),
+        )
+        self.graph.emit(event)
+        return event
+
+    def _emit_embedding_error(
+        self,
+        *,
+        request: Event,
+        inputs_hash: str,
+        model: str,
+        exc: BaseException,
+        actor: str,
+    ) -> None:
+        """Complete a failed embedding request without caching a return."""
+
+        self._emit_embedding_event(
+            "embedding.responded",
+            {
+                "inputs_hash": inputs_hash,
+                "model": model,
+                "vectors": None,
+                "cache_hit": False,
+                "error": {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            },
+            actor=actor,
+            caused_by=request.id,
+        )
 
     def _emit_llm_event(
         self,
@@ -1938,6 +2262,8 @@ class Runtime:
             matches=list(matches or []),
             settings=self._pack_settings_for_behavior(b),
             _runtime=self,
+            _behavior_name=b.name,
+            _event_id=event.id,
         )
 
         self._emit_lifecycle(
@@ -1952,6 +2278,8 @@ class Runtime:
         )
         try:
             b.run(relation, event, bgraph, ctx)
+        except ReplayDivergenceError:
+            raise
         except Exception as e:
             # v1.0.3 #3: route through _emit_behavior_failed so
             # relation-behavior failures go through the same WARNING
@@ -2103,13 +2431,22 @@ class Runtime:
     def _emit_idle_or_exhausted(self) -> None:
         if self._idle_emitted:
             return
-        if not self.budget.remaining():
+        if not self._budget_remaining():
+            exhausted_by = self.budget.exhausted_by()
+            payload: dict[str, Any] = {
+                "exhausted_by": exhausted_by,
+                "snapshot": self.budget.snapshot(),
+            }
+            if exhausted_by == "max_seconds":
+                payload["stop_position"] = {
+                    "accepted_sequence": len(self.graph.events),
+                    "event_tick": self._tick,
+                    "queue_depth": len(self._queue),
+                    "delayed_depth": len(self._delayed),
+                }
             self._emit_lifecycle(
                 "runtime.budget_exhausted",
-                {
-                    "exhausted_by": self.budget.exhausted_by(),
-                    "snapshot": self.budget.snapshot(),
-                },
+                payload,
             )
         else:
             self._emit_lifecycle(
@@ -2619,6 +2956,7 @@ class Runtime:
         graph_store: Optional[GraphStore] = None,
         native_structured_output: bool = False,
         embedding_provider: Optional[EmbeddingProvider] = None,
+        replay_embedding_cache: bool = False,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -2667,6 +3005,9 @@ class Runtime:
         # v0.7: same pattern for the tool cache.
         from activegraph.tools.cache import ToolCache as _ToolCache
         tcache = _ToolCache.from_events(events) if replay_tool_cache else None
+        embedding_cache = (
+            EmbeddingCache.from_events(events) if replay_embedding_cache else None
+        )
 
         rt = cls(
             graph,
@@ -2690,6 +3031,8 @@ class Runtime:
             sinks=None,
             native_structured_output=native_structured_output,
             embedding_provider=embedding_provider,
+            replay_embedding_cache=replay_embedding_cache,
+            embedding_cache=embedding_cache,
         )
         # Make sure the run row exists (older files might predate it; in v0.5
         # they shouldn't, but be defensive).
@@ -2718,6 +3061,7 @@ class Runtime:
                 budget,
                 seed,
                 llm_provider=llm_provider,
+                embedding_provider=embedding_provider,
                 native_structured_output=native_structured_output,
             )
 
@@ -2742,6 +3086,7 @@ class Runtime:
         sinks: Optional[Iterable[EventSink | SinkConfig]] = None,
         graph_store: Optional[GraphStore] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
+        replay_embedding_cache: bool = False,
     ) -> "Runtime":
         """Branch this run at `at_event` into an independent new run.
 
@@ -2847,6 +3192,11 @@ class Runtime:
             if replay_tool_cache
             else None
         )
+        embedding_cache = (
+            EmbeddingCache.from_events(self.graph.events)
+            if replay_embedding_cache
+            else None
+        )
 
         rt = Runtime(
             fork_graph,
@@ -2889,6 +3239,8 @@ class Runtime:
                 if embedding_provider is not None
                 else self.embedding_provider
             ),
+            replay_embedding_cache=replay_embedding_cache,
+            embedding_cache=embedding_cache,
         )
         # CONTRACT v0.5 diff #8 (extended to fork in v0.6): events whose
         # behaviors never started get re-queued. For a fork at an early
@@ -3509,6 +3861,7 @@ def _verify_replay(
     seed: int,
     *,
     llm_provider: Optional[LLMProvider] = None,
+    embedding_provider: Optional[EmbeddingProvider] = None,
     native_structured_output: bool = False,
 ) -> None:
     """Replay the run from scratch — fresh Graph, behaviors fire — and
@@ -3541,6 +3894,7 @@ def _verify_replay(
         for e in recorded_events
         if e.caused_by is None
         and not _is_lifecycle(e)
+        and not e.type.startswith("embedding.")
         and not _is_promote_block(e)
     ]
     if not seed_events:
@@ -3551,6 +3905,7 @@ def _verify_replay(
     # behaviors fired them) so we can pin divergence at the right
     # event id.
     non_replayable_llm_ids = _non_replayable_llm_attempt_event_ids(recorded_events)
+    direct_embedding_ids = _direct_embedding_event_ids(recorded_events)
     expected_hashes = [
         cast(str, e.payload.get("prompt_hash"))
         for e in recorded_events
@@ -3561,6 +3916,20 @@ def _verify_replay(
         )
     ]
     cache = LLMCache.from_events(recorded_events)
+    expected_embedding_hashes = [
+        cast(str, event.payload.get("inputs_hash"))
+        for event in recorded_events
+        if event.type == "embedding.requested"
+        and event.id not in direct_embedding_ids
+        and isinstance(event.payload.get("inputs_hash"), str)
+    ]
+    embedding_cache = EmbeddingCache.from_events(recorded_events)
+    wall_stop = _recorded_wall_stop(recorded_events)
+    verify_budget = dict(budget or {})
+    if wall_stop is not None:
+        _, recorded_limit = wall_stop
+        if recorded_limit is not None:
+            verify_budget["max_seconds"] = recorded_limit
 
     fresh = Graph(ids=IDGen(), run_id="verify_" + loaded_graph.run_id)
     # CONTRACT v1.5 #2: compacted runs verify their post-snapshot
@@ -3575,17 +3944,23 @@ def _verify_replay(
         behaviors=behaviors,
         frame=frame,
         policy=policy,
-        budget=budget,
+        budget=verify_budget,
         seed=seed,
         llm_provider=llm_provider,
         replay_llm_cache=True,
         llm_cache=cache,
+        embedding_provider=embedding_provider,
+        replay_embedding_cache=True,
+        embedding_cache=embedding_cache,
         replay_strict=True,
         native_structured_output=native_structured_output,
     )
     # Install the expected-hash queue. _invoke_llm pops one per LLM call
     # and raises ReplayDivergenceError if the live hash differs.
     fresh_rt._strict_expected_hashes = list(expected_hashes)
+    fresh_rt._strict_expected_embedding_hashes = list(expected_embedding_hashes)
+    if wall_stop is not None:
+        fresh_rt._strict_wall_stop_sequence = wall_stop[0]
     fresh_rt._ensure_registry()
 
     # Replay seed events through emit so behaviors fire, draining the
@@ -3645,12 +4020,14 @@ def _verify_replay(
         for e in recorded_events
         if not _is_lifecycle(e)
         and e.id not in non_replayable_llm_ids
+        and e.id not in direct_embedding_ids
         and not _is_promote_block(e)
     ]
     new_stream = [
         (e.id, e.type)
         for e in fresh.events
-        if not _is_lifecycle(e) and not _is_promote_block(e)
+        if not _is_lifecycle(e)
+        and not _is_promote_block(e)
     ]
     for i, (rec, new) in enumerate(zip(rec_stream, new_stream)):
         if rec[1] != new[1]:
@@ -3663,6 +4040,60 @@ def _verify_replay(
         expected = rec_stream[len(new_stream)][1] if len(new_stream) < len(rec_stream) else "<no recorded event>"
         actual = new_stream[len(rec_stream)][1] if len(rec_stream) < len(new_stream) else None
         raise ReplayDivergenceError(event_id=offending, expected=expected, actual=actual)
+
+
+def _recorded_wall_stop(
+    events: list[Event],
+) -> Optional[tuple[int, Optional[float]]]:
+    """Return a validated recorded cooperative wall-stop boundary."""
+
+    for event in events:
+        if event.type != "runtime.budget_exhausted":
+            continue
+        if event.payload.get("exhausted_by") != "max_seconds":
+            continue
+        position = event.payload.get("stop_position")
+        sequence = (
+            position.get("accepted_sequence")
+            if isinstance(position, dict)
+            else None
+        )
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
+            raise ReplayDivergenceError(
+                event_id=event.id,
+                expected="wall_stop_position=non-negative integer",
+                actual=f"wall_stop_position={sequence!r}",
+            )
+        snapshot = event.payload.get("snapshot")
+        limits = snapshot.get("limits") if isinstance(snapshot, dict) else None
+        raw_limit = limits.get("max_seconds") if isinstance(limits, dict) else None
+        limit = float(raw_limit) if raw_limit is not None else None
+        return sequence, limit
+    return None
+
+
+def _direct_embedding_event_ids(events: list[Event]) -> set[str]:
+    """Return operator-invoked embedding pair ids strict replay cannot re-derive.
+
+    ``Runtime.embed`` calls outside a behavior have no causal input event.
+    Their recorded returns remain available to ``EmbeddingCache`` on load,
+    but strict behavior replay has no source text (deliberately hash-only) from
+    which to reconstruct the call.  They are external seed actions, analogous
+    to a caller-supplied result event, rather than behavior output.
+    """
+
+    request_ids = {
+        event.id
+        for event in events
+        if event.type == "embedding.requested" and event.caused_by is None
+    }
+    pair_ids = set(request_ids)
+    pair_ids.update(
+        event.id
+        for event in events
+        if event.type == "embedding.responded" and event.caused_by in request_ids
+    )
+    return pair_ids
 
 
 def _non_replayable_llm_attempt_event_ids(events: list[Event]) -> set[str]:
@@ -3682,6 +4113,39 @@ def _non_replayable_llm_attempt_event_ids(events: list[Event]) -> set[str]:
         if e.caused_by is not None:
             ids.add(e.caused_by)
     return ids
+
+
+def _validate_embedding_vectors(
+    texts: list[str],
+    vectors: Any,
+) -> list[list[float]]:
+    """Validate and normalize a provider's batch embedding response."""
+
+    if not isinstance(vectors, list) or len(vectors) != len(texts):
+        actual = len(vectors) if isinstance(vectors, list) else type(vectors).__name__
+        raise ValueError(
+            "embedding provider returned the wrong vector count: "
+            f"expected {len(texts)}, got {actual}"
+        )
+    normalized: list[list[float]] = []
+    dimensions: Optional[int] = None
+    for vector in vectors:
+        if not isinstance(vector, list):
+            raise ValueError("embedding provider returned a non-list vector")
+        if dimensions is None:
+            dimensions = len(vector)
+        elif len(vector) != dimensions:
+            raise ValueError("embedding provider returned mixed vector dimensions")
+        normalized_vector: list[float] = []
+        for value in vector:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("embedding vector components must be numeric")
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError("embedding vector components must be finite")
+            normalized_vector.append(number)
+        normalized.append(normalized_vector)
+    return normalized
 
 
 def _is_lifecycle(e: Event) -> bool:

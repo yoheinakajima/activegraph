@@ -28,6 +28,18 @@ No breaking changes. Applications that want an event stream attach an
 Call `flush_sinks` / `close_sinks` at an application's orderly shutdown
 boundary when externally buffered delivery must complete.
 
+Embedding consumers should call `Runtime.embed` or `ctx.embed` instead of
+invoking `runtime.embedding_provider.embed` directly; the provider object
+remains available for compatibility, but direct calls are outside the
+record/replay guarantee. Direct `web_fetch.fn(...)` calls now fail closed
+unless their `ToolContext` explicitly opts into
+`external_io_mode="live_unrecorded"`; normal runtime tool dispatch is
+unchanged.
+
+Local tooling that bypasses a gate must call `Runtime.dev_override` first and
+validate the returned receipt at that exact gate/scope. There is no global dev
+mode, wildcard scope, promotion override, logging override, or `R4` grant.
+
 ### Added
 
 - **`EventSink`: isolated outbound observation for accepted live events**
@@ -65,6 +77,53 @@ boundary when externally buffered delivery must complete.
   accepted log/projection state is already fixed.** Historical export is
   deferred behind the reserved `replay_export` delivery marker; OTel spans,
   Langfuse, UI transports, and learning queues remain future adapters.
+- **Runtime-owned embedding record/replay** (CONTRACT v1.8 #6).
+  `Runtime.embed` and the packs-facing `Context.embed` emit
+  `embedding.requested` / `embedding.responded`, hash model + ordered text
+  inputs without logging source text, record validated vectors, and replay
+  through `EmbeddingCache.from_events` with zero provider contact. Load/fork
+  gain `replay_embedding_cache`; strict replay always enables it, rejects
+  request-hash drift with `ReplayDivergenceError`, and never falls through to
+  a live provider. Direct provider calls remain possible but explicitly
+  forfeit replay guarantees; adopting `ctx.embed` in `activegraph-packs` is a
+  named downstream follow-up.
+- **Fail-closed direct `web_fetch`** (CONTRACT v1.8 #7). The existing runtime
+  tool loop remains the recorded/replayable path. Calling the reference tool
+  body outside it raises `tool.unrecorded_external_io` before network contact
+  unless the caller explicitly selects `live_unrecorded` mode.
+- **Recorded cooperative wall-budget truncation** (CONTRACT v1.8 #8).
+  `runtime.budget_exhausted` now records the accepted-event/tick/queue stop
+  position for `max_seconds`. Strict replay disables monotonic-clock reads and
+  stops at that recorded sequence, reproducing the queued suffix instead of
+  racing CI speed. Parent-side subprocess trial kills were deferred to the R4
+  result authority and are closed by the `TrialExecutor` item below.
+- **`TrialExecutor` provider boundary with local default** (CONTRACT v1.8
+  #9–#12). `TrialSpecification` canonicalizes pinned trial intent into
+  versioned JSON; the runtime-checkable protocol returns `TrialResult` with
+  structured status, budget use, artifact references, event-log reference,
+  failure details, warnings, and declared isolation guarantees.
+  `LocalSubprocessTrialExecutor` delegates to the existing fresh-interpreter
+  implementation, and `run_forked_trial` remains the behavior-compatible
+  `TrialReport` wrapper. `RecordingTrialExecutor` and
+  `TrialExecutorConformance` make future adapters testable without adding a
+  Docker/E2B/Modal provider now. The local adapter explicitly declares shared
+  filesystem and unconfined network/syscalls: subprocess is crash isolation,
+  not a security sandbox.
+- **Parent-side trial wall kills are now recorded.** The local executor appends
+  `trial.wall_clock_exhausted` to the fork after killing/reaping a timed-out
+  child, including the configured limit and accepted-event stop sequence.
+  Load/replay observes the killed prefix from the log and never re-races the
+  timeout, closing the R5 subprocess half at the R4 result authority.
+- **Explicit, log-backed `dev.override` receipts** (CONTRACT v1.8 #13–#15).
+  `Runtime.dev_override` requires actor, reason, exact target gate, exact scope,
+  and a resulting authority bounded to `R0`–`R3`; the accepted event id/run id
+  become a frozen `DevOverride`. `dev_overrides()` reconstructs receipts from
+  load/fork history, while `validate_dev_override()` requires an exact
+  byte-for-field event match and refuses wildcards, cross-run use, authority
+  widening, promotion/logging targets, and `R4`. Merely recording a receipt
+  changes no policy, approval, promotion, scoring, or registry state, and the
+  marker is suppressed from behavior scheduling. Durable append failure
+  returns no usable receipt.
 
 ## [v1.7.1] — 2026-07-09
 

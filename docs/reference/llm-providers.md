@@ -144,13 +144,12 @@ in — construct it with `structured_output_mode="native"` to serve
 native-mode fixtures (the default `"prompt"` keeps every pre-v1.3
 fixture reachable unchanged).
 
-## Embedding providers (v1.3)
+## Embedding providers (v1.3; recorded runtime path in v1.8)
 
 `EmbeddingProvider` is the runtime's second provider seam, next to
-`LLMProvider`. The runtime **holds** one and never calls it — memory
-and retrieval capabilities live in packs, and the seam exists so
-every pack finds embeddings the same way instead of growing its own
-configuration channel:
+`LLMProvider`. Memory and retrieval capabilities still live in packs,
+but calls now go through `Runtime.embed` or the packs-facing `ctx.embed`
+so external I/O is recorded and replayable:
 
 ```python
 from activegraph import Runtime
@@ -163,13 +162,25 @@ class MyEmbedder:                      # any object with the Protocol shape
         return vectors                 # one list[float] per input text
 
 rt = Runtime(graph, embedding_provider=MyEmbedder())
-# Packs read rt.embedding_provider; None means "not configured" and
-# packs degrade (e.g. lexical-only retrieval) per their own contract.
+vectors = rt.embed(["first document", "second document"])
+
+# Inside a behavior or pack:
+# vectors = ctx.embed(texts, model="text-embedding-3-small")
 ```
 
 Forks inherit the parent's embedding provider (override per-fork with
 `fork(embedding_provider=...)`); `Runtime.load(...,
-embedding_provider=...)` wires one at load time.
+embedding_provider=...)` wires one at load time. Set
+`replay_embedding_cache=True` on load/fork to hydrate
+`EmbeddingCache` from recorded `embedding.responded` events. Strict
+replay enables the cache automatically, verifies the request-hash
+sequence, and never calls the provider.
+
+`embedding.requested` records the model and a content hash, not the
+source text. `embedding.responded` records validated ordered vectors.
+Calling `rt.embedding_provider.embed(...)` directly remains possible
+for compatibility but bypasses both events and the cache, so it
+forfeits ActiveGraph replay guarantees.
 
 The runtime ships exactly one implementation:
 `HashEmbeddingProvider`, a deterministic, dependency-free test double

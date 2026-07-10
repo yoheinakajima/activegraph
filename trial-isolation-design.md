@@ -1,5 +1,11 @@
 # Subprocess fork-trial isolation: design
 
+> **v1.8 executor seam:** the behavior below remains the first-party
+> `LocalSubprocessTrialExecutor`. `run_forked_trial` is its compatibility
+> wrapper; new adapters implement `TrialExecutor.execute` over a serialized
+> `TrialSpecification` and return `TrialResult`. Every adapter declares its
+> isolation guarantees. No remote/container adapter ships in this phase.
+
 **Status: IMPLEMENTED — shipped in v1.5.0 as CONTRACT v1.5 #1**
 (`activegraph.sandbox.run_forked_trial`; tests in
 `tests/test_sandbox_trial.py`). Answers the evolution pack's T5 ask

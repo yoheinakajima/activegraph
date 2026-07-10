@@ -70,8 +70,14 @@ class Budget:
 
     # ---- generic counter dimensions ----
 
-    def start(self) -> None:
-        self._start = time.monotonic()
+    def start(self, *, read_wall_clock: bool = True) -> None:
+        """Start budget accounting, optionally without ambient clock I/O.
+
+        Strict replay passes ``read_wall_clock=False`` and stops at the
+        recorded accepted-event sequence instead of re-racing monotonic time.
+        """
+
+        self._start = time.monotonic() if read_wall_clock else 0.0
 
     def consume(self, key: str, amount: float = 1.0) -> None:
         self.used[key] = self.used.get(key, 0.0) + amount
@@ -79,9 +85,13 @@ class Budget:
     def exhausted_by(self) -> Optional[str]:
         return self._exhausted_by
 
-    def remaining(self) -> bool:
+    def remaining(self, *, check_wall_clock: bool = True) -> bool:
+        """Whether every enabled limit still has capacity."""
+
         for k, limit in self.limits.items():
             if k == "max_seconds":
+                if not check_wall_clock:
+                    continue
                 if self._start is None:
                     continue
                 if time.monotonic() - self._start >= limit:
@@ -97,6 +107,11 @@ class Budget:
                 self._exhausted_by = k
                 return False
         return True
+
+    def mark_exhausted(self, key: str) -> None:
+        """Set the authoritative exhaustion reason for recorded replay."""
+
+        self._exhausted_by = key
 
     # ---- cost dimension (Decimal) ----
 

@@ -282,6 +282,11 @@ Major shipped milestones:
 - **v1.4** — the pack-manifest validator (`load_manifest`,
   `verify_surface`, content + bundle hashes), declarative
   `Pack.capabilities`, and `disable_pack` deregistration.
+- **v1.8** — isolated `EventSink` delivery; runtime-owned embedding
+  record/replay; fail-closed direct `web_fetch`; deterministic wall-stop
+  replay; and the provider-neutral `TrialExecutor` seam with the existing
+  local subprocess as its honest, non-security-sandbox default; plus explicit,
+  log-backed `dev.override` receipts bounded below governance authority.
 - **v1.3** — `promote`: apply a fork's net structural delta back to
   its parent, fail-closed on conflicts (the fork→test→promote loop);
   provider-compatibility hardening; traceback/DX surfacing; the

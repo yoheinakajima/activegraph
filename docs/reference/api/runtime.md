@@ -16,6 +16,8 @@ and [`concepts/behaviors`](../../concepts/behaviors.md).
 
 ::: activegraph.Budget
 
+::: activegraph.DevOverride
+
 ::: activegraph.IDGen
 
 ## Clocks
