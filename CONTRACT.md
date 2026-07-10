@@ -7842,3 +7842,21 @@ promotion observation, and replay result identity.
 - No record/replay-hole work in this amendment; embeddings, direct
   ``web_fetch``, and ambient wall-clock budgets remain the separate R5
   workstream and begin only after this seam is fully green.
+
+## v1.8 clarification — durable append failure ends the live graph session
+
+The acceptance sequence in #2 preserves ``Graph.emit``'s established
+project-before-persist order.  An ``EventStore.append`` exception can therefore
+occur after the candidate event has entered this particular Graph instance's
+in-memory log and projection, even though it did not enter the durable log.  No
+sink is offered that candidate, and it is not counted as a sink drop: it never
+crossed the durable acceptance boundary.
+
+Such an exception leaves that live Graph instance indeterminate.  Continuing
+to emit on it is outside the runtime contract; the caller must discard it and
+load the run again from its EventStore before resuming.  In #1 and #2,
+``accepted log sequence`` consequently means the one-based materialized-log
+position on a live Graph that has not suffered a durable append failure.  It is
+delivery ordering metadata, not an EventStore commit receipt.  This
+clarification neither adds rollback to ``GraphStore`` nor changes an
+``EventStore`` protocol.
