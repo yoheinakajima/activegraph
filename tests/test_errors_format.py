@@ -1082,6 +1082,17 @@ def test_invalid_patch_lifecycle_state_snapshot() -> None:
     _check_snapshot("invalid_patch_lifecycle_state", err)
 
 
+def test_reserved_field_error_snapshot() -> None:
+    """CONTRACT v1.10 #2: the loud replacement for the silent
+    provenance strip. The recovery prose names the sanctioned kwargs
+    (actor/caused_by/evidence) and the read path (obj.provenance)."""
+    from activegraph import ReservedFieldError
+
+    err = ReservedFieldError(field="provenance", api="add_object", param="data")
+    _assert_format_compliant(err)
+    _check_snapshot("reserved_field__provenance", err)
+
+
 def test_incompatible_runtime_state_fork_snapshot() -> None:
     """fork() on a non-SQLite runtime. Recovery walks through the
     migrate-then-fork pattern and flags the Postgres-native-fork gap

@@ -13,8 +13,10 @@ called from two paths:
 Two callers, one code path.
 
 CONTRACT #5 (provenance): every object/relation/patch carries a provenance
-dict written here, never by the behavior. Behaviors pass `data`; we strip
-any `provenance` key they sneak in.
+dict written here, never by the behavior. Behaviors pass `data`; a
+`provenance` key in it raises ReservedFieldError (CONTRACT v1.10 #2 —
+until v1.10 it was silently stripped, which meant a caller who thought
+they attached provenance had attached nothing).
 
 CONTRACT #4 (versioning): every object has a monotonic `version` int that
 bumps on every patch.applied. Patches record `expected_version`.
@@ -104,11 +106,34 @@ class Relation:
 # ---------- graph ----------
 
 
-def _strip_provenance(data: dict[str, Any]) -> dict[str, Any]:
-    """Behaviors do not get to set provenance (CONTRACT #5)."""
+# CONTRACT v1.10 #2: top-level data keys the framework owns on every
+# object, relation, and patch value. Caller data colliding with one of
+# these raises ReservedFieldError instead of the pre-v1.10 silent strip.
+# One table for all four mutation surfaces — a future reserved key gets
+# the same loud treatment by being added here.
+RESERVED_DATA_FIELDS: frozenset[str] = frozenset({"provenance"})
+
+
+def _reject_reserved_fields(
+    data: dict[str, Any], *, api: str, param: str
+) -> dict[str, Any]:
+    """Refuse caller data that collides with a reserved field.
+
+    CONTRACT #5 / v1.10 #2: provenance is framework-written. Until
+    v1.10 a colliding key was silently stripped, so a caller who
+    thought they attached provenance had attached nothing; now the
+    collision fails loudly at the call site. Returns ``data`` unchanged
+    when clean (non-dict input passes through, matching the old
+    stripper's tolerance).
+    """
     if not isinstance(data, dict):
         return data
-    return {k: v for k, v in data.items() if k != "provenance"}
+    for key in data:
+        if key in RESERVED_DATA_FIELDS:
+            from activegraph.runtime.exec_errors import ReservedFieldError
+
+            raise ReservedFieldError(field=key, api=api, param=param)
+    return data
 
 
 def _diff(old: dict[str, Any], updates: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -607,7 +632,9 @@ class Graph:
         tool_request_event_ids: Optional[list[str]] = None,
     ) -> Object:
         obj_id = self.ids.object(type)
-        clean = _strip_provenance(copy.deepcopy(data))
+        clean = copy.deepcopy(
+            _reject_reserved_fields(data, api="add_object", param="data")
+        )
         # v0.9: schema validation against loaded pack object types.
         # Validator is set by runtime.load_pack and is None when no
         # typed pack contributes this object type — preserving v0.8
@@ -658,7 +685,9 @@ class Graph:
         tool_request_event_ids: Optional[list[str]] = None,
     ) -> Relation:
         rel_id = self.ids.relation()
-        clean = _strip_provenance(copy.deepcopy(data or {}))
+        clean = copy.deepcopy(
+            _reject_reserved_fields(data or {}, api="add_relation", param="data")
+        )
         # v0.9: relation type validation (source/target type rules).
         if self._pack_relation_validator is not None:
             src_obj = self._state.get_object(source)
@@ -760,7 +789,9 @@ class Graph:
         obj = self._state.get_object(target)
         if obj is None:
             raise KeyError(f"unknown object: {target}")
-        clean = _strip_provenance(copy.deepcopy(updates))
+        clean = copy.deepcopy(
+            _reject_reserved_fields(updates, api="patch_object", param="updates")
+        )
         patch = Patch(
             id=self.ids.patch(),
             target=target,
@@ -815,7 +846,9 @@ class Graph:
         normalized = target.split(":", 1)[1] if ":" in target else target
         obj = self._state.get_object(normalized)
         expected_version = obj.version if obj else 0
-        clean = _strip_provenance(copy.deepcopy(value))
+        clean = copy.deepcopy(
+            _reject_reserved_fields(value, api="propose_patch", param="value")
+        )
         patch = Patch(
             id=self.ids.patch(),
             target=normalized,

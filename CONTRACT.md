@@ -162,6 +162,11 @@ runtime, never by the behavior:
 Behaviors cannot set provenance. Any `provenance` key passed in `data` is
 silently ignored.
 
+`[review overlay 2026-07-11: superseded by v1.10 #2 — a `provenance` key
+in caller data now raises `ReservedFieldError` instead of being silently
+stripped. The sentence above is preserved as originally written; see
+v1.10 #2 for the rationale. Overlay-marker pattern per v1.0.4 #5.]`
+
 ## 6. Behavior signature
 
 ```python
@@ -203,6 +208,11 @@ The runtime injects deterministic `clock` and `random` for replay.
 - Standard graph events: `object.created`, `object.removed`, `relation.created`, `relation.removed`, `patch.proposed`, `patch.applied`, `patch.rejected`.
 - `goal.created` is a convention emitted by `runtime.run_goal()`.
 - Everything else is user-emitted.
+
+`[review overlay 2026-07-11: v1.10 #1 reserves the single event type
+`context.read` (exact match — the `context.*` namespace is NOT claimed)
+for the opt-in per-execution read trace. Runtime-emitted, suppressed
+from behavior matching like `behavior.*`.]`
 
 ## 10. Queue
 
@@ -8268,3 +8278,102 @@ export through sinks, and replay — they just never schedule behaviors).
   surfaces) remains the evolution/adoption workstream's.
 - **No auto-run enablement in any product** — v0.3's job, gated on
   effective L3.
+
+## v1.10 #1. Context-read tracing: one batched `context.read` per behavior execution (opt-in, default OFF)
+
+The Anatomy-view question — "what did the agent look at when it decided
+X" — gets a runtime data source. When (and only when) a Runtime is
+constructed with `trace_context_reads=True` (also accepted by
+`Runtime.load`; forks inherit the parent's posture like
+`native_structured_output`), every behavior execution commits at most
+ONE `context.read` event:
+
+- **Batched, never per-read.** The event is emitted at frame commit —
+  immediately AFTER the execution's terminal lifecycle event
+  (`behavior.completed` or `behavior.failed`). A frame that fails still
+  commits its read trace: what the behavior looked at before failing is
+  exactly what a debugger wants. A frame that read nothing emits
+  nothing. A strict-replay divergence abort
+  (`ReplayDivergenceError` propagating) is not a commit and emits
+  nothing.
+- **Payload** (all fields always present except `truncated`):
+  `behavior` (name), `event_id` (the triggering event — also stamped as
+  the event's `caused_by`), `execution_event_id` (the id of this
+  execution's `behavior.started` / `relation_behavior.started` event —
+  the frame reference), `object_ids` (ordered, deduplicated,
+  first-read-wins, capped at 200 entries), `count` (exact deduplicated
+  total, uncapped), `truncated` (`true`, present only when `object_ids`
+  was cut). Standard envelope only — no payload timestamps.
+- **Traced access paths, exhaustively:** (a) `ctx.view.objects(...)` —
+  the ids of exactly the objects each call returns, post-filter;
+  (b) `graph.get_object(id)` on the behavior's constrained wrapper,
+  when the id resolves (a miss read nothing); (c) LLM behaviors only:
+  every object serialized into the assembled prompt's graph-context
+  block, recorded at prompt-assembly time — the model reads them
+  whether or not the handler later touches `ctx.view`.
+- **Deliberately untraced (an incomplete trace that says so):**
+  `ctx.view.relations()` / `ctx.view.events()` and
+  `graph.get_relation(id)` (relation/event reads, not object reads —
+  endpoints naming object ids do not make them object reads); the
+  pushed `event` / `relation` arguments; reads a tool performs through
+  a closed-over raw `Graph` (e.g. `make_graph_query_tool` — tools run
+  outside the frame seam); runtime-internal reads (pattern matching,
+  view construction itself — building `ctx.view` is not reading it);
+  and any raw-graph access a behavior smuggles past CONTRACT #7.
+- **Deterministic and replay-stable.** The read set derives purely from
+  the behavior's accessor calls in first-read order; repeated identical
+  runs produce byte-identical logs (conformance-tested). `context.read`
+  is classified with the lifecycle events for strict replay, so a
+  verify pass never diverges on trace markers regardless of the loading
+  runtime's flag.
+- **Runtime bookkeeping, like `behavior.*`.** It persists, projects (as
+  a no-op), exports through sinks, and replays — but never schedules
+  behaviors, never advances the event tick, and consumes no budget.
+  Suppression is an exact match on `context.read`; the `context.*`
+  namespace is not claimed, so user-emitted `context.foo` events keep
+  their pre-v1.10 queue visibility.
+- **Default OFF is byte-load-bearing.** With the flag unset, no code
+  path constructs a recorder, wraps a view, or emits the event; every
+  pre-v1.10 run, golden log, and fixture is byte-identical (the full
+  existing suite passes untouched).
+
+## v1.10 #2. Reserved-field collisions fail loud (`ReservedFieldError`)
+
+`graph.add_object` / `add_relation` / `patch_object` / `propose_patch`
+no longer silently strip a reserved `provenance` key from caller data
+(`data` / `updates` / `value`). The collision now raises
+`ReservedFieldError` (ExecutionError × ValueError, doc slug
+`reserved-field-error`) BEFORE any event is emitted — the refused call
+leaves no trace in the log.
+
+**Raise, not warn.** A caller who passes `provenance` believes they are
+attaching provenance and — under the strip — attached nothing. There is
+no compatibility case in which passing the reserved key is correct
+(first-party audit: no internal caller does; pack behaviors build data
+from schema-fixed model dumps), so a warning would merely preserve the
+silent data loss with extra noise. Inside a behavior the raise follows
+CONTRACT #13 and lands as `behavior.failed`.
+
+The reserved set is the single table
+`activegraph.core.graph.RESERVED_DATA_FIELDS` — today exactly
+`{"provenance"}` — checked by all four mutation surfaces, so a future
+reserved field gets the same loud treatment by being added there. Only
+top-level keys are checked: nested keys named `provenance` are the
+caller's own data and pass through untouched. CONTRACT #5's "silently
+ignored" sentence is superseded (overlay marker in place).
+
+## v1.10 deliberately does NOT touch
+
+- **No object→events reverse index.** "Which events read object X" is a
+  product-side `ui_contract` query over the emitted `context.read`
+  stream, not a runtime surface.
+- **No default-on tracing.** Emission is instance configuration;
+  downstream products (babyagi) opt in explicitly — that wiring is
+  theirs.
+- **No per-read events**, ever — the batch-at-commit shape is the
+  contract, precisely because a per-read event would multiply the log
+  by orders of magnitude.
+- **No completeness claim for the read trace.** The traced/untraced
+  split above is the honest scope; extending it (e.g. tool-side reads)
+  is a separate amendment, not a silent widening.
+- **No new storage backends, no other API changes.**

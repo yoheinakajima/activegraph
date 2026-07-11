@@ -63,6 +63,8 @@ per-error recovery prose see the
 
 ::: activegraph.ApprovalNotFoundError
 
+::: activegraph.ReservedFieldError
+
 ::: activegraph.RuntimeContextRequiredError
 
 ::: activegraph.InvalidPatchLifecycleState

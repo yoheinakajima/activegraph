@@ -23,14 +23,22 @@ def test_add_object_emits_event():
 
 def test_provenance_is_stamped_by_runtime_not_behavior():
     g = _g()
-    # Even if a "behavior" tries to inject provenance via data, it's stripped.
-    o = g.add_object(
-        "task",
-        {"title": "x", "provenance": {"created_by": "evil"}},
-        actor="planner",
-    )
+    # CONTRACT v1.10 #2: a "behavior" trying to inject provenance via
+    # data is refused loudly (pre-v1.10 it was silently stripped, so the
+    # caller believed they had attached provenance and hadn't).
+    from activegraph import ReservedFieldError
+
+    with pytest.raises(ReservedFieldError):
+        g.add_object(
+            "task",
+            {"title": "x", "provenance": {"created_by": "evil"}},
+            actor="planner",
+        )
+    # Nothing landed: the refused call emitted no event.
+    assert g.events == []
+    # The sanctioned path stamps provenance from the kwargs.
+    o = g.add_object("task", {"title": "x"}, actor="planner")
     assert o.provenance["created_by"] == "planner"
-    # And the data dict doesn't have a stray provenance key.
     assert "provenance" not in o.data
 
 

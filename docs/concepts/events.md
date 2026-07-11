@@ -46,6 +46,19 @@ families:
 - **Behavior dispatch**: `behavior.started`, `behavior.completed`,
   `behavior.failed`, `behavior.scheduled` — what the runtime did
   while running behaviors.
+- **Context reads** (opt-in, `Runtime(trace_context_reads=True)`):
+  `context.read` — one batched event per behavior execution, emitted
+  right after that execution's terminal lifecycle event
+  (`behavior.completed` or `behavior.failed`, failed frames
+  included), carrying the ordered deduplicated object ids the
+  behavior read through `ctx.view.objects(...)`,
+  `graph.get_object(...)` hits, and (for LLM behaviors) the objects
+  serialized into the prompt. `object_ids` is capped at 200 entries
+  (`count` stays exact; `truncated: true` marks the cut). Like
+  `behavior.*`, it never schedules behaviors. Relation and event
+  reads (`ctx.view.relations()` / `.events()`,
+  `graph.get_relation(...)`) and reads tools perform through a
+  closed-over graph are deliberately not traced.
 - **Pattern matching**: `pattern.matched` — emitted before
   `behavior.started` when the behavior used a pattern subscription;
   carries the match count.

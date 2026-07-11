@@ -61,6 +61,7 @@ from activegraph.runtime.exec_errors import (
     InvalidPatchLifecycleState,
     PromoteConflictError,
     PromoteLineageError,
+    ReservedFieldError,
     RuntimeContextRequiredError,
 )
 from activegraph.runtime.patterns import UnsupportedPatternError
@@ -230,6 +231,7 @@ __all__ = [
     "RelationType",
     "ReplayDivergenceError",
     "ReplayError",
+    "ReservedFieldError",
     "RunRecord",
     "Runtime",
     "RuntimeContextRequiredError",

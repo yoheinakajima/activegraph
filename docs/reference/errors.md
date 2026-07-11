@@ -45,6 +45,7 @@ The seven category bases match the
 - [ToolError](errors/tool-error.md)
 - [UnknownToolError](errors/unknown-tool-error.md)
 - [ApprovalNotFoundError](errors/approval-not-found-error.md)
+- [ReservedFieldError](errors/reserved-field-error.md)
 
 ### ConfigurationError
 
