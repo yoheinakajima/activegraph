@@ -232,6 +232,69 @@ class InternalEvaluatorError(ExecutionError, ValueError):
         )
 
 
+class ReservedFieldError(ExecutionError, ValueError):
+    """Caller-supplied object/patch data used a framework-reserved key.
+
+    Fires from ``graph.add_object`` / ``add_relation`` /
+    ``patch_object`` / ``propose_patch`` when the ``data`` / ``updates``
+    / ``value`` dict contains a reserved top-level key (today:
+    ``provenance``). CONTRACT v1.10 #2: before v1.10 the reserved key
+    was silently stripped — a caller who thought they attached
+    provenance had attached nothing. The framework now refuses loudly
+    so the data loss is visible at the call site. Multi-inherits
+    :class:`ValueError` so ``except ValueError`` call sites keep
+    working.
+    """
+
+    _doc_slug = "reserved-field-error"
+
+    def __init__(self, *, field: str, api: str, param: str) -> None:
+        self.field = field
+        self.api = api
+        self.param = param
+        ExecutionError.__init__(
+            self,
+            f"reserved field {field!r} in graph.{api}() {param}",
+            what_failed=(
+                f"graph.{api}(...) received a {param} dict containing the "
+                f"key {field!r}. That key is reserved: the framework writes "
+                f"it on every object, relation, and patch, and caller data "
+                f"cannot set or shadow it."
+            ),
+            why=(
+                "Provenance is stamped by the runtime, never by the caller "
+                "(CONTRACT #5) — it records who created an entity, which "
+                "event caused it, and in which run, and its integrity is "
+                "what makes causal chains and replay audits trustworthy. "
+                "Before v1.10 a caller-supplied 'provenance' key was "
+                "silently dropped, so code that believed it had attached "
+                "provenance had attached nothing, with no signal. The "
+                "framework now fails loudly instead: there is no case "
+                "where passing the reserved key is correct, so tolerating "
+                "it only preserves the silent data loss.\n"
+                "\n"
+                f"See {DOCS_BASE_URL}/concepts/failure-model "
+                f"for when the framework prefers exceptions over silent "
+                f"no-ops."
+            ),
+            how_to_fix=(
+                "Pick the channel that matches your intent:\n"
+                "  - To influence what provenance records, use the "
+                "sanctioned kwargs:\n"
+                "        graph.add_object(type, data, actor=..., "
+                "caused_by=..., evidence=[...])\n"
+                "    (behaviors get actor/caused_by stamped automatically "
+                "by their BehaviorGraph).\n"
+                "  - To read provenance, use the handle: obj.provenance.\n"
+                "  - If the key is genuinely your domain data (e.g. a "
+                "document's own chain of custody), rename it — "
+                "'source_provenance', 'chain_of_custody' — so it cannot "
+                "shadow the framework field."
+            ),
+            context={"field": field, "api": api, "param": param},
+        )
+
+
 class PromoteLineageError(ExecutionError, ValueError):
     """The promote source is not a direct fork of the destination.
 

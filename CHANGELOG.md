@@ -13,6 +13,76 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
+## [Unreleased]
+
+Runtime legibility round (CONTRACT v1.10 #1–#2): the behavior-frame
+read trace that backs the product's Anatomy view, plus the
+reserved-field honesty fix. Opt-in by construction — with default
+configuration every existing run, golden log, and fixture is
+byte-identical (regression-locked by the untouched
+`tests/test_legacy_byte_identity.py` and the full pre-existing suite
+passing with zero fixture regeneration).
+
+### Added
+
+- **Context-read tracing** (CONTRACT v1.10 #1). New instance
+  configuration `Runtime(trace_context_reads=True)` (also on
+  `Runtime.load`; forks inherit the parent's posture). When enabled,
+  each behavior execution commits at most ONE batched `context.read`
+  event immediately after its terminal lifecycle event
+  (`behavior.completed` **or** `behavior.failed` — a failing frame
+  still records what it looked at), carrying `behavior`, `event_id`
+  (triggering event, also `caused_by`), `execution_event_id` (the
+  `behavior.started` / `relation_behavior.started` id — the frame
+  reference), `object_ids` (ordered, deduplicated, first-read order,
+  capped at 200), exact `count`, and `truncated: true` past the cap.
+  Traced access paths: `ctx.view.objects(...)` returns,
+  `graph.get_object(id)` hits on the constrained wrapper, and — for
+  LLM behaviors — every object serialized into the assembled prompt.
+  Deliberately untraced (documented, honest scope):
+  `ctx.view.relations()` / `.events()`, `graph.get_relation(id)`,
+  tool-side reads through closed-over graphs, and runtime-internal
+  reads. `context.read` is runtime bookkeeping like `behavior.*`: it
+  persists, projects as a no-op, exports through `EventSink`s, and
+  replays, but never schedules behaviors, advances the tick, or
+  consumes budget. Deterministic and replay-stable: repeated identical
+  runs produce byte-identical logs; strict replay excludes the marker
+  from its compared streams (conformance suite:
+  `tests/test_context_read_tracing.py`).
+- **`ReservedFieldError`** (`ExecutionError` × `ValueError`, doc page
+  `reference/errors/reserved-field-error.md`), raised by the four
+  graph mutation surfaces on reserved-key collisions (see Changed).
+
+### Changed
+
+- **Reserved-field collisions fail loud** (CONTRACT v1.10 #2,
+  supersedes CONTRACT #5's "silently ignored"). `graph.add_object`,
+  `add_relation`, `patch_object`, and `propose_patch` now raise
+  `ReservedFieldError` when caller data (`data` / `updates` / `value`)
+  contains a reserved top-level key — today exactly `provenance`,
+  centralized in `activegraph.core.graph.RESERVED_DATA_FIELDS` so any
+  future reserved field gets the same treatment. Previously the key
+  was silently stripped: a caller who thought they attached provenance
+  had attached nothing, with no signal. **Raise, not warn**, because
+  there is no case where passing the reserved key is correct — a
+  warning would preserve the silent data loss; the error names the
+  colliding field, the refusing API, and the sanctioned channels
+  (`actor=` / `caused_by=` / `evidence=` kwargs, `obj.provenance` for
+  reads). The refused call emits no event; inside a behavior the raise
+  lands as `behavior.failed` per CONTRACT #13. Nested keys named
+  `provenance` remain legitimate caller data. First-party audit: no
+  internal caller (packs, approval flow, CLI, examples) passes the
+  reserved key, so nothing in-tree trips the check.
+
+### Migration notes
+
+- If existing code passes a top-level `provenance` key to any of the
+  four mutation surfaces, it was ALREADY losing that data silently.
+  Rename the key (e.g. `source_provenance`) if it is domain data, or
+  move the intent to the sanctioned kwargs.
+- `context.read` appears only after an explicit
+  `trace_context_reads=True`; no action needed otherwise.
+
 ## [1.9.0] — 2026-07-10
 
 The canonical action-class authority release (CONTRACT v1.9 #1–#3, ADR

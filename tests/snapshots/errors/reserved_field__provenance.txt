@@ -1,0 +1,20 @@
+ReservedFieldError: reserved field 'provenance' in graph.add_object() data
+
+What failed:
+  graph.add_object(...) received a data dict containing the key 'provenance'. That key is reserved: the framework writes it on every object, relation, and patch, and caller data cannot set or shadow it.
+
+Why:
+  Provenance is stamped by the runtime, never by the caller (CONTRACT #5) — it records who created an entity, which event caused it, and in which run, and its integrity is what makes causal chains and replay audits trustworthy. Before v1.10 a caller-supplied 'provenance' key was silently dropped, so code that believed it had attached provenance had attached nothing, with no signal. The framework now fails loudly instead: there is no case where passing the reserved key is correct, so tolerating it only preserves the silent data loss.
+
+  See https://docs.activegraph.ai/concepts/failure-model for when the framework prefers exceptions over silent no-ops.
+
+How to fix:
+  Pick the channel that matches your intent:
+    - To influence what provenance records, use the sanctioned kwargs:
+          graph.add_object(type, data, actor=..., caused_by=..., evidence=[...])
+      (behaviors get actor/caused_by stamped automatically by their BehaviorGraph).
+    - To read provenance, use the handle: obj.provenance.
+    - If the key is genuinely your domain data (e.g. a document's own chain of custody), rename it — 'source_provenance', 'chain_of_custody' — so it cannot shadow the framework field.
+
+More:
+  https://docs.activegraph.ai/errors/reserved-field-error

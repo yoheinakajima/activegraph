@@ -11,9 +11,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from typing import TYPE_CHECKING
+
 from activegraph.core.event import Event
 from activegraph.core.graph import Graph, Object, Relation
 from activegraph.core.patch import Patch
+
+if TYPE_CHECKING:
+    from activegraph.runtime.context_reads import ReadRecorder
 
 
 class Counters:
@@ -37,6 +42,7 @@ class BehaviorGraph:
         frame_id: Optional[str],
         llm_request_event_id: Optional[str] = None,
         tool_request_event_ids: Optional[list[str]] = None,
+        read_recorder: Optional["ReadRecorder"] = None,
     ) -> None:
         self._graph = graph
         self._actor = actor
@@ -54,6 +60,10 @@ class BehaviorGraph:
         self._tool_request_event_ids: list[str] = list(
             tool_request_event_ids or []
         )
+        # CONTRACT v1.10 #1: when the runtime traces context reads, point
+        # reads through this wrapper land in the execution's read set.
+        # None (the default) keeps the wrapper byte-identical to pre-v1.10.
+        self._read_recorder = read_recorder
         self.counters = Counters()
 
     # ---- mutators ----
@@ -145,7 +155,15 @@ class BehaviorGraph:
     # ---- read passthroughs (not iteration; that goes through ctx.view) ----
 
     def get_object(self, id_: str) -> Optional[Object]:
-        return self._graph.get_object(id_)
+        obj = self._graph.get_object(id_)
+        # CONTRACT v1.10 #1: a hit is a traced object read; a miss read
+        # nothing and stays out of the read set.
+        if obj is not None and self._read_recorder is not None:
+            self._read_recorder.record(obj.id)
+        return obj
 
     def get_relation(self, id_: str) -> Optional[Relation]:
+        # Deliberately untraced (CONTRACT v1.10 #1): this reads a
+        # relation, not an object — endpoints naming object ids do not
+        # make it an object read.
         return self._graph.get_relation(id_)

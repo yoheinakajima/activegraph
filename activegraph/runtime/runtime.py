@@ -93,6 +93,11 @@ from activegraph.runtime.authority import (
 )
 from activegraph.runtime.behavior_graph import BehaviorGraph
 from activegraph.runtime.budget import Budget
+from activegraph.runtime.context_reads import (
+    ReadRecorder,
+    TracedView,
+    context_read_payload,
+)
 from activegraph.runtime.diff import Diff, compute_diff
 from activegraph.runtime.dev_override import (
     DevOverride,
@@ -343,6 +348,10 @@ class Runtime:
         embedding_provider: Optional[EmbeddingProvider] = None,
         replay_embedding_cache: bool = False,
         embedding_cache: Optional[EmbeddingCache] = None,
+        # CONTRACT v1.10 #1: opt-in context-read tracing. Default OFF —
+        # when False, no ``context.read`` event is ever emitted and every
+        # run's event log is byte-identical to pre-v1.10.
+        trace_context_reads: bool = False,
     ) -> None:
         initial_sink_configs = _normalize_sink_configs(sinks)
         existing_sink_names = graph._sink_names_in_use()  # noqa: SLF001
@@ -383,6 +392,9 @@ class Runtime:
         # shared objects and the mode depends on this runtime's flag.
         self.native_structured_output: bool = bool(native_structured_output)
         self._structured_output_modes: dict[str, str] = {}
+        # CONTRACT v1.10 #1: emit one batched context.read per behavior
+        # execution when enabled. Instance configuration, set once here.
+        self.trace_context_reads: bool = bool(trace_context_reads)
         self.replay_llm_cache: bool = replay_llm_cache
         # Cache is content-keyed by prompt hash. May be pre-populated
         # (load/fork with replay_llm_cache=True) or lazily filled.
@@ -857,6 +869,12 @@ class Runtime:
             # bookkeeping — they persist, project, export, and replay,
             # but never schedule behaviors (CONTRACT v1.9 #3).
             or event.type.startswith("authority.")
+            # v1.10 #1: the batched read-trace marker is runtime
+            # bookkeeping like behavior.* — it persists, projects (as a
+            # no-op), exports through sinks, and replays, but never
+            # schedules behaviors or advances the tick. Exact match, not
+            # a `context.` prefix claim: only this one type is reserved.
+            or event.type == "context.read"
         ):
             return
         self._queue.push(event)
@@ -1298,13 +1316,19 @@ class Runtime:
 
     def _invoke(self, b: Behavior, event: Event, matches: Optional[list[Any]] = None) -> None:
         self.budget.consume("max_behavior_calls")
+        # v1.10 #1: one recorder per execution when tracing is on; None
+        # keeps the wrapper and view byte-identical to pre-v1.10.
+        recorder = ReadRecorder() if self.trace_context_reads else None
         bgraph = BehaviorGraph(
             self.graph,
             actor=b.name,
             caused_by=event.id,
             frame_id=self.frame.id if self.frame else None,
+            read_recorder=recorder,
         )
         view = build_view(b, event, self.graph)
+        if recorder is not None:
+            view = TracedView(view, recorder)
         ctx = Context(
             view=view,
             frame=self.frame,
@@ -1325,7 +1349,7 @@ class Runtime:
             "activegraph_behaviors_invoked_total", {"behavior": b.name}
         )
 
-        self._emit_lifecycle(
+        started_evt = self._emit_lifecycle(
             "behavior.started",
             {
                 "behavior": b.name,
@@ -1355,6 +1379,10 @@ class Runtime:
             # centralized emitter handles logging at WARNING for
             # every behavior.failed.
             self._emit_behavior_failed(b.name, event.id, e)
+            # v1.10 #1: a failed frame still commits its read trace —
+            # what the behavior looked at before failing is exactly
+            # what a debugger wants.
+            self._emit_context_read(b.name, event.id, started_evt.id, recorder)
             return
 
         self.metrics.histogram(
@@ -1374,6 +1402,9 @@ class Runtime:
                 "events_emitted": bgraph.counters.events_emitted,
             },
         )
+        # v1.10 #1: the read trace commits with the frame, right after
+        # its terminal lifecycle event.
+        self._emit_context_read(b.name, event.id, started_evt.id, recorder)
 
     def _invoke_llm(
         self,
@@ -1402,13 +1433,21 @@ class Runtime:
         self.budget.consume("max_behavior_calls")
         self.budget.consume("max_llm_calls")
 
-        view = build_view(b, event, self.graph)
+        # v1.10 #1: one recorder per execution when tracing is on.
+        # `plain_view` stays unwrapped so recording the prompt's object
+        # block (below) never re-enters the traced accessor.
+        recorder = ReadRecorder() if self.trace_context_reads else None
+        plain_view = build_view(b, event, self.graph)
+        view: View = plain_view
         bgraph = BehaviorGraph(
             self.graph,
             actor=b.name,
             caused_by=event.id,
             frame_id=self.frame.id if self.frame else None,
+            read_recorder=recorder,
         )
+        if recorder is not None:
+            view = TracedView(plain_view, recorder)
         ctx = Context(
             view=view,
             frame=self.frame,
@@ -1423,7 +1462,7 @@ class Runtime:
             _event_id=event.id,
         )
 
-        self._emit_lifecycle(
+        started_evt = self._emit_lifecycle(
             "behavior.started",
             {
                 "behavior": b.name,
@@ -1432,6 +1471,35 @@ class Runtime:
                 "triggering_object_id": _maybe_object_id(event),
             },
         )
+        # v1.10 #1: the body returns normally from every exit — the ~15
+        # failure returns and the completed path alike — and each of
+        # those is a frame commit, so the read trace emits right after
+        # it. A propagating exception (ReplayDivergenceError) is a
+        # strict-replay abort, not a commit: it skips the emission by
+        # skipping this line.
+        self._invoke_llm_body(
+            b,
+            event,
+            bgraph,
+            ctx,
+            recorder=recorder,
+            plain_view=plain_view,
+        )
+        self._emit_context_read(b.name, event.id, started_evt.id, recorder)
+
+    def _invoke_llm_body(
+        self,
+        b: LLMBehavior,
+        event: Event,
+        bgraph: BehaviorGraph,
+        ctx: Context,
+        *,
+        recorder: Optional[ReadRecorder],
+        plain_view: View,
+    ) -> None:
+        """The turn loop proper — split from :meth:`_invoke_llm` so the
+        read-trace commit (v1.10 #1) wraps every one of its returns
+        without restructuring the loop's failure exits."""
 
         # v0.7: resolve tool objects (decorator may have stored names or
         # objects). Build the provider-facing tool definitions list.
@@ -1469,6 +1537,14 @@ class Runtime:
                 reason="llm.prompt_assembly_error",
             )
             return
+
+        # v1.10 #1: the assembled prompt serializes every object in the
+        # behavior's view into its graph-context block — the model reads
+        # them all, whether or not the handler later touches ctx.view.
+        # Recorded on the unwrapped view so this bookkeeping never
+        # re-enters the traced accessor.
+        if recorder is not None:
+            recorder.record_objects(plain_view.objects())
 
         # The base prompt has the system text + a single user message
         # assembled from view+event+instruction. The turn loop will
@@ -2373,13 +2449,20 @@ class Runtime:
         matches: Optional[list[Any]] = None,
     ) -> None:
         self.budget.consume("max_behavior_calls")
+        # v1.10 #1: one recorder per execution when tracing is on. The
+        # `relation` argument itself is pushed to the behavior, not read
+        # by it, so it never enters the read set.
+        recorder = ReadRecorder() if self.trace_context_reads else None
         bgraph = BehaviorGraph(
             self.graph,
             actor=b.name,
             caused_by=event.id,
             frame_id=self.frame.id if self.frame else None,
+            read_recorder=recorder,
         )
         view = build_view(b, event, self.graph)
+        if recorder is not None:
+            view = TracedView(view, recorder)
         ctx = Context(
             view=view,
             frame=self.frame,
@@ -2393,7 +2476,7 @@ class Runtime:
             _event_id=event.id,
         )
 
-        self._emit_lifecycle(
+        started_evt = self._emit_lifecycle(
             "relation_behavior.started",
             {
                 "behavior": b.name,
@@ -2412,6 +2495,8 @@ class Runtime:
             # relation-behavior failures go through the same WARNING
             # log + event emission path as function and LLM behaviors.
             self._emit_behavior_failed(b.name, event.id, e)
+            # v1.10 #1: a failed frame still commits its read trace.
+            self._emit_context_read(b.name, event.id, started_evt.id, recorder)
             return
 
         self._emit_lifecycle(
@@ -2426,6 +2511,9 @@ class Runtime:
                 "events_emitted": bgraph.counters.events_emitted,
             },
         )
+        # v1.10 #1: the read trace commits with the frame, right after
+        # its terminal lifecycle event.
+        self._emit_context_read(b.name, event.id, started_evt.id, recorder)
 
     # ---------- v0.8: runtime.status ----------
 
@@ -2554,6 +2642,34 @@ class Runtime:
         )
         self.graph.emit(ev)
         return ev
+
+    def _emit_context_read(
+        self,
+        behavior_name: str,
+        event_id: str,
+        execution_event_id: str,
+        recorder: Optional[ReadRecorder],
+    ) -> None:
+        """Emit the batched ``context.read`` for one committed execution.
+
+        CONTRACT v1.10 #1. At most one event per behavior execution,
+        emitted right after the frame's terminal lifecycle event
+        (``behavior.completed`` or ``behavior.failed``) — and only when
+        tracing is enabled AND the execution actually read at least one
+        object. A read-free frame stays trace-free so the flag adds no
+        noise to runs whose behaviors never look at the graph.
+        """
+        if recorder is None or not recorder:
+            return
+        self._emit_lifecycle(
+            "context.read",
+            context_read_payload(
+                behavior_name=behavior_name,
+                event_id=event_id,
+                execution_event_id=execution_event_id,
+                recorder=recorder,
+            ),
+        )
 
     def _emit_idle_or_exhausted(self) -> None:
         if self._idle_emitted:
@@ -3084,6 +3200,7 @@ class Runtime:
         native_structured_output: bool = False,
         embedding_provider: Optional[EmbeddingProvider] = None,
         replay_embedding_cache: bool = False,
+        trace_context_reads: bool = False,
     ) -> "Runtime":
         """Open `path`, choose a run, replay its events, return a Runtime
         wired to continue from where the log left off.
@@ -3105,6 +3222,11 @@ class Runtime:
         (e.g. ``FalkorDBGraphStore``) to rebuild the current-state view in
         an external graph database. The event log remains the source of
         truth — this only changes where the projection is materialized.
+
+        v1.10 #1: ``trace_context_reads=True`` turns on context-read
+        tracing for execution that CONTINUES from the loaded log.
+        Recorded ``context.read`` events replay like any other event
+        either way, and strict replay never diverges on them.
         """
         sink_configs = _normalize_sink_configs(sinks)
         chosen = run_id or _most_recent_run_id(path)
@@ -3160,6 +3282,7 @@ class Runtime:
             embedding_provider=embedding_provider,
             replay_embedding_cache=replay_embedding_cache,
             embedding_cache=embedding_cache,
+            trace_context_reads=trace_context_reads,
         )
         # Make sure the run row exists (older files might predate it; in v0.5
         # they shouldn't, but be defensive).
@@ -3368,6 +3491,10 @@ class Runtime:
             ),
             replay_embedding_cache=replay_embedding_cache,
             embedding_cache=embedding_cache,
+            # v1.10 #1: forks inherit the parent's tracing posture, like
+            # native_structured_output — the fork continues the same
+            # observability configuration unless reconstructed by hand.
+            trace_context_reads=self.trace_context_reads,
         )
         # CONTRACT v0.5 diff #8 (extended to fork in v0.6): events whose
         # behaviors never started get re-queued. For a fork at an early
@@ -4280,6 +4407,10 @@ def _is_lifecycle(e: Event) -> bool:
         e.type.startswith("behavior.")
         or e.type.startswith("relation_behavior.")
         or e.type.startswith("runtime.")
+        # v1.10 #1: context.read is per-execution bookkeeping. Strict
+        # replay excludes it from the compared streams so a verify pass
+        # (which runs with tracing off) never diverges on trace markers.
+        or e.type == "context.read"
     )
 
 
