@@ -65,7 +65,7 @@ from activegraph.runtime.exec_errors import (
     RuntimeContextRequiredError,
 )
 from activegraph.runtime.patterns import UnsupportedPatternError
-from activegraph.runtime.runtime import BehaviorFailure, Runtime
+from activegraph.runtime.runtime import BehaviorFailure, RunQuantumResult, Runtime
 from activegraph.sinks import (
     DeliveryContext,
     EventSink,
@@ -234,6 +234,7 @@ __all__ = [
     "ReservedFieldError",
     "RunRecord",
     "Runtime",
+    "RunQuantumResult",
     "RuntimeContextRequiredError",
     "RuntimeStatus",
     "SQLiteEventStore",

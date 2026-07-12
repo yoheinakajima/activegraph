@@ -170,6 +170,12 @@ The full model — composition, ontology design guidance, the Diligence
 pack as a worked example — lives at
 [→ concepts/type-system](https://docs.activegraph.ai/concepts/type-system/).
 
+Single-writer hosts can keep reads responsive during large derived-work drains
+with `Runtime.run_quantum(max_queue_events=25, max_seconds=0.25)`. A yielded
+quantum never writes a false `runtime.idle`; repeated quanta are byte-identical
+to one `run_until_idle()` under the same deterministic inputs (CONTRACT v1.10
+#3).
+
 ## A small example
 
 The relation-behavior primitive — coordination logic on the edge,

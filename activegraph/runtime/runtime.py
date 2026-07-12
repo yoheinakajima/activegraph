@@ -265,6 +265,24 @@ class BehaviorFailure(NamedTuple):
     failed_event_id: str
 
 
+@dataclass(frozen=True)
+class RunQuantumResult:
+    """Operational result of one cooperative runtime drain quantum.
+
+    The values are process observations, not graph facts. In particular,
+    ``elapsed_seconds`` is intentionally never written to the event log, so
+    hosts can schedule fairly without weakening replay determinism.
+    """
+
+    queue_events_processed: int
+    elapsed_seconds: float
+    queue_depth: int
+    max_queue_depth: int
+    delayed_depth: int
+    idle: bool
+    budget_exhausted: bool
+
+
 # Map v0.6 #11 reason-code prefixes to the framework error class's
 # doc-page slug. Used by the WARNING log emitted from
 # `_emit_behavior_failed` so the log line carries a More: URL the
@@ -441,6 +459,7 @@ class Runtime:
         self._log = get_logger("activegraph.runtime")
 
         self._queue = EventQueue()
+        self._max_queue_depth_observed: int = 0
         # v0.7: delayed queue for activate_after scheduling.
         self._delayed = DelayedQueue()
         # Event tick counter: increments for every non-lifecycle event
@@ -878,6 +897,9 @@ class Runtime:
         ):
             return
         self._queue.push(event)
+        self._max_queue_depth_observed = max(
+            self._max_queue_depth_observed, len(self._queue)
+        )
         self.metrics.gauge(
             "activegraph_queue_depth", {}, float(len(self._queue))
         )
@@ -1053,6 +1075,56 @@ class Runtime:
             self._start_budget()
         self._loop(stop=lambda: False)
         self._emit_idle_or_exhausted()
+
+    def run_quantum(
+        self,
+        *,
+        max_queue_events: int = 25,
+        max_seconds: float = 0.25,
+    ) -> RunQuantumResult:
+        """Drain a bounded cooperative quantum without claiming false idle.
+
+        Hosts with a single graph-writer thread can interleave reads and
+        commands between quanta. Bounds are checked between queue events; one
+        behavior invocation remains atomic. When work remains, no
+        ``runtime.idle`` marker is emitted. The normal idle/budget marker is
+        emitted exactly when this quantum actually reaches that state.
+        """
+
+        if isinstance(max_queue_events, bool) or not isinstance(max_queue_events, int):
+            raise TypeError("max_queue_events must be an int")
+        if max_queue_events < 1:
+            raise ValueError("max_queue_events must be >= 1")
+        if isinstance(max_seconds, bool) or not isinstance(max_seconds, (int, float)):
+            raise TypeError("max_seconds must be a number")
+        if not math.isfinite(float(max_seconds)) or float(max_seconds) <= 0:
+            raise ValueError("max_seconds must be finite and > 0")
+
+        self._ensure_registry()
+        if self.budget._start is None:
+            self._start_budget()
+        started = _monotonic()
+        start_tick = self._tick
+        deadline = started + float(max_seconds)
+        self._loop(
+            stop=lambda: (
+                self._tick - start_tick >= max_queue_events
+                or _monotonic() >= deadline
+            )
+        )
+        exhausted = not self._budget_remaining()
+        idle = not self._queue and not self._delayed
+        if exhausted or idle:
+            self._emit_idle_or_exhausted()
+        return RunQuantumResult(
+            queue_events_processed=self._tick - start_tick,
+            elapsed_seconds=_monotonic() - started,
+            queue_depth=len(self._queue),
+            max_queue_depth=max(self._max_queue_depth_observed, len(self._queue)),
+            delayed_depth=len(self._delayed),
+            idle=idle,
+            budget_exhausted=exhausted,
+        )
 
     def run_until(self, predicate: Callable[[Graph], bool]) -> None:
         self._ensure_registry()
