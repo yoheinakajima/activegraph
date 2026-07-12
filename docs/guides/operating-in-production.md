@@ -559,6 +559,18 @@ The forked run is dormant — nothing is running it. To continue from
 the fork point, load it with `Runtime.load(url, run_id=<new_run_id>)`
 and call `run_until_idle()`.
 
+For an interactive single-writer host, prefer cooperative quanta and place the
+next quantum behind any already-pending reads or commands:
+
+```python
+result = rt.run_quantum(max_queue_events=25, max_seconds=0.25)
+if not result.idle and not result.budget_exhausted:
+    schedule_next_quantum()
+```
+
+One queue event and its behavior fan-out remain atomic. Yielding writes no
+`runtime.idle`, so restart recovery and replay remain unchanged.
+
 Pass `--record` to mark the fork as an intentional re-recording
 (used after a `ReplayDivergenceError` when the divergence was
 intentional). The flag appends `-recording` to the label and prints

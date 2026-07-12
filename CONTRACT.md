@@ -8362,6 +8362,31 @@ top-level keys are checked: nested keys named `provenance` are the
 caller's own data and pass through untouched. CONTRACT #5's "silently
 ignored" sentence is superseded (overlay marker in place).
 
+## v1.10 #3. Cooperative drains yield without claiming idle
+
+`Runtime.run_quantum(max_queue_events=25, max_seconds=0.25)` is the
+bounded host seam for a single-writer runtime that must keep reads and
+commands responsive during long derived-work drains.
+
+- Both bounds are positive and fail loud on invalid input. The runtime stops
+  before the next queue event when either bound is reached; one event's
+  matching behavior fan-out remains atomic.
+- Yielding with queued or delayed work emits no `runtime.idle`. A quantum that
+  actually reaches idle or budget exhaustion emits the same one terminal
+  marker as `run_until_idle`.
+- `RunQuantumResult` reports queue events processed, current and observed-peak
+  queue depth, delayed depth,
+  idle/exhausted state, and process-local elapsed seconds. It is scheduling
+  telemetry only: the elapsed value is never persisted or used to derive graph
+  state.
+- Repeated quanta and one full drain produce byte-identical event logs under
+  identical deterministic ids/clocks. A crash after a yielded quantum remains
+  restart-recoverable because no false idle high-water mark was written.
+
+This does not introduce concurrent graph mutation, behavior preemption,
+priority scheduling, or async execution. Fairness belongs to the host, which
+interleaves other work between atomic quanta.
+
 ## v1.10 deliberately does NOT touch
 
 - **No object→events reverse index.** "Which events read object X" is a
@@ -8376,4 +8401,4 @@ ignored" sentence is superseded (overlay marker in place).
 - **No completeness claim for the read trace.** The traced/untraced
   split above is the honest scope; extending it (e.g. tool-side reads)
   is a separate amendment, not a silent widening.
-- **No new storage backends, no other API changes.**
+- **No new storage backends and no concurrent graph execution.**

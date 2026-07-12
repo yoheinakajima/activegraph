@@ -15,7 +15,7 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-Runtime legibility round (CONTRACT v1.10 #1–#2): the behavior-frame
+Runtime legibility and cooperative-host round (CONTRACT v1.10 #1–#3): the behavior-frame
 read trace that backs the product's Anatomy view, plus the
 reserved-field honesty fix. Opt-in by construction — with default
 configuration every existing run, golden log, and fixture is
@@ -24,6 +24,16 @@ byte-identical (regression-locked by the untouched
 passing with zero fixture regeneration).
 
 ### Added
+
+- **Cooperative bounded drains** (CONTRACT v1.10 #3).
+  `Runtime.run_quantum(max_queue_events=25, max_seconds=0.25)` lets a
+  single-writer host yield between atomic queue-event dispatches so reads and
+  commands are not trapped behind a long `run_until_idle()`. A yielded quantum
+  emits no false `runtime.idle`; actual idle/budget exhaustion retains the
+  existing marker and restart semantics. `RunQuantumResult` reports only
+  process-local scheduling observations; elapsed wall time never enters the
+  graph; current and observed-peak queue depth remain inspectable. Full and quantized drains are byte-identical under deterministic
+  identity/clock inputs.
 
 - **Context-read tracing** (CONTRACT v1.10 #1). New instance
   configuration `Runtime(trace_context_reads=True)` (also on
@@ -54,6 +64,10 @@ passing with zero fixture regeneration).
   graph mutation surfaces on reserved-key collisions (see Changed).
 
 ### Changed
+
+- The fixed-path fixture quickstart now removes stale SQLite `-wal` and `-shm`
+  sidecars along with its demo database, preventing intermittent fresh-wheel
+  `disk I/O error` failures on repeated runs.
 
 - **Reserved-field collisions fail loud** (CONTRACT v1.10 #2,
   supersedes CONTRACT #5's "silently ignored"). `graph.add_object`,

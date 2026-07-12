@@ -94,8 +94,12 @@ def run_fixture_mode(stream: Optional[TextIO] = None) -> int:
     # overwrites the previous demo — correct for a demo; we don't want
     # quickstart leaving N database files in /tmp.
     Path(_QUICKSTART_DB_DIR).mkdir(parents=True, exist_ok=True)
-    if os.path.exists(_QUICKSTART_DB_PATH):
-        os.remove(_QUICKSTART_DB_PATH)
+    # SQLite can leave zero-byte WAL/SHM sidecars after a clean demo. Removing
+    # only the main database lets those stale coordination files poison the
+    # next fixed-path quickstart with ``sqlite3.OperationalError: disk I/O
+    # error`` (observed by the wheel-completeness gate on macOS).
+    for suffix in ("", "-wal", "-shm"):
+        Path(f"{_QUICKSTART_DB_PATH}{suffix}").unlink(missing_ok=True)
 
     provider = RecordedDiligenceProvider(companies=THREE_COMPANIES)
     graph = Graph(
