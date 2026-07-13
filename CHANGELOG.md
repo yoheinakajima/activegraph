@@ -15,6 +15,8 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-07-12
+
 Runtime legibility and cooperative-host round (CONTRACT v1.10 #1–#3): the behavior-frame
 read trace that backs the product's Anatomy view, plus the
 reserved-field honesty fix. Opt-in by construction — with default
