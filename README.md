@@ -2,6 +2,12 @@
 
 > The graph is the world. Behaviors are physics. The trace is the proof.
 
+[![PyPI](https://img.shields.io/pypi/v/activegraph)](https://pypi.org/project/activegraph/)
+[![Python versions](https://img.shields.io/pypi/pyversions/activegraph)](https://pypi.org/project/activegraph/)
+[![Tests](https://github.com/yoheinakajima/activegraph/actions/workflows/tests.yml/badge.svg)](https://github.com/yoheinakajima/activegraph/actions/workflows/tests.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![arXiv](https://img.shields.io/badge/arXiv-2605.21997-b31b1b.svg)](https://arxiv.org/abs/2605.21997)
+
 An event-sourced reactive graph runtime for long-running, auditable,
 agentic systems. Behaviors react to a shared graph instead of talking
 to each other. Every change is traceable. Every run is resumable,
@@ -10,6 +16,34 @@ forkable, and diff-able from its event log.
 If chat-based agents are a group conversation, Active Graph is a
 shared workspace where everyone can see what changed, who changed
 it, and why.
+
+> 🎥 **New:** [Watch the AI Engineer talk](https://www.youtube.com/watch?v=khVX_BUnEwU) —
+> Active Graph introduced by its author in one sitting. The fastest
+> way to get the mental model before you read further.
+
+## Where everything lives
+
+This repo is the runtime; the project is spread across a few sites,
+papers, and sibling repos. Whether you are a person evaluating the
+framework or an AI assistant gathering context, these are the
+canonical entry points:
+
+| Resource | What it is |
+| --- | --- |
+| [activegraph.ai](https://activegraph.ai/) | Project home — the pitch in one page |
+| [The AI Engineer talk](https://www.youtube.com/watch?v=khVX_BUnEwU) | Video introduction from the author |
+| [docs.activegraph.ai](https://docs.activegraph.ai/) | Full documentation: concepts, guides, cookbook, CLI + API reference, per-error catalog |
+| [learn.activegraph.ai](https://learn.activegraph.ai/) | Interactive tutorials — refactor a familiar agent loop onto the runtime, one substitution at a time |
+| [Blog](https://activegraph.ai/blog) | Release write-ups and research notes from the project |
+| ["The Log is the Agent" (arXiv:2605.21997)](https://arxiv.org/abs/2605.21997) | The paper — the design argument for event-sourced agents |
+| ["Regimes" (arXiv:2606.10241)](https://arxiv.org/abs/2606.10241) | Follow-up research paper; code at [yoheinakajima/regimes](https://github.com/yoheinakajima/regimes) |
+| [activegraph-packs](https://github.com/yoheinakajima/activegraph-packs) | Open pack library: ~20 packs, demo bundles, a demo server, a React Inspector UI |
+| [activegraph-lab](https://github.com/yoheinakajima/activegraph-lab) | Self-hosted research agent running on the runtime in production |
+| [llms.txt](https://docs.activegraph.ai/llms.txt) · [llms-full.txt](https://docs.activegraph.ai/llms-full.txt) | Machine-readable docs for AI coding assistants |
+| [Status](#status) · [CHANGELOG.md](CHANGELOG.md) | Where the project stands right now |
+
+The [ecosystem](#the-ecosystem) and [research](#research) sections
+below say more about each.
 
 ## Try it in 30 seconds
 
@@ -71,12 +105,20 @@ are opt-in extras.
 - **Packs.** A pack bundles object types, behaviors, tools, prompts,
   and policies for a specific domain. The bundled
   [Diligence pack](activegraph/packs/diligence) is the reference:
-  8 object types, 7 behaviors, 3 tools, recorded fixtures.
+  8 object types, 7 behaviors, 3 tools, recorded fixtures. The open
+  [activegraph-packs](https://github.com/yoheinakajima/activegraph-packs)
+  library is the multi-pack reference architecture.
 - **Isolated event export.** `EventSink` streams accepted live events
   through a bounded per-sink worker without putting adapter I/O on the
   runtime hot path. `JSONLEventSink` is the first-party adapter; drops,
   queue depth, and failures are explicit in status and metrics, and
   normal replay never redelivers history.
+- **Cooperative bounded drains.** Single-writer hosts keep reads
+  responsive during large derived-work drains with
+  `Runtime.run_quantum(max_queue_events=25, max_seconds=0.25)`. A
+  yielded quantum never writes a false `runtime.idle`; repeated quanta
+  are byte-identical to one `run_until_idle()` under the same
+  deterministic inputs (CONTRACT v1.10 #3).
 - **Per-error reference pages.** Every error message ends with a
   `More:` link to a page that explains when it fires, why, and how to
   fix it. Catalog at [docs.activegraph.ai/reference/errors](https://docs.activegraph.ai/reference/errors/).
@@ -170,12 +212,6 @@ The full model — composition, ontology design guidance, the Diligence
 pack as a worked example — lives at
 [→ concepts/type-system](https://docs.activegraph.ai/concepts/type-system/).
 
-Single-writer hosts can keep reads responsive during large derived-work drains
-with `Runtime.run_quantum(max_queue_events=25, max_seconds=0.25)`. A yielded
-quantum never writes a false `runtime.idle`; repeated quanta are byte-identical
-to one `run_until_idle()` under the same deterministic inputs (CONTRACT v1.10
-#3).
-
 ## A small example
 
 The relation-behavior primitive — coordination logic on the edge,
@@ -221,13 +257,19 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
   per-error catalog.
 - **[10-minute tutorial](https://docs.activegraph.ai/quickstart/)** — install
   to a working custom behavior, including fork-and-diff.
+- **[learn.activegraph.ai](https://learn.activegraph.ai/)** — interactive
+  tutorials in the browser: start from the familiar LLM agent loop,
+  watch where it breaks, and rebuild it on the runtime one
+  substitution at a time.
 - **AI coding assistants** — the docs are machine-readable at
   [docs.activegraph.ai/llms.txt](https://docs.activegraph.ai/llms.txt)
   (structured index) and
   [docs.activegraph.ai/llms-full.txt](https://docs.activegraph.ai/llms-full.txt)
   (concatenated full content), generated from the same source markdown
   as the rendered site. Built for AI agents evaluating the framework
-  via Claude Code, Cursor, Replit, and similar tooling.
+  via Claude Code, Cursor, Replit, and similar tooling. The
+  [ecosystem repos](#the-ecosystem) are useful additional context to
+  point an assistant at.
 - **[CHANGELOG.md](CHANGELOG.md)** — every release, with per-version
   migration notes.
 - **[CONTRACT.md](CONTRACT.md)** — locked design decisions, version
@@ -241,6 +283,62 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
   [`operate_a_run.py`](examples/operate_a_run.py),
   [`babyagi.py`](examples/babyagi.py) — BabyAGI's autonomous agent loop,
   rebuilt as three reactive behaviors over a shared graph.
+
+## The ecosystem
+
+Active Graph is one repo in a small open-source constellation. The
+siblings are where the runtime gets exercised for real — and they are
+good additional context to hand an AI assistant alongside this repo.
+
+- **[activegraph-packs](https://github.com/yoheinakajima/activegraph-packs)** —
+  the open pack library: ~20 packs spanning infrastructure
+  (tool gateway, secrets, memory, identity), communication adapters
+  (Telegram, WhatsApp, email), and domain verticals (research,
+  codebase, team ops, meetings), plus composed demo bundles, a Python
+  demo server, and a React Inspector UI. The reference architecture
+  for multi-pack assistants with no central orchestrator —
+  coordination emerges through events on the shared graph.
+- **[activegraph-lab](https://github.com/yoheinakajima/activegraph-lab)** —
+  a self-hosted autonomous research agent, built as a layered pack on
+  activegraph-packs, whose mission is growing activegraph.ai's
+  evidence base. It crawls, proposes claims and branches, and drafts
+  posts behind human approval gates; the research notes on the
+  [blog](https://activegraph.ai/blog) are its published output, each
+  carrying an evidence-linked provenance trail. It is also the
+  runtime's longest-running production soak, and its findings feed
+  back into the hardening milestones in [Status](#status).
+- **[regimes](https://github.com/yoheinakajima/regimes)** — research
+  code for the [Regimes paper](https://arxiv.org/abs/2606.10241): an
+  autonomous evaluation-improvement loop that diagnoses failing runs
+  into a failure-regime taxonomy, routes the dominant regime to the
+  pipeline seam that can address it, and promotes repairs only through
+  static, sandbox, in-sample, and held-out gates — running natively on
+  the runtime, with every step recorded as an event.
+- **FalkorDB graph store** — the first external `GraphStore` backend
+  (native edges, Cypher push-down), contributed by
+  [@dudizimber](https://github.com/dudizimber). See the
+  [FalkorDB guide](https://docs.activegraph.ai/guides/using-falkordb/)
+  and [FalkorDB's write-up](https://www.falkordb.com/blog/beyond-in-memory-graphs/).
+
+## Research
+
+- **[The Log is the Agent: Event-Sourced Reactive Graphs for Auditable, Forkable Agentic Systems](https://arxiv.org/abs/2605.21997)**
+  (Nakajima, 2026 — arXiv:2605.21997). The design argument behind this
+  runtime: invert the usual agent framework so the append-only log is
+  the source of truth and the working graph a deterministic projection
+  of it. Deterministic replay, cheap forking, and end-to-end lineage
+  fall out of that inversion.
+- **[Regimes: An Auditable, Held-Out-Gated Improvement Loop Demonstrated on LongMemEval with ActiveGraph](https://arxiv.org/abs/2606.10241)**
+  (Nakajima, 2026 — arXiv:2606.10241). Follow-up research: controlled
+  self-improvement as a first-class, replayable workflow instead of
+  external scaffolding, demonstrated on the LongMemEval benchmark.
+  Code: [yoheinakajima/regimes](https://github.com/yoheinakajima/regimes).
+- **[The blog](https://activegraph.ai/blog)** — release write-ups and
+  research notes, including posts drafted by the
+  [lab agent](https://github.com/yoheinakajima/activegraph-lab) and
+  published through human editorial gates, with per-claim provenance.
+- **[The AI Engineer talk](https://www.youtube.com/watch?v=khVX_BUnEwU)** —
+  the spoken version of the argument, from the author.
 
 ## What this is not
 
@@ -262,16 +360,35 @@ in [`docs/concepts/relations.md`](https://docs.activegraph.ai/concepts/relations
 
 ## Status
 
-**v1.7.1 (stable)** (2026-07). v1.0 shipped in May 2026 after a
-three-rc external user-test gate per
+**v1.10.0** (2026-07). v1.0 shipped in May 2026 after a three-rc
+external user-test gate per
 [CONTRACT v1.0 #C4](CONTRACT.md#v10-c4-v10-ships-as-v10-rc1-first-time-user-gate-is-owned-externally);
-the v1.1–v1.7 line followed, driven by a downstream self-modification
-stack (a pack library and a governed fork→test→promote assistant).
-See [CHANGELOG.md](CHANGELOG.md) for the full v0 → v1.7 history and
-per-version migration notes.
+the v1.1–v1.10 line followed, driven by a downstream self-modification
+stack — the [activegraph-packs](https://github.com/yoheinakajima/activegraph-packs)
+library and a governed fork→test→promote assistant — and hardened
+against findings from [production deployments](#the-ecosystem) built
+on the runtime. See [CHANGELOG.md](CHANGELOG.md) for the full
+v0 → v1.10 history and per-version migration notes.
 
 Major shipped milestones:
 
+- **v1.10** — runtime legibility and cooperative hosts: opt-in
+  context-read tracing (`Runtime(trace_context_reads=True)` — each
+  behavior execution commits one batched `context.read` event
+  recording what it looked at), reserved-field collisions fail loud
+  with `ReservedFieldError`, and `Runtime.run_quantum` cooperative
+  bounded drains. Default-configuration runs stay byte-identical.
+- **v1.9** — the canonical action-class authority release: a single
+  ceiling for what behaviors are allowed to do, explicit evaluation
+  order, and an audit surface (CONTRACT v1.9 #1–#3). Published
+  together with the staged v1.8 line below.
+- **v1.8** — (staged unreleased; shipped with v1.9.0) isolated
+  `EventSink` delivery; runtime-owned embedding record/replay;
+  fail-closed direct `web_fetch`; deterministic wall-stop replay; and
+  the provider-neutral `TrialExecutor` seam with the existing local
+  subprocess as its honest, non-security-sandbox default; plus
+  explicit, log-backed `dev.override` receipts bounded below
+  governance authority.
 - **v1.7** — subprocess trial-child hardening from downstream soaks:
   `extra_packs` for cross-pack interaction trials, the child's stderr
   captured into the trial report, code discovery made an explicit
@@ -288,11 +405,6 @@ Major shipped milestones:
 - **v1.4** — the pack-manifest validator (`load_manifest`,
   `verify_surface`, content + bundle hashes), declarative
   `Pack.capabilities`, and `disable_pack` deregistration.
-- **v1.8** — isolated `EventSink` delivery; runtime-owned embedding
-  record/replay; fail-closed direct `web_fetch`; deterministic wall-stop
-  replay; and the provider-neutral `TrialExecutor` seam with the existing
-  local subprocess as its honest, non-security-sandbox default; plus explicit,
-  log-backed `dev.override` receipts bounded below governance authority.
 - **v1.3** — `promote`: apply a fork's net structural delta back to
   its parent, fail-closed on conflicts (the fork→test→promote loop);
   provider-compatibility hardening; traceback/DX surfacing; the
@@ -326,8 +438,10 @@ Major shipped milestones:
   patches with optimistic concurrency, views, frames, policies,
   budgets, the trace.
 
-Roadmap items for the current cycle are tracked in
-[ROADMAP.md](ROADMAP.md); unscheduled candidates live in
+[ROADMAP.md](ROADMAP.md) preserves the v1.3-cycle plan as a dated
+artifact (that line has since shipped — see its header note);
+[CHANGELOG.md](CHANGELOG.md) is the authoritative record of what
+landed. Unscheduled candidates live in
 [FUTURE_IDEAS.md](FUTURE_IDEAS.md).
 
 ## License
