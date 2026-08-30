@@ -21,6 +21,10 @@ the [Using the FalkorDB graph store](../../guides/using-falkordb.md) guide.
 
 ::: activegraph.GraphStore
 
+::: activegraph.ObjectQuery
+
+::: activegraph.ObjectQueryResult
+
 ::: activegraph.InMemoryGraphStore
 
 ::: activegraph.FalkorDBGraphStore

@@ -63,13 +63,76 @@ via string interpolation. Nothing can inject Cypher.
 
 from __future__ import annotations
 
+import copy
 import json
+import math
 import os
-from typing import Any, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from activegraph.core.graph import Object, Relation
-from activegraph.core.graph_store import ChainMatch, GraphStore
+from activegraph.core.graph_store import (
+    ChainMatch,
+    GraphStore,
+    ObjectQuery,
+    ObjectQueryResult,
+)
 from activegraph.core.patch import Patch
+
+
+_INDEX_CONFIG_PROPERTY = "__ag_idx_config"
+_OBJECT_ROOT_FIELDS = frozenset({"id", "type", "data", "version", "provenance"})
+_ORDERED_OPERATORS = frozenset({">", "<", ">=", "<="})
+
+
+def _normalize_indexed_fields(
+    indexed_fields: Optional[Mapping[str, Iterable[str]]],
+) -> dict[str, frozenset[str]]:
+    """Validate and freeze per-type top-level data index configuration."""
+    normalized: dict[str, frozenset[str]] = {}
+    for type_, fields in (indexed_fields or {}).items():
+        if not isinstance(type_, str):
+            raise TypeError("indexed_fields keys must be object type strings")
+        clean: set[str] = set()
+        for field in fields:
+            if not isinstance(field, str):
+                raise TypeError("indexed field names must be strings")
+            if not field or "." in field:
+                raise ValueError(
+                    "indexed field names must be non-empty top-level data keys"
+                )
+            clean.add(field)
+        normalized[type_] = frozenset(clean)
+    return normalized
+
+
+def _index_value_property(field: str) -> str:
+    """Return an injection-safe reserved property name for a data field."""
+    return "__ag_idx_v_" + field.encode("utf-8").hex()
+
+
+def _index_kind_property(field: str) -> str:
+    """Reserved property holding the scalar comparison kind."""
+    return "__ag_idx_k_" + field.encode("utf-8").hex()
+
+
+def _scalar_kind(value: Any) -> Optional[str]:
+    """The Python-compatible scalar comparison family, or ``None``."""
+    if isinstance(value, bool):
+        # Python bool is a numeric subtype (True == 1). Encode it onto the
+        # numeric index axis so pushed equality preserves that behavior.
+        return "number"
+    if isinstance(value, int):
+        return "number"
+    if isinstance(value, float):
+        return "number" if math.isfinite(value) else None
+    if isinstance(value, str):
+        return "string"
+    return None
+
+
+def _indexed_scalar_value(value: Any) -> Any:
+    """Encode Python bools on their numeric equality axis."""
+    return int(value) if isinstance(value, bool) else value
 
 
 def _require_falkordb_client() -> Any:
@@ -160,6 +223,11 @@ class FalkorDBGraphStore(GraphStore):
     host, port, username, password:
         FalkorDB server connection settings. Supplying ``host`` triggers
         server mode. ``port`` defaults to ``6379``.
+    indexed_fields:
+        Per-object-type top-level data fields to dual-write as reserved scalar
+        properties for query planning, for example
+        ``{"claim": ["confidence", "status"]}``. Changing this disposable
+        projection configuration requires clearing and replaying the store.
 
     Connection resolution order: explicit ``graph`` → explicit ``url`` /
     ``host`` → ``FALKORDB_URL`` / ``FALKORDB_HOST`` env vars → embedded
@@ -181,7 +249,20 @@ class FalkorDBGraphStore(GraphStore):
         port: Optional[int] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
+        indexed_fields: Optional[Mapping[str, Iterable[str]]] = None,
     ) -> None:
+        self._indexed_fields = _normalize_indexed_fields(indexed_fields)
+        self._all_index_fields = frozenset(
+            field for fields in self._indexed_fields.values() for field in fields
+        )
+        self._index_config_token = json.dumps(
+            {
+                type_: sorted(fields)
+                for type_, fields in sorted(self._indexed_fields.items())
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         self._db: Any = None
         self._owns_db = False
         if graph is not None:
@@ -205,6 +286,7 @@ class FalkorDBGraphStore(GraphStore):
             self._owns_db = True
             self._g = self._db.select_graph(graph_name)
         self._ensure_indexes()
+        self._query_pushdown_ready = self._projection_matches_index_config()
 
     # ---- schema ----
 
@@ -215,18 +297,39 @@ class FalkorDBGraphStore(GraphStore):
         # ``AGNode(id)``; objects additionally by ``AGObject(id)``; relations
         # are native edges indexed by ``AGRelation(id)`` (lookup) and
         # ``AGRelation(type)`` (kind filtering).
-        statements = (
+        statements = [
             "CREATE INDEX FOR (n:AGNode) ON (n.id)",
             "CREATE INDEX FOR (n:AGObject) ON (n.id)",
+            "CREATE INDEX FOR (n:AGObject) ON (n.type)",
             "CREATE INDEX FOR ()-[r:AGRelation]->() ON (r.id)",
             "CREATE INDEX FOR ()-[r:AGRelation]->() ON (r.type)",
             "CREATE INDEX FOR (n:AGPatch) ON (n.id)",
-        )
+        ]
+        for field in sorted(self._all_index_fields):
+            statements.append(
+                f"CREATE INDEX FOR (n:AGObject) ON (n.{_index_value_property(field)})"
+            )
+            statements.append(
+                f"CREATE INDEX FOR (n:AGObject) ON (n.{_index_kind_property(field)})"
+            )
         for stmt in statements:
             try:
                 self._g.query(stmt)
             except Exception:  # noqa: BLE001 — index-exists is the only expected case
                 pass
+
+    def _projection_matches_index_config(self) -> bool:
+        """Whether every existing object was written with this configuration."""
+        if not self._indexed_fields:
+            return True
+        res = self._g.ro_query(
+            "MATCH (o:AGObject) "
+            f"WHERE o.{_INDEX_CONFIG_PROPERTY} IS NULL "
+            f"OR o.{_INDEX_CONFIG_PROPERTY} <> $config "
+            "RETURN count(o)",
+            params={"config": self._index_config_token},
+        )
+        return int(res.result_set[0][0]) == 0
 
     # ---- objects ----
 
@@ -234,17 +337,48 @@ class FalkorDBGraphStore(GraphStore):
         # MERGE on the shared :AGNode label so a node previously created as a
         # placeholder (by a dangling relation) is promoted in place; SET the
         # :AGObject label + payload to materialize it.
+        assignments = [
+            "o.type = $type",
+            "o.version = $version",
+            "o.data = $data",
+            "o.provenance = $provenance",
+        ]
+        params: dict[str, Any] = {
+            "id": obj.id,
+            "type": obj.type,
+            "version": obj.version,
+            "data": json.dumps(obj.data),
+            "provenance": json.dumps(obj.provenance),
+        }
+        configured = self._indexed_fields.get(obj.type, frozenset())
+        for position, field in enumerate(sorted(self._all_index_fields)):
+            value_property = _index_value_property(field)
+            kind_property = _index_kind_property(field)
+            value = obj.data.get(field) if field in configured else None
+            kind = _scalar_kind(value)
+            if kind is None:
+                assignments.extend(
+                    [f"o.{value_property} = null", f"o.{kind_property} = null"]
+                )
+                continue
+            value_param = f"indexed_value_{position}"
+            kind_param = f"indexed_kind_{position}"
+            params[value_param] = _indexed_scalar_value(value)
+            params[kind_param] = kind
+            assignments.extend(
+                [
+                    f"o.{value_property} = ${value_param}",
+                    f"o.{kind_property} = ${kind_param}",
+                ]
+            )
+        if self._indexed_fields:
+            assignments.append(f"o.{_INDEX_CONFIG_PROPERTY} = $index_config")
+            params["index_config"] = self._index_config_token
+
         self._g.query(
             "MERGE (o:AGNode {id: $id}) "
-            "SET o:AGObject, o.type = $type, o.version = $version, "
-            "o.data = $data, o.provenance = $provenance",
-            params={
-                "id": obj.id,
-                "type": obj.type,
-                "version": obj.version,
-                "data": json.dumps(obj.data),
-                "provenance": json.dumps(obj.provenance),
-            },
+            "SET o:AGObject, " + ", ".join(assignments),
+            params=params,
         )
 
     def get_object(self, object_id: str) -> Optional[Object]:
@@ -272,11 +406,24 @@ class FalkorDBGraphStore(GraphStore):
         # node's edges must survive long enough to be enumerated. Once the
         # label + payload are stripped, delete the node only if it has no
         # remaining edges (i.e. it was not referenced by any relation).
+        cleared = [
+            "o.type = null",
+            "o.version = null",
+            "o.data = null",
+            "o.provenance = null",
+            f"o.{_INDEX_CONFIG_PROPERTY} = null",
+        ]
+        for field in sorted(self._all_index_fields):
+            cleared.extend(
+                [
+                    f"o.{_index_value_property(field)} = null",
+                    f"o.{_index_kind_property(field)} = null",
+                ]
+            )
         self._g.query(
             "MATCH (o:AGObject {id: $id}) "
             "REMOVE o:AGObject "
-            "SET o.type = null, o.version = null, "
-            "o.data = null, o.provenance = null "
+            "SET " + ", ".join(cleared) + " "
             "WITH o "
             "OPTIONAL MATCH (o)-[e]-() "
             "WITH o, count(e) AS deg "
@@ -381,24 +528,122 @@ class FalkorDBGraphStore(GraphStore):
 
     # ---- query hooks (pushdown) ----
 
-    def find_objects(self, type: Optional[str] = None) -> list[Object]:
-        # Type filter runs in the database; $type is NULL -> every object.
-        res = self._g.ro_query(
-            "MATCH (o:AGObject) "
-            "WHERE $type IS NULL OR o.type = $type "
-            "RETURN o.id, o.type, o.version, o.data, o.provenance",
-            params={"type": type},
+    def query_objects(self, plan: ObjectQuery) -> ObjectQueryResult:
+        """Execute one object plan with conservative indexed push-down."""
+        conditions: list[str] = []
+        params: dict[str, Any] = {}
+        match_clause = "MATCH (o:AGObject)"
+        if plan.type == "":
+            # FalkorDB range indexes omit empty strings. toString forces the
+            # label-scan fallback while preserving empty-string as a real type.
+            conditions.append("toString(o.type) = $type")
+            params["type"] = plan.type
+        elif plan.type is not None:
+            match_clause = "MATCH (o:AGObject {type: $type})"
+            params["type"] = plan.type
+
+        predicate_conditions, predicate_params, residual = (
+            self._compile_indexed_where(plan)
         )
-        return [
-            Object(
-                id=row[0],
-                type=row[1],
-                data=json.loads(row[3]),
-                version=int(row[2]),
-                provenance=json.loads(row[4]),
+        conditions.extend(predicate_conditions)
+        params.update(predicate_params)
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+        if plan.result_mode == "exists" and not residual:
+            res = self._g.ro_query(
+                match_clause + where_clause + " RETURN 1 LIMIT 1",
+                params=params,
             )
-            for row in res.result_set
-        ]
+            return ObjectQueryResult([], {}, exists=bool(res.result_set))
+
+        cypher = (
+            match_clause
+            + where_clause
+            + " RETURN o.id, o.type, o.version, o.data, o.provenance"
+        )
+        if plan.limit is not None and not residual:
+            cypher += f" LIMIT {int(plan.limit)}"
+        res = self._g.ro_query(cypher, params=params)
+        candidates = [self._object_from_row(row) for row in res.result_set]
+        return ObjectQueryResult(candidates, residual)
+
+    def _compile_indexed_where(
+        self, plan: ObjectQuery
+    ) -> tuple[list[str], dict[str, Any], dict[str, Any]]:
+        """Compile parity-safe clauses and return the untouched residual."""
+        residual = copy.deepcopy(plan.where or {})
+        if (
+            not residual
+            or not self._query_pushdown_ready
+            or plan.type not in self._indexed_fields
+        ):
+            return [], {}, residual
+
+        configured = self._indexed_fields[plan.type]
+        conditions: list[str] = []
+        params: dict[str, Any] = {}
+        for position, (path, expected) in enumerate((plan.where or {}).items()):
+            field = self._indexed_query_field(path)
+            if field is None or field not in configured:
+                continue
+            value_property = _index_value_property(field)
+            kind_property = _index_kind_property(field)
+            param = f"where_value_{position}"
+
+            if isinstance(expected, dict):
+                if len(expected) != 1:
+                    continue
+                op, value = next(iter(expected.items()))
+            else:
+                op, value = "==", expected
+
+            kind = _scalar_kind(value)
+            if op == "==" and kind is not None:
+                conditions.append(f"o.{value_property} = ${param}")
+                params[param] = _indexed_scalar_value(value)
+                residual.pop(path, None)
+            elif op == "!=" and kind is not None:
+                conditions.append(
+                    f"(o.{value_property} IS NULL OR o.{value_property} <> ${param})"
+                )
+                params[param] = _indexed_scalar_value(value)
+                residual.pop(path, None)
+            elif op == "==" and value is None:
+                # Missing, explicit None, and an unindexed container all lack
+                # the scalar property. Residual evaluation distinguishes the
+                # container case after known scalar non-matches are discarded.
+                conditions.append(f"o.{kind_property} IS NULL")
+            elif op in _ORDERED_OPERATORS and kind in {"number", "string"}:
+                # Mismatched/missing/container values remain candidates so
+                # Python preserves its established False/TypeError behavior.
+                conditions.append(
+                    f"(CASE WHEN o.{kind_property} = ${param}_kind "
+                    f"THEN o.{value_property} {op} ${param} ELSE true END)"
+                )
+                params[param] = _indexed_scalar_value(value)
+                params[f"{param}_kind"] = kind
+        return conditions, params, residual
+
+    def _indexed_query_field(self, path: str) -> Optional[str]:
+        """Map a canonical top-level data path to its configured field."""
+        if path.startswith("data.") and path.count(".") == 1:
+            return path[5:]
+        if "." not in path and path not in _OBJECT_ROOT_FIELDS:
+            return path
+        return None
+
+    @staticmethod
+    def _object_from_row(row: list[Any] | tuple[Any, ...]) -> Object:
+        return Object(
+            id=row[0],
+            type=row[1],
+            data=json.loads(row[3]),
+            version=int(row[2]),
+            provenance=json.loads(row[4]),
+        )
+
+    def find_objects(self, type: Optional[str] = None) -> list[Object]:
+        return self.query_objects(ObjectQuery(type=type)).candidates
 
     def find_objects_in_types(self, types: list[str]) -> list[Object]:
         # OR-of-types pushed down via ``type IN $types``; the bound list keeps
@@ -639,6 +884,7 @@ class FalkorDBGraphStore(GraphStore):
         self._g.query(
             "MATCH (n) WHERE n:AGNode OR n:AGPatch DETACH DELETE n"
         )
+        self._query_pushdown_ready = True
 
     def close(self) -> None:
         if self._owns_db and self._db is not None:
