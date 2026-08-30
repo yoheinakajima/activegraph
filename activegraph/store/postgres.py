@@ -24,6 +24,7 @@ from typing import Any, Iterator, Optional
 
 from activegraph.core.event import Event
 from activegraph.store.base import RunRecord
+from activegraph.store.serde import canonicalize_event
 
 
 SCHEMA_VERSION = "1"
@@ -320,28 +321,72 @@ class PostgresEventStore:
         self._source = _ConnectionSource(target)
         self.run_id = run_id
         _ensure_schema(self._source)
+        self._expected_head, self._expected_count = self._read_head()
 
     # ---------- EventStore protocol ----------
 
     def append(self, event: Event) -> None:
-        psycopg = self._source._psycopg
-        with self._source.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO events ({_EVENT_COLUMNS}, run_id)
-                VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s)
-                """,
-                (
-                    event.id,
-                    event.type,
-                    event.actor,
-                    json.dumps(event.payload),
-                    event.frame_id,
-                    event.caused_by,
-                    event.timestamp,
-                    self.run_id,
+        accepted = canonicalize_event(event)
+        try:
+            with self._source.transaction() as conn:
+                with conn.cursor() as cur:
+                    self._lock_run(cur)
+                    actual_head, actual_count = self._read_head(cur)
+                    if actual_head != self._expected_head:
+                        from activegraph.store.errors import ConcurrentWriterError
+
+                        raise ConcurrentWriterError(
+                            run_id=self.run_id,
+                            expected_head=self._expected_head,
+                            actual_head=actual_head,
+                            expected_count=self._expected_count,
+                            actual_count=actual_count,
+                            driver="postgres",
+                        )
+                    cur.execute(
+                        f"""
+                        INSERT INTO events ({_EVENT_COLUMNS}, run_id)
+                        VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                        RETURNING seq
+                        """,
+                        (
+                            accepted.id,
+                            accepted.type,
+                            accepted.actor,
+                            json.dumps(accepted.payload, ensure_ascii=False),
+                            accepted.frame_id,
+                            accepted.caused_by,
+                            accepted.timestamp,
+                            self.run_id,
+                        ),
+                    )
+                    new_head = str(cur.fetchone()[0])
+        except self._source._psycopg.errors.UniqueViolation as exc:
+            from activegraph.store.errors import DuplicateEventError
+
+            raise DuplicateEventError(
+                f"duplicate event id {accepted.id!r} in run {self.run_id!r}",
+                what_failed=(
+                    f"Postgres refused event {accepted.id!r} because that "
+                    f"logical id already exists in run {self.run_id!r}."
                 ),
-            )
+                why=(
+                    "Event ids are unique within a run. Reusing one would make "
+                    "causal references and replay lookup ambiguous."
+                ),
+                how_to_fix=(
+                    "Use the graph/runtime ID generator and do not retry an "
+                    "already accepted event. If another writer owns this run, "
+                    "reload it and coordinate a single writer."
+                ),
+                context={
+                    "event_id": accepted.id,
+                    "run_id": self.run_id,
+                    "driver": "postgres",
+                },
+            ) from exc
+        self._expected_head = new_head
+        self._expected_count += 1
 
     def iter_events(
         self,
@@ -387,12 +432,36 @@ class PostgresEventStore:
         return int(row[0])
 
     def truncate_after(self, event_id: str) -> None:
-        seq = self._seq_of(event_id)
-        with self._source.cursor() as cur:
-            cur.execute(
-                "DELETE FROM events WHERE run_id = %s AND seq > %s",
-                (self.run_id, seq),
-            )
+        with self._source.transaction() as conn:
+            with conn.cursor() as cur:
+                self._lock_run(cur)
+                actual_head, actual_count = self._read_head(cur)
+                if actual_head != self._expected_head:
+                    from activegraph.store.errors import ConcurrentWriterError
+
+                    raise ConcurrentWriterError(
+                        run_id=self.run_id,
+                        expected_head=self._expected_head,
+                        actual_head=actual_head,
+                        expected_count=self._expected_count,
+                        actual_count=actual_count,
+                        driver="postgres",
+                    )
+                cur.execute(
+                    "SELECT seq FROM events WHERE id = %s AND run_id = %s",
+                    (event_id, self.run_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    self._raise_event_not_found(event_id)
+                seq = int(row[0])
+                cur.execute(
+                    "DELETE FROM events WHERE run_id = %s AND seq > %s",
+                    (self.run_id, seq),
+                )
+                new_head, new_count = self._read_head(cur)
+        self._expected_head = new_head
+        self._expected_count = new_count
 
     def close(self) -> None:
         self._source.close()
@@ -405,33 +474,56 @@ class PostgresEventStore:
             )
             row = cur.fetchone()
         if row is None:
-            from activegraph.store.errors import EventNotFoundError
-            raise EventNotFoundError(
-                f"event {event_id!r} not found in run {self.run_id!r}",
-                what_failed=(
-                    f"The Postgres store has no event with id {event_id!r} in "
-                    f"run {self.run_id!r}."
-                ),
-                why=(
-                    "Event ids are the framework's addressing primitive. The "
-                    "store refuses to return a default for an unknown id — that "
-                    "would silently corrupt the audit trail and any downstream "
-                    "fork or replay."
-                ),
-                how_to_fix=(
-                    f"Check the event id against what's actually in the run:\n"
-                    f"    activegraph inspect <store-url> --run-id {self.run_id} --tail 100\n"
-                    "\n"
-                    "Common causes: typo in a hand-typed id, referencing an id "
-                    "from a different run, or a run truncated by an earlier fork."
-                ),
-                context={
-                    "event_id": event_id,
-                    "run_id": self.run_id,
-                    "driver": "postgres",
-                },
-            )
+            self._raise_event_not_found(event_id)
         return int(row[0])
+
+    def _lock_run(self, cur: Any) -> None:
+        """Serialize writers for this logical run for the transaction."""
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (self.run_id,),
+        )
+
+    def _read_head(self, cur: Any = None) -> tuple[Optional[str], int]:
+        if cur is None:
+            with self._source.cursor() as owned_cur:
+                return self._read_head(owned_cur)
+        cur.execute(
+            "SELECT MAX(seq), COUNT(*) FROM events WHERE run_id = %s",
+            (self.run_id,),
+        )
+        row = cur.fetchone()
+        head = None if row[0] is None else str(row[0])
+        return head, int(row[1])
+
+    def _raise_event_not_found(self, event_id: str) -> None:
+        from activegraph.store.errors import EventNotFoundError
+
+        raise EventNotFoundError(
+            f"event {event_id!r} not found in run {self.run_id!r}",
+            what_failed=(
+                f"The Postgres store has no event with id {event_id!r} in "
+                f"run {self.run_id!r}."
+            ),
+            why=(
+                "Event ids are the framework's addressing primitive. The "
+                "store refuses to return a default for an unknown id — that "
+                "would silently corrupt the audit trail and any downstream "
+                "fork or replay."
+            ),
+            how_to_fix=(
+                f"Check the event id against what's actually in the run:\n"
+                f"    activegraph inspect <store-url> --run-id {self.run_id} --tail 100\n"
+                "\n"
+                "Common causes: typo in a hand-typed id, referencing an id "
+                "from a different run, or a run truncated by an earlier fork."
+            ),
+            context={
+                "event_id": event_id,
+                "run_id": self.run_id,
+                "driver": "postgres",
+            },
+        )
 
     # ---------- v0.5 helpers (per-run) ----------
 

@@ -227,18 +227,66 @@ class SQLiteEventStore:
         self._conn = sqlite3.connect(path, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         _ensure_schema(self._conn)
+        self._expected_head, self._expected_count = self._read_head()
 
     # ---------- EventStore protocol ----------
 
     def append(self, event: Event) -> None:
         row = encode_event(event)
-        self._conn.execute(
-            """
-            INSERT INTO events (id, type, actor, payload, frame_id, caused_by, timestamp, run_id)
-            VALUES (:id, :type, :actor, :payload, :frame_id, :caused_by, :timestamp, :run_id)
-            """,
-            {**row, "run_id": self.run_id},
-        )
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            actual_head, actual_count = self._read_head()
+            if actual_head != self._expected_head:
+                from activegraph.store.errors import ConcurrentWriterError
+
+                raise ConcurrentWriterError(
+                    run_id=self.run_id,
+                    expected_head=self._expected_head,
+                    actual_head=actual_head,
+                    expected_count=self._expected_count,
+                    actual_count=actual_count,
+                    driver="sqlite",
+                )
+            cursor = self._conn.execute(
+                """
+                INSERT INTO events (id, type, actor, payload, frame_id, caused_by, timestamp, run_id)
+                VALUES (:id, :type, :actor, :payload, :frame_id, :caused_by, :timestamp, :run_id)
+                """,
+                {**row, "run_id": self.run_id},
+            )
+            self._conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            if self._conn.in_transaction:
+                self._conn.execute("ROLLBACK")
+            from activegraph.store.errors import DuplicateEventError
+
+            raise DuplicateEventError(
+                f"duplicate event id {event.id!r} in run {self.run_id!r}",
+                what_failed=(
+                    f"SQLite refused event {event.id!r} because that logical "
+                    f"id already exists in run {self.run_id!r}."
+                ),
+                why=(
+                    "Event ids are unique within a run. Reusing one would make "
+                    "causal references and replay lookup ambiguous."
+                ),
+                how_to_fix=(
+                    "Use the graph/runtime ID generator and do not retry an "
+                    "already accepted event. If another writer owns this run, "
+                    "reload it and coordinate a single writer."
+                ),
+                context={
+                    "event_id": event.id,
+                    "run_id": self.run_id,
+                    "driver": "sqlite",
+                },
+            ) from exc
+        except BaseException:
+            if self._conn.in_transaction:
+                self._conn.execute("ROLLBACK")
+            raise
+        self._expected_head = str(cursor.lastrowid)
+        self._expected_count += 1
 
     def iter_events(
         self,
@@ -271,17 +319,60 @@ class SQLiteEventStore:
         return int(row[0])
 
     def truncate_after(self, event_id: str) -> None:
-        seq = self._seq_of(event_id)
-        self._conn.execute(
-            "DELETE FROM events WHERE run_id = ? AND seq > ?",
-            (self.run_id, seq),
-        )
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            actual_head, actual_count = self._read_head()
+            if actual_head != self._expected_head:
+                from activegraph.store.errors import ConcurrentWriterError
+
+                raise ConcurrentWriterError(
+                    run_id=self.run_id,
+                    expected_head=self._expected_head,
+                    actual_head=actual_head,
+                    expected_count=self._expected_count,
+                    actual_count=actual_count,
+                    driver="sqlite",
+                )
+            seq = self._seq_of(event_id)
+            self._conn.execute(
+                "DELETE FROM events WHERE run_id = ? AND seq > ?",
+                (self.run_id, seq),
+            )
+            new_head, new_count = self._read_head()
+            self._conn.execute("COMMIT")
+        except BaseException:
+            if self._conn.in_transaction:
+                self._conn.execute("ROLLBACK")
+            raise
+        self._expected_head = new_head
+        self._expected_count = new_count
 
     def close(self) -> None:
         try:
             self._conn.close()
         except sqlite3.ProgrammingError:
             pass
+
+    def _read_head(self) -> tuple[Optional[str], int]:
+        """Return the durable run head and total retained event count.
+
+        The archive tier participates because compaction moves rows without
+        changing the logical log. SQLite ``seq`` is monotonic, so the last
+        sequence is an unambiguous compare-and-advance token for this file.
+        """
+        row = self._conn.execute(
+            """
+            SELECT MAX(seq) AS head, COUNT(*) AS n
+            FROM (
+                SELECT seq FROM events WHERE run_id = ?
+                UNION ALL
+                SELECT seq FROM events_archive WHERE run_id = ?
+            )
+            """,
+            (self.run_id, self.run_id),
+        ).fetchone()
+        head = None if row["head"] is None else str(row["head"])
+        return head, int(row["n"])
 
     def _seq_of(self, event_id: str) -> int:
         row = self._conn.execute(

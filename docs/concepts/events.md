@@ -22,6 +22,9 @@ Every event has:
 - `payload` — a dict of JSON-encodable values. The framework
   enforces JSON encodability at emit time; see
   [`non-serializable-event-error`](../reference/errors/non-serializable-event-error.md).
+  Acceptance normalizes through the store's JSON adapter even when no
+  durable store is attached (`Decimal` becomes a string, dates become ISO
+  strings, sets become stable lists).
 - `actor` — who or what produced the event. `"user"` for goals
   pushed in from outside, `"runtime"` for framework-emitted
   events, a behavior name for behavior-emitted events.
@@ -108,6 +111,14 @@ Three consequences:
   run is in the event log. Nothing else is needed for audit —
   there's no separate audit-log subsystem because the event log
   is the audit log.
+- **Event values are detached.** `emit` owns a canonical copy of the
+  submitted payload. Its return value, `graph.events`, store reads,
+  sinks, and listeners each receive detached values, so mutating one
+  cannot rewrite accepted history or another observer's input.
+
+With a durable store attached, acceptance is commit-first: canonicalize and
+validate, append to the EventStore, then project and notify. A failed append
+therefore leaves the graph, runtime queue, sinks, and listeners untouched.
 
 ## Events vs exceptions
 
@@ -144,6 +155,10 @@ for event in store.iter_events():
 # activegraph inspect <url> --run-id <run> --tail 50
 # activegraph inspect <url> --event <event_id>
 ```
+
+Event ids are logical ids scoped to a run. An external reference is the pair
+`(run_id, event_id)`; seeing `evt_001` in two different runs is expected,
+especially across forks.
 
 The trace printer (`Runtime.print_trace()`) is the human-readable
 projection of the event log — same data, formatted with tags and

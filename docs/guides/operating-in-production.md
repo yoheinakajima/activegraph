@@ -85,6 +85,15 @@ Both stores conform to the same `EventStore` protocol. The runtime,
 the CLI, and every library API treat them identically. **Migration is
 one-directional and explicit** (see below).
 
+Both are many-reader, single-logical-writer systems per run. Each writable
+handle captures the run head and compares-and-advances it transactionally on
+append (SQLite write transaction; Postgres run-scoped advisory transaction
+lock). If another runtime already advanced that run, the stale writer receives
+[`ConcurrentWriterError`](../reference/errors/concurrent-writer-error.md)
+before its graph projects or publishes anything. Reload the winning run; do
+not retry in place with a different event id. Different runs may be written
+concurrently.
+
 ### Connection URLs
 
 Stores are addressed by URL throughout the framework — runtime, CLI,
