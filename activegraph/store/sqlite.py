@@ -227,7 +227,8 @@ class SQLiteEventStore:
         self._conn = sqlite3.connect(path, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         _ensure_schema(self._conn)
-        self._expected_head, self._expected_count = self._read_head()
+        self._expected_head = self._read_head()
+        self._expected_count = self._count_retained()
 
     # ---------- EventStore protocol ----------
 
@@ -235,7 +236,7 @@ class SQLiteEventStore:
         row = encode_event(event)
         try:
             self._conn.execute("BEGIN IMMEDIATE")
-            actual_head, actual_count = self._read_head()
+            actual_head = self._read_head()
             if actual_head != self._expected_head:
                 from activegraph.store.errors import ConcurrentWriterError
 
@@ -244,7 +245,7 @@ class SQLiteEventStore:
                     expected_head=self._expected_head,
                     actual_head=actual_head,
                     expected_count=self._expected_count,
-                    actual_count=actual_count,
+                    actual_count=self._count_retained(),
                     driver="sqlite",
                 )
             cursor = self._conn.execute(
@@ -321,7 +322,7 @@ class SQLiteEventStore:
     def truncate_after(self, event_id: str) -> None:
         try:
             self._conn.execute("BEGIN IMMEDIATE")
-            actual_head, actual_count = self._read_head()
+            actual_head = self._read_head()
             if actual_head != self._expected_head:
                 from activegraph.store.errors import ConcurrentWriterError
 
@@ -330,7 +331,7 @@ class SQLiteEventStore:
                     expected_head=self._expected_head,
                     actual_head=actual_head,
                     expected_count=self._expected_count,
-                    actual_count=actual_count,
+                    actual_count=self._count_retained(),
                     driver="sqlite",
                 )
             seq = self._seq_of(event_id)
@@ -338,7 +339,8 @@ class SQLiteEventStore:
                 "DELETE FROM events WHERE run_id = ? AND seq > ?",
                 (self.run_id, seq),
             )
-            new_head, new_count = self._read_head()
+            new_head = self._read_head()
+            new_count = self._count_retained()
             self._conn.execute("COMMIT")
         except BaseException:
             if self._conn.in_transaction:
@@ -353,8 +355,8 @@ class SQLiteEventStore:
         except sqlite3.ProgrammingError:
             pass
 
-    def _read_head(self) -> tuple[Optional[str], int]:
-        """Return the durable run head and total retained event count.
+    def _read_head(self) -> Optional[str]:
+        """Return the durable run head without scanning the retained log.
 
         The archive tier participates because compaction moves rows without
         changing the logical log. SQLite ``seq`` is monotonic, so the last
@@ -362,17 +364,28 @@ class SQLiteEventStore:
         """
         row = self._conn.execute(
             """
-            SELECT MAX(seq) AS head, COUNT(*) AS n
+            SELECT MAX(head) AS head
             FROM (
-                SELECT seq FROM events WHERE run_id = ?
+                SELECT MAX(seq) AS head FROM events WHERE run_id = ?
                 UNION ALL
-                SELECT seq FROM events_archive WHERE run_id = ?
+                SELECT MAX(seq) AS head FROM events_archive WHERE run_id = ?
             )
             """,
             (self.run_id, self.run_id),
         ).fetchone()
-        head = None if row["head"] is None else str(row["head"])
-        return head, int(row["n"])
+        return None if row["head"] is None else str(row["head"])
+
+    def _count_retained(self) -> int:
+        """Total hot + archived events, used off the successful append path."""
+        row = self._conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM events WHERE run_id = ?) +
+                (SELECT COUNT(*) FROM events_archive WHERE run_id = ?) AS n
+            """,
+            (self.run_id, self.run_id),
+        ).fetchone()
+        return int(row["n"])
 
     def _seq_of(self, event_id: str) -> int:
         row = self._conn.execute(
