@@ -15,6 +15,50 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-08-29
+
+Projection query-planning release (CONTRACT v1.12 #1–#4). Object reads now
+cross one backend-neutral plan boundary, allowing scalable GraphStores to
+optimize without acquiring their own query semantics.
+
+### Added
+
+- Public `ObjectQuery` and `ObjectQueryResult` values. Plans carry type scope,
+  predicate, limit, and object/existence result mode; results carry candidates
+  plus the exact predicate residual the backend did not consume.
+- `GraphStore.query_objects(plan)` with a complete non-abstract default for
+  third-party backends. `Graph.objects`, its `query` alias, and
+  `has_object_of_type` all use this boundary.
+- Optional `FalkorDBGraphStore(indexed_fields={type: [field, ...]})` projection
+  configuration. Configured top-level scalar data is dual-written under
+  injection-safe reserved properties and indexed without changing canonical
+  JSON data or the event log.
+- Query-plan conformance for residual preservation, limits, `None`/empty-string
+  type scope, existence, and add/remove behavior. Deterministic Falkor tests
+  pin scalar-only dual-write, conservative compilation, stale-projection
+  fallback, one-row existence, and zero payload decodes.
+
+### Changed
+
+- FalkorDB creates an `AGObject(type)` index and answers fully-consumed
+  existence plans with a bound scalar `LIMIT 1` query instead of fetching and
+  decoding every matching object.
+- FalkorDB consumes parity-safe scalar equality/inequality and may use indexed
+  same-kind prefilters for ordered comparisons while returning the original
+  clause for canonical residual evaluation. Nested paths, containers,
+  membership, multi-op clauses, `None` ambiguity, and mismatched types remain
+  residual.
+- Reopening a projection whose per-object index-configuration marker differs
+  disables indexed predicate compilation. Clear and replay the disposable
+  GraphStore to enable the new configuration; reads remain correct meanwhile.
+
+### Migration notes
+
+- Existing GraphStore implementations need no change because
+  `query_objects` has a working base implementation.
+- To add or change FalkorDB `indexed_fields`, rebuild the projection from the
+  EventStore. No event-log or store-schema migration is required.
+
 ## [1.11.0] — 2026-08-29
 
 Trust-boundary release (CONTRACT v1.11 #1–#5). This release treats accepted

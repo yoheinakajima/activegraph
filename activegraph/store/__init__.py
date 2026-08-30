@@ -11,7 +11,12 @@ The ``open_store(url, run_id)`` entry point picks the right driver from a
 connection URL (sqlite:///... or postgres://...).
 """
 
-from activegraph.core.graph_store import GraphStore, InMemoryGraphStore
+from activegraph.core.graph_store import (
+    GraphStore,
+    InMemoryGraphStore,
+    ObjectQuery,
+    ObjectQueryResult,
+)
 from activegraph.store.base import EventStore, RunRecord, replay_into
 from activegraph.store.errors import (
     ConcurrentWriterError,
@@ -38,6 +43,8 @@ __all__ = [
     "InMemoryGraphStore",
     "InvalidStoreURL",
     "NonSerializableEventError",
+    "ObjectQuery",
+    "ObjectQueryResult",
     "RunRecord",
     "SQLiteEventStore",
     "SchemaVersionMismatch",
