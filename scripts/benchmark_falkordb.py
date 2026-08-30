@@ -4,8 +4,9 @@ The point of the FalkorDB optimizations is that the *structural* read paths
 push down into the database, so their cost tracks the size of the **result**
 rather than the size of the whole projection. This script measures those
 paths — a full-projection scan (the un-pushable baseline), a type-scoped
-read, a depth-2 neighborhood walk, a two-hop pattern match, and a cascade
-delete — on small / medium / large graphs, for both backends, and prints a
+read, a type-existence check, an indexed scalar predicate, a depth-2
+neighborhood walk, a two-hop pattern match, and a cascade delete — on small /
+medium / large graphs, for both backends, and prints a
 Markdown table you can paste into a doc.
 
 It is a *relative* benchmark: absolute numbers depend on the machine, the
@@ -132,6 +133,8 @@ _OP_ORDER = [
     "build (write)",
     "full scan (all_objects)",
     "type-scoped read",
+    "type existence",
+    "indexed where (i >= n-8)",
     "neighborhood depth=2",
     "2-hop pattern match",
     "cascade delete",
@@ -154,6 +157,13 @@ def _bench_with_build(
         "build (write)": build_ms,
         "full scan (all_objects)": _time(lambda: graph.all_objects(), repeats),
         "type-scoped read": _time(lambda: graph.objects(type="claim"), repeats),
+        "type existence": _time(
+            lambda: graph.has_object_of_type("claim"), repeats
+        ),
+        "indexed where (i >= n-8)": _time(
+            lambda: graph.objects(type="claim", where={"i": {">=": n - 8}}),
+            repeats,
+        ),
         "neighborhood depth=2": _time(
             lambda: graph.neighborhood(mid, depth=2), repeats
         ),
@@ -169,7 +179,9 @@ def _bench_with_build(
 
 
 def _falkordb_graph(label: str) -> Graph:
-    store = FalkorDBGraphStore(graph_name=f"ag_bench_{label}")
+    store = FalkorDBGraphStore(
+        graph_name=f"ag_bench_{label}", indexed_fields={"claim": ["i"]}
+    )
     store.clear()
     return Graph(graph_store=store)
 

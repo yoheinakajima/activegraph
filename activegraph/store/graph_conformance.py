@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from activegraph.core.graph import Object, Relation
+from activegraph.core.graph_store import ObjectQuery
 from activegraph.core.patch import Patch
 
 
@@ -201,6 +202,63 @@ class GraphStoreConformance(ABC):
             self.cleanup()
 
     # ---- query hooks (pushdown) ----
+
+    def test_query_objects_returns_exact_residual(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("o1", type_="memo"))
+            store.put_object(self._obj("o2", type_="memo"))
+            store.put_object(self._obj("o3", type_="note"))
+            where = {"n": {">": 0}, "text": "hello o2"}
+
+            result = store.query_objects(ObjectQuery(type="memo", where=where))
+
+            assert sorted(o.id for o in result.candidates) == ["o1", "o2"]
+            assert result.residual_where == where
+            assert result.exists is None
+        finally:
+            self.cleanup()
+
+    def test_query_objects_limit_without_residual(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("o1", type_="memo"))
+            store.put_object(self._obj("o2", type_="memo"))
+
+            result = store.query_objects(ObjectQuery(type="memo", limit=1))
+
+            assert len(result.candidates) == 1
+            assert result.residual_where == {}
+            assert result.exists is None
+        finally:
+            self.cleanup()
+
+    def test_query_objects_existence_modes(self) -> None:
+        try:
+            store = self.make_store()
+            store.put_object(self._obj("empty", type_=""))
+            store.put_object(self._obj("memo", type_="memo"))
+
+            for type_, expected in (
+                (None, True),
+                ("", True),
+                ("memo", True),
+                ("missing", False),
+            ):
+                result = store.query_objects(
+                    ObjectQuery(type=type_, limit=1, result_mode="exists")
+                )
+                assert result.exists is expected
+                assert result.candidates == []
+                assert result.residual_where == {}
+
+            store.remove_object("empty")
+            removed = store.query_objects(
+                ObjectQuery(type="", limit=1, result_mode="exists")
+            )
+            assert removed.exists is False
+        finally:
+            self.cleanup()
 
     def test_find_objects(self) -> None:
         try:
@@ -488,4 +546,3 @@ class GraphStoreConformance(ABC):
             ]
         finally:
             self.cleanup()
-
