@@ -321,7 +321,8 @@ class PostgresEventStore:
         self._source = _ConnectionSource(target)
         self.run_id = run_id
         _ensure_schema(self._source)
-        self._expected_head, self._expected_count = self._read_head()
+        self._expected_head = self._read_head()
+        self._expected_count = self.count()
 
     # ---------- EventStore protocol ----------
 
@@ -331,7 +332,7 @@ class PostgresEventStore:
             with self._source.transaction() as conn:
                 with conn.cursor() as cur:
                     self._lock_run(cur)
-                    actual_head, actual_count = self._read_head(cur)
+                    actual_head = self._read_head(cur)
                     if actual_head != self._expected_head:
                         from activegraph.store.errors import ConcurrentWriterError
 
@@ -340,7 +341,7 @@ class PostgresEventStore:
                             expected_head=self._expected_head,
                             actual_head=actual_head,
                             expected_count=self._expected_count,
-                            actual_count=actual_count,
+                            actual_count=self._count_with_cursor(cur),
                             driver="postgres",
                         )
                     cur.execute(
@@ -435,7 +436,7 @@ class PostgresEventStore:
         with self._source.transaction() as conn:
             with conn.cursor() as cur:
                 self._lock_run(cur)
-                actual_head, actual_count = self._read_head(cur)
+                actual_head = self._read_head(cur)
                 if actual_head != self._expected_head:
                     from activegraph.store.errors import ConcurrentWriterError
 
@@ -444,7 +445,7 @@ class PostgresEventStore:
                         expected_head=self._expected_head,
                         actual_head=actual_head,
                         expected_count=self._expected_count,
-                        actual_count=actual_count,
+                        actual_count=self._count_with_cursor(cur),
                         driver="postgres",
                     )
                 cur.execute(
@@ -459,7 +460,8 @@ class PostgresEventStore:
                     "DELETE FROM events WHERE run_id = %s AND seq > %s",
                     (self.run_id, seq),
                 )
-                new_head, new_count = self._read_head(cur)
+                new_head = self._read_head(cur)
+                new_count = self._count_with_cursor(cur)
         self._expected_head = new_head
         self._expected_count = new_count
 
@@ -484,17 +486,23 @@ class PostgresEventStore:
             (self.run_id,),
         )
 
-    def _read_head(self, cur: Any = None) -> tuple[Optional[str], int]:
+    def _read_head(self, cur: Any = None) -> Optional[str]:
         if cur is None:
             with self._source.cursor() as owned_cur:
                 return self._read_head(owned_cur)
         cur.execute(
-            "SELECT MAX(seq), COUNT(*) FROM events WHERE run_id = %s",
+            "SELECT MAX(seq) FROM events WHERE run_id = %s",
             (self.run_id,),
         )
         row = cur.fetchone()
-        head = None if row[0] is None else str(row[0])
-        return head, int(row[1])
+        return None if row[0] is None else str(row[0])
+
+    def _count_with_cursor(self, cur: Any) -> int:
+        cur.execute(
+            "SELECT COUNT(*) FROM events WHERE run_id = %s",
+            (self.run_id,),
+        )
+        return int(cur.fetchone()[0])
 
     def _raise_event_not_found(self, event_id: str) -> None:
         from activegraph.store.errors import EventNotFoundError
