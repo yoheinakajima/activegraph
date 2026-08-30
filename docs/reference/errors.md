@@ -33,6 +33,7 @@ The seven category bases match the
 ### StorageError
 
 - [CorruptedEventPayloadError](errors/corrupted-event-payload-error.md)
+- [ConcurrentWriterError](errors/concurrent-writer-error.md)
 - [DuplicateEventError](errors/duplicate-event-error.md)
 - [EventNotFoundError](errors/event-not-found-error.md)
 - [InvalidStoreURL](errors/invalid-store-url-error.md)
@@ -46,6 +47,7 @@ The seven category bases match the
 - [UnknownToolError](errors/unknown-tool-error.md)
 - [ApprovalNotFoundError](errors/approval-not-found-error.md)
 - [ReservedFieldError](errors/reserved-field-error.md)
+- [InvalidPatchOperation](errors/invalid-patch-operation.md)
 
 ### ConfigurationError
 

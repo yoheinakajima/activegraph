@@ -263,6 +263,7 @@ nav:
           - ReplayDivergenceError: reference/errors/replay-divergence-error.md
           - UnsupportedPatternError: reference/errors/unsupported-pattern-error.md
           - CorruptedEventPayloadError: reference/errors/corrupted-event-payload-error.md
+          - ConcurrentWriterError: reference/errors/concurrent-writer-error.md
           - DuplicateEventError: reference/errors/duplicate-event-error.md
           - EventNotFoundError: reference/errors/event-not-found-error.md
           - InvalidStoreURL: reference/errors/invalid-store-url-error.md
@@ -273,6 +274,7 @@ nav:
           - UnknownToolError: reference/errors/unknown-tool-error.md
           - ApprovalNotFoundError: reference/errors/approval-not-found-error.md
           - ReservedFieldError: reference/errors/reserved-field-error.md
+          - InvalidPatchOperation: reference/errors/invalid-patch-operation.md
           - MissingProviderError: reference/errors/missing-provider-error.md
           - MissingToolError: reference/errors/missing-tool-error.md
           - MissingOptionalDependency: reference/errors/missing-optional-dependency.md

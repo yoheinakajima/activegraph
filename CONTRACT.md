@@ -8402,3 +8402,160 @@ interleaves other work between atomic quanta.
   split above is the honest scope; extending it (e.g. tool-side reads)
   is a separate amendment, not a silent widening.
 - **No new storage backends and no concurrent graph execution.**
+
+---
+
+## v1.11 #1. Accepted events are canonical, detached values
+
+`Graph.emit(submitted)` first normalizes the full event through the same JSON
+adapter used by EventStore persistence. The accepted event is a new value:
+custom adapter types have their stored representation (`Decimal` → string,
+datetime/date → ISO string, set/frozenset → stable list), and no nested caller
+container aliases the log. This rule applies when no durable store is attached;
+late persistence cannot discover a payload that an in-memory run previously
+accepted but cannot encode.
+
+`Graph.emit` returns a detached canonical event. `Graph.events`, EventStore
+`get_event` / `iter_events`, sinks, and listeners also receive detached event
+values. Mutating any returned payload cannot edit the authoritative record or
+another observer's value. Python object identity is not part of event
+acceptance; canonical content is.
+
+## v1.11 #2. Authoritative append precedes projection and observation
+
+The live event boundary is ordered:
+
+1. canonicalize and validate;
+2. append to the attached EventStore, when present;
+3. append to the graph's accepted-event view and project;
+4. offer sinks;
+5. invoke legacy listeners.
+
+An EventStore append failure leaves `_events`, GraphStore projection, object
+versions, patch state, runtime queue, sinks, and listeners untouched. This
+supersedes the v1.8 wording that described the offer point as
+"projection + durable append" without locking their relative order. The sink
+offer remains after both.
+
+A projector failure after an authoritative append is terminal for that Graph:
+the committed log remains truth and recovery is reload/replay. Framework-owned
+events are therefore validated before append and their projector dispatch is
+exhaustive; continuing from a partially projected Graph is forbidden.
+
+## v1.11 #3. Logical ids are run-scoped; each run has one writer
+
+CONTRACT v0.5 #12 stands: an address outside an already run-scoped handle is
+`(run_id, logical_id)`. Repeated `evt_001` / `task#1` values across runs and
+forks are deliberate and not a collision. New cross-run exports and
+integration references carry both fields; per-run APIs continue accepting the
+logical id alone.
+
+One logical writer may extend a run. Multiple readers may inspect it and
+different runs in the same backend may progress concurrently. Every
+first-party writable EventStore handle captures an expected event count/head;
+append compares that head and inserts in one backend transaction/critical
+section. A mismatch raises `ConcurrentWriterError(StorageError)` before Graph
+projection. SQLite uses a write transaction, Postgres a run-scoped transaction
+lock, and in-memory stores enforce the same handle-local invariant.
+
+The error's recovery is to discard/reload the stale runtime and acquire a
+fresh handle. Minting another id and retrying in place is forbidden: the
+problem is two schedulers, not the spelling of the id. `truncate_after`
+refreshes the handle's expected head.
+
+## v1.11 #4. Framework taxonomies fail closed
+
+`PATCH_OPS` is the single definition of patch operations and is exactly
+`{"update", "replace"}`. `Patch` construction and `Graph.propose_patch`
+validate it before any event/id-visible state change. `patch.applied`
+projection handles both operations exhaustively and raises an ActiveGraph
+execution error for a malformed historical/internal value; it never bumps a
+version or records apparent success through a default/no-op branch. Object
+birth and removal stay `object.created` / `object.removed` and are not patch
+operations.
+
+Pack conflict ownership is name-based and exclusive in the relevant
+namespace. The v0.9 #6 phrase "with different definitions" is superseded:
+semantic equality of callables, models, policies, or schemas is neither
+decidable nor sufficient for co-ownership. Only reloading the identical
+`(pack.name, pack.version)` is idempotent. All five named surfaces — object
+type, relation type, behavior, tool, policy — follow the ownership rule.
+
+Historical logs carrying an unsupported applied patch are surfaced with run
+and event context by validation/audit; they are never silently reinterpreted
+as create/remove operations in a later version.
+
+## v1.11 #5. Process-global configuration is test- and call-boundary owned
+
+The library still never configures logging on import. A CLI entry point may
+configure the `activegraph` logger for its process, but an in-process helper or
+test that changes logging, the payload redactor, decorator registries, or
+once-per-process dedupe state owns snapshot/restore. The test suite has one
+autouse isolation boundary for framework-owned process state so collection
+order cannot decide behavior. Tests that intentionally verify persistence
+inside a process opt out explicitly and restore in `finally`.
+
+## v1.11 deliberately does NOT touch
+
+- No global ids, ULID migration, multi-writer scheduler, async EventStore, or
+  writer retry that changes event order.
+- No new patch meaning and no repair-by-guessing for historical false-applied
+  patch records.
+- No shared pack-surface ownership based on alleged definition equality.
+- No GraphStore query optimization; that is v1.12 below.
+- No Temporal/runtime distribution dependency; orchestration remains a host
+  integration.
+
+---
+
+## v1.12 #1. Object reads use one structured query plan
+
+`Graph.objects`, `Graph.query`, and `Graph.has_object_of_type` construct an
+`ObjectQuery` carrying type scope, `where`, and result limit/mode. A GraphStore
+implements `query_objects(plan)` with a working base default. The result
+contains candidate objects and the exact residual predicate the backend did
+not consume. Graph evaluates that residual with the canonical Python evaluator
+before returning a value. A backend may not claim or drop a clause it cannot
+mirror exactly.
+
+## v1.12 #2. Existence is a query result mode
+
+`has_object_of_type` does not materialize a full object population. It asks the
+same plan boundary for the first qualifying object. When no residual predicate
+remains, a backend may issue `LIMIT 1` and omit payload columns. If residual
+evaluation is required, the backend returns sufficient candidates and Graph
+stops at the first canonical match. `None` type scope keeps the established
+"any object" meaning; empty-string types remain distinct valid values.
+
+## v1.12 #3. FalkorDB scalar indexes are explicit projection configuration
+
+`FalkorDBGraphStore(indexed_fields={type: [field, ...]})` opts top-level
+payload scalar fields into dual-write under a reserved encoded property
+prefix. The canonical JSON `data` remains complete. Only configured fields on
+the configured type are written/indexed; absent/`None` fields and unsupported
+container values do not acquire misleading scalar properties. Changing the
+configuration rebuilds the disposable GraphStore projection by replay and
+never migrates the event log.
+
+The first push-down subset is top-level scalar literal equality and one-op
+`==`, `!=`, `>`, `<`, `>=`, `<=` clauses whose missing/`None` behavior passes
+the conformance matrix. Nested paths, dict/list equality, multi-op clause
+dicts, and `in` / `not in` remain residual until separately proven.
+
+## v1.12 #4. Query conformance proves result parity and avoided work
+
+GraphStoreConformance covers type-only objects, existence, present/missing/
+`None`/type-mismatched scalar predicates, mixed pushed/residual conjunctions,
+and unsupported clauses. The semantic oracle is the base Python plan.
+FalkorDB-specific regression tests additionally assert at most one returned row
+and zero JSON payload decodes for a type-only existence query; scalar push-down
+asserts only residual candidates are materialized.
+
+## v1.12 deliberately does NOT touch
+
+- No pattern-`WHERE` compilation, aggregate/count API, ordering language, or
+  general Cypher exposure.
+- No automatic flattening of arbitrary JSON keys and no event-schema change.
+- No requirement that third-party GraphStores optimize; the base query plan is
+  complete and correct.
+- No additional graph backend and no distributed runtime.

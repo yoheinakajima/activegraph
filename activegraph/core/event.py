@@ -1,12 +1,14 @@
 """Event records. CONTRACT #3: append-only, never modified.
 
-Events are dataclasses, frozen at the Python level. Their `payload` dict is
-not deeply frozen — by convention nothing mutates it after `emit`. The runtime
-treats the event log as the source of truth (CONTRACT #2).
+Submitted events are dataclasses frozen at the Python level. ``Graph.emit``
+canonicalizes and detaches their nested payload before acceptance, and every
+read/observer surface receives another detached value. The runtime treats the
+accepted event log as the source of truth (CONTRACT #2, v1.11 #1).
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -35,7 +37,7 @@ class Event:
         return {
             "id": self.id,
             "type": self.type,
-            "payload": self.payload,
+            "payload": copy.deepcopy(self.payload),
             "actor": self.actor,
             "frame_id": self.frame_id,
             "caused_by": self.caused_by,

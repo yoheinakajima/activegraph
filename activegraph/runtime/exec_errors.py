@@ -38,6 +38,12 @@ from typing import Any, Optional
 from activegraph.errors import DOCS_BASE_URL, ExecutionError
 
 
+class InvalidPatchOperation(ExecutionError, ValueError):
+    """A patch named an operation outside the closed patch vocabulary."""
+
+    _doc_slug = "invalid-patch-operation"
+
+
 class ApprovalNotFoundError(ExecutionError, LookupError):
     """Pending-approval lookup miss.
 
