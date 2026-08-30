@@ -31,6 +31,12 @@ Active Graph uses an **issues-first** policy:
   the maintainer, named here (CONTRACT v1.3 #2):
   - [@dudizimber](https://github.com/dudizimber) (the GraphStore /
     FalkorDB arc: issues #38/#41/#43/#45 → PRs #39/#46, v1.2.0)
+- **`status: ready-for-pr` is the public implementation gate.** Once a
+  maintainer has recorded ownership, scope, and acceptance evidence and
+  applied that label, the linked issue is open to an external implementation
+  unless its maintainer comment says otherwise. The label authorizes the
+  agreed shape, not an adjacent redesign. See [`TRIAGE.md`](TRIAGE.md) for the
+  state model.
 - **Documentation and trivial-fix PRs may be opened directly.**
   Typo fixes, example improvements, doc clarifications, and
   broken-link fixes do not need an issue first — whether they live
@@ -77,6 +83,16 @@ deterministic:
 The templates head with a one-line pointer to the docs and to this
 document. Checking those first usually answers the question or
 sharpens the report.
+
+Broad audits use the dedicated **Contributor audit** template. They include a
+machine-readable row per finding and group rows by invariant. A fork, aggregate
+count, or large diff without that inventory cannot be reviewed as one unit;
+maintainers will request decomposition before evaluating implementation.
+
+Architecture proposals use the dedicated **Architecture proposal** template.
+Provider, backend, and distributed-execution ideas begin with an ownership and
+failure-model decision. Integrations normally prove value in a separately
+versioned host or adapter before asking runtime core to absorb a dependency.
 
 ## Community management tooling
 
