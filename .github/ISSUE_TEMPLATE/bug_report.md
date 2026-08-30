@@ -2,7 +2,7 @@
 name: Bug report
 about: Report unexpected runtime, store, behavior, or LLM-integration behavior.
 title: ""
-labels: ["bug"]
+labels: ["bug", "status: needs-info"]
 assignees: []
 ---
 
@@ -37,6 +37,22 @@ linking out so it stays attached to the issue history.
 What actually happened. Include the full traceback if one was
 raised, and any `behavior.failed` event payload or WARNING log line
 if the failure was emitted rather than raised.
+-->
+
+## Invariant at risk
+
+<!--
+If known: event authority/ordering, run identity/writer ownership, replay,
+framework lifecycle/taxonomy, backend parity, or public extension behavior.
+It is fine to write "unsure"; maintainers will classify it.
+-->
+
+## Failure-path evidence
+
+<!--
+What state changed before or after the failure? For persistence issues, include
+whether the in-memory graph and reopened event log agree. Remove secrets and
+private payloads.
 -->
 
 ## Framework version

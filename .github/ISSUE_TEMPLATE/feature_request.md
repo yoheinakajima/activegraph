@@ -2,15 +2,14 @@
 name: Feature request
 about: Propose a new capability, API, or behavior.
 title: ""
-labels: ["enhancement"]
+labels: ["enhancement", "status: needs-decision"]
 assignees: []
 ---
 
 <!--
-Before filing: check the doc site at https://docs.activegraph.ai
-(especially the v1.1 backlog in CONTRACT.md and v1.1-plan.md — the
-request may already be tracked there) and CONTRIBUTING.md for the
-contribution policy.
+Before filing: check the doc site at https://docs.activegraph.ai,
+TRIAGE.md, activegraph-vision, and CONTRIBUTING.md. The request may
+already be tracked or may belong to a pack, product, or host repository.
 
 The framework is in its early public phase. Code PRs are
 maintainer-only with an issue-first discussion gate; this issue is
@@ -43,6 +42,14 @@ are easier to evaluate against the contract; vague ones leave more
 room for the maintainers to suggest an alternative shape.
 -->
 
+## Proposed owning layer
+
+<!--
+Runtime law, capability pack, product behavior, or an external
+host/integration? Explain why the capability must live there. It is fine to
+write "unsure".
+-->
+
 ## Open questions
 
 <!--
@@ -50,4 +57,11 @@ Anything you are unsure about — naming, scope, backward
 compatibility, interaction with an existing primitive. The
 maintainers will likely have additional questions; surfacing yours
 early shortens the discussion loop.
+-->
+
+## Acceptance evidence
+
+<!--
+What conformance, failure, compatibility, or scale measurement would prove the
+capability works? What result would disprove the proposed shape?
 -->
