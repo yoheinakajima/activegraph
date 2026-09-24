@@ -15,6 +15,53 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-08-29
+
+Trust-boundary release (CONTRACT v1.11 #1–#5). This release treats accepted
+events, durable run ownership, and framework taxonomies as integrity contracts
+rather than backend-specific behavior.
+
+### Added
+
+- `ConcurrentWriterError` and transactional expected-head enforcement for
+  SQLite and Postgres. One logical writer may extend a run; many readers and
+  writers to different runs remain supported.
+- `InvalidPatchOperation` and the closed `PATCH_OPS = {"update", "replace"}`
+  vocabulary, validated at construction, proposal, live acceptance, and
+  replay.
+- EventStore conformance cases for canonical adapter values, owned inputs,
+  detached reads, and the precise duplicate-id error.
+
+### Changed
+
+- `Graph.emit` now canonicalizes every payload through the persistence JSON
+  adapter even without a store, appends to the authoritative EventStore before
+  projection, and sends detached values to callers, sinks, and listeners. A
+  failed append changes no graph, queue, projection, or observer-visible state.
+- `Graph.attach_store` requires the graph and store to name the same run at the
+  same event count. Existing runs resume through `Runtime.load`; in-memory
+  histories persist through `save_state`.
+- EventStore reads and `Graph.events` return detached values. Mutating a
+  submitted or returned nested payload can no longer rewrite accepted history.
+- Pack identifier ownership is explicitly name-based and exclusive for object
+  types, relation types, behaviors, tools, and policies. The v0.9 phrase “with
+  different definitions” is superseded; only the identical pack name/version
+  reload is idempotent.
+- The pytest process boundary now snapshots and restores logging handlers,
+  payload redaction, registries, pack discovery, warning dedupe, and live
+  runtime tracking so collection order cannot determine outcomes.
+
+### Migration notes
+
+- If more than one process can resume the same `run_id`, elect one writer.
+  Treat `ConcurrentWriterError` as a stale-runtime signal: close and reload,
+  never retry in place with a new id.
+- Patch producers must emit only `update` or `replace`; use object lifecycle
+  methods for create/remove.
+- Code that relied on mutating `graph.events`, a listener event, or a store read
+  to alter history was outside the append-only contract and must emit a new
+  event instead.
+
 ## [1.10.0] — 2026-07-12
 
 Runtime legibility and cooperative-host round (CONTRACT v1.10 #1–#3): the behavior-frame

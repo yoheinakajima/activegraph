@@ -63,6 +63,54 @@ class DuplicateEventError(StorageError, ValueError):
     _doc_slug = "duplicate-event-error"
 
 
+class ConcurrentWriterError(StorageError):
+    """A stale writer tried to extend a run whose head already moved."""
+
+    _doc_slug = "concurrent-writer-error"
+
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        expected_head: str | None,
+        actual_head: str | None,
+        expected_count: int,
+        actual_count: int,
+        driver: str,
+    ) -> None:
+        super().__init__(
+            f"run {run_id!r} advanced behind this writer",
+            what_failed=(
+                f"The {driver} EventStore handle expected run {run_id!r} to "
+                f"have head {expected_head!r} ({expected_count} event(s)), "
+                f"but the atomic append check found head {actual_head!r} "
+                f"({actual_count} event(s)). No event was appended by this writer."
+            ),
+            why=(
+                "Another Runtime or operator changed the same run after this "
+                "writer observed its head. ActiveGraph permits many readers "
+                "and concurrent writers to different runs, but exactly one "
+                "logical writer may extend a given run so event order and "
+                "projection remain deterministic."
+            ),
+            how_to_fix=(
+                "Discard or make this Runtime read-only, close its store, and "
+                "reload the run from the authoritative log. Coordinate the "
+                "host so only one writer resumes it. Do not catch this error "
+                "and merely mint another event id; that would interleave two "
+                "schedulers into one run."
+            ),
+            context={
+                "run_id": run_id,
+                "expected_head": expected_head,
+                "actual_head": actual_head,
+                "expected_count": expected_count,
+                "actual_count": actual_count,
+                "driver": driver,
+            },
+        )
+
+
 class CorruptedEventPayloadError(StorageError):
     """A stored event payload couldn't be decoded as JSON.
 
@@ -80,5 +128,6 @@ __all__ = [
     "SchemaVersionMismatch",
     "EventNotFoundError",
     "DuplicateEventError",
+    "ConcurrentWriterError",
     "CorruptedEventPayloadError",
 ]

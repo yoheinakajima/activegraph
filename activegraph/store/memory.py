@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Iterator, Optional
 
 from activegraph.core.event import Event
+from activegraph.store.serde import canonicalize_event, clone_event
 from activegraph.store.errors import DuplicateEventError, EventNotFoundError
 
 
@@ -57,11 +58,12 @@ class InMemoryEventStore:
         self._by_id: dict[str, int] = {}
 
     def append(self, event: Event) -> None:
-        if event.id in self._by_id:
+        accepted = canonicalize_event(event)
+        if accepted.id in self._by_id:
             raise DuplicateEventError(
-                f"duplicate event id: {event.id}",
+                f"duplicate event id: {accepted.id}",
                 what_failed=(
-                    f"An event with id {event.id!r} already exists in this "
+                    f"An event with id {accepted.id!r} already exists in this "
                     f"in-memory store. Appends are id-unique."
                 ),
                 why=(
@@ -80,10 +82,10 @@ class InMemoryEventStore:
                     "to generate ids, or call `clear_registry()` / construct a "
                     "fresh Graph between tests."
                 ),
-                context={"event_id": event.id, "run_id": self.run_id},
+                context={"event_id": accepted.id, "run_id": self.run_id},
             )
-        self._by_id[event.id] = len(self._events)
-        self._events.append(event)
+        self._by_id[accepted.id] = len(self._events)
+        self._events.append(accepted)
 
     def iter_events(
         self,
@@ -101,13 +103,13 @@ class InMemoryEventStore:
                 raise _event_not_found(until, run_id=self.run_id, where="iter_events(until=)")
             end = self._by_id[until] + 1
         for i in range(start, end):
-            yield self._events[i]
+            yield clone_event(self._events[i])
 
     def get_event(self, event_id: str) -> Optional[Event]:
         idx = self._by_id.get(event_id)
         if idx is None:
             return None
-        return self._events[idx]
+        return clone_event(self._events[idx])
 
     def count(self) -> int:
         return len(self._events)

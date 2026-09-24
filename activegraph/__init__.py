@@ -59,6 +59,7 @@ from activegraph.runtime.exec_errors import (
     ApprovalNotFoundError,
     InternalEvaluatorError,
     InvalidPatchLifecycleState,
+    InvalidPatchOperation,
     PromoteConflictError,
     PromoteLineageError,
     ReservedFieldError,
@@ -79,6 +80,7 @@ from activegraph.sinks import (
     SinkStatus,
 )
 from activegraph.store import (
+    ConcurrentWriterError,
     CorruptedEventPayloadError,
     DuplicateEventError,
     EventNotFoundError,
@@ -157,6 +159,7 @@ __all__ = [
     "Budget",
     "Clock",
     "ConfigurationError",
+    "ConcurrentWriterError",
     "CorruptedEventPayloadError",
     "Diff",
     "DeliveryContext",
@@ -184,6 +187,7 @@ __all__ = [
     "InvalidActivateAfter",
     "InvalidArgumentType",
     "InvalidPatchLifecycleState",
+    "InvalidPatchOperation",
     "InvalidRuntimeConfiguration",
     "InvalidStoreURL",
     "InvalidToolRegistration",
@@ -271,4 +275,4 @@ __all__ = [
     "tool",
 ]
 
-__version__ = "1.10.0"
+__version__ = "1.11.0"

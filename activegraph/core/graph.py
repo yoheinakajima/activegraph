@@ -33,7 +33,7 @@ from activegraph.core.clock import Clock
 from activegraph.core.event import Event
 from activegraph.core.graph_store import ChainMatch, GraphStore, InMemoryGraphStore
 from activegraph.core.ids import IDGen
-from activegraph.core.patch import Patch
+from activegraph.core.patch import Patch, validate_patch_op
 
 if TYPE_CHECKING:
     from activegraph.observability.metrics import Metrics
@@ -221,7 +221,9 @@ class Graph:
 
     @property
     def events(self) -> list[Event]:
-        return list(self._events)
+        from activegraph.store.serde import clone_event
+
+        return [clone_event(event) for event in self._events]
 
     @property
     def replayed_ids(self) -> frozenset[str]:
@@ -553,6 +555,38 @@ class Graph:
                     "new Graph rather than re-attaching."
                 ),
             )
+        store_run_id = getattr(store, "run_id", self.run_id)
+        store_count = (
+            store.count() if hasattr(store, "count") else len(self._events)
+        )
+        if store_run_id != self.run_id or store_count != len(self._events):
+            from activegraph.runtime.config_errors import IncompatibleRuntimeState
+
+            raise IncompatibleRuntimeState(
+                "graph and event store are not at the same run head",
+                what_failed=(
+                    f"Graph.attach_store() found graph run {self.run_id!r} at "
+                    f"{len(self._events)} accepted event(s), while the store is "
+                    f"scoped to run {store_run_id!r} at {store_count} event(s)."
+                ),
+                why=(
+                    "Attaching does not load, copy, merge, or truncate history. "
+                    "A graph and its authoritative EventStore must describe the "
+                    "same run head before future events can be committed safely."
+                ),
+                how_to_fix=(
+                    "Use Runtime.load(...) to resume an existing run. To persist "
+                    "an in-memory graph, use runtime.save_state(path=...), which "
+                    "copies its accepted prefix before attaching. Otherwise, "
+                    "construct a fresh empty store with the graph's run_id."
+                ),
+                context={
+                    "graph_run_id": self.run_id,
+                    "store_run_id": store_run_id,
+                    "graph_event_count": len(self._events),
+                    "store_event_count": store_count,
+                },
+            )
         self._store = store
 
     @property
@@ -562,18 +596,18 @@ class Graph:
     # ---------- the only mutator (live path) ----------
 
     def emit(self, event: Event) -> Event:
-        """Append, project, persist, offer sinks, then notify listeners."""
-        with self._emit_lock:
-            # Fail-fast serialization check at emit time so bad payloads never
-            # land in the in-memory log either (CONTRACT v0.5 #4).
-            if self._store is not None:
-                from activegraph.store.serde import validate_event
+        """Canonicalize, persist, project, offer sinks, then notify listeners."""
+        from activegraph.store.serde import canonicalize_event, clone_event
 
-                validate_event(event)
-            self._events.append(event)
-            apply_event(self, event)
+        accepted = canonicalize_event(event)
+        _validate_framework_event(accepted)
+        with self._emit_lock:
+            # CONTRACT v1.11 #2: the EventStore is authoritative. A failed
+            # append changes no graph/log/queue/observer-visible state.
             if self._store is not None:
-                self._store.append(event)
+                self._store.append(accepted)
+            self._events.append(accepted)
+            apply_event(self, accepted)
             # CONTRACT v1.8 #2: offer only after projection + durable append,
             # and before legacy listeners. The position preserves order when
             # a listener re-enters emit and prevents listener failure from
@@ -589,7 +623,7 @@ class Graph:
                 for sink in tuple(self._sinks.values()):
                     try:
                         sink._offer(  # noqa: SLF001 — graph-only seam
-                            event, context
+                            clone_event(accepted), context
                         )
                     except Exception:
                         # SinkHandle._offer is designed non-throwing; keep this
@@ -602,8 +636,8 @@ class Graph:
         # the sink-order lock. In particular, an existing listener may start a
         # second emitting thread and wait for it without deadlocking Graph.
         for listener in listeners:
-            listener(event)
-        return event
+            listener(clone_event(accepted))
+        return clone_event(accepted)
 
     # ---------- the only mutator (replay path) ----------
 
@@ -613,9 +647,13 @@ class Graph:
         Used only by `Runtime.load` and `Runtime.fork`. CONTRACT v0.5 #14:
         replay rebuilds graph state; it does NOT fire behaviors.
         """
-        self._events.append(event)
-        apply_event(self, event)
-        self._replayed_ids.add(event.id)
+        from activegraph.store.serde import canonicalize_event
+
+        accepted = canonicalize_event(event)
+        _validate_framework_event(accepted)
+        self._events.append(accepted)
+        apply_event(self, accepted)
+        self._replayed_ids.add(accepted.id)
 
     # ---------- convenience builders (each builds an Event and emits) ----------
 
@@ -843,6 +881,7 @@ class Graph:
         tool_request_event_ids: Optional[list[str]] = None,
     ) -> Patch:
         # Strip "object:" / "relation:" prefix if present (README sugar).
+        validate_patch_op(op)
         normalized = target.split(":", 1)[1] if ":" in target else target
         obj = self._state.get_object(normalized)
         expected_version = obj.version if obj else 0
@@ -1066,6 +1105,8 @@ def apply_event(graph: Graph, event: Event) -> None:
                 obj.data.update(patch.value)
             elif patch.op == "replace":
                 obj.data = copy.deepcopy(patch.value)
+            else:  # validate_patch_op should make this unreachable.
+                validate_patch_op(patch.op, event_id=event.id)
             obj.version += 1
             graph._state.put_object(obj)
 
@@ -1091,6 +1132,35 @@ def _patch_from_dict(d: dict[str, Any]) -> Patch:
         rejection_reason=d.get("rejection_reason"),
         provenance=copy.deepcopy(d.get("provenance", {})),
     )
+
+
+def _validate_framework_event(event: Event) -> None:
+    """Validate closed runtime-owned event payloads before acceptance."""
+    if event.type not in {"patch.proposed", "patch.applied"}:
+        return
+    patch = event.payload.get("patch")
+    if not isinstance(patch, dict):
+        from activegraph.runtime.exec_errors import InternalEvaluatorError
+
+        raise InternalEvaluatorError(
+            f"{event.type} event has no patch object",
+            what_failed=(
+                f"Framework event {event.id!r} ({event.type}) did not carry "
+                "a dictionary at payload['patch']."
+            ),
+            why=(
+                "Patch lifecycle events are closed runtime records. Projecting "
+                "one without its patch would make replay depend on a malformed "
+                "success or proposal fact."
+            ),
+            how_to_fix=(
+                "Do not emit patch.* events directly. Use graph.patch_object, "
+                "graph.propose_patch, and graph.apply_patch. For a stored run, "
+                "inspect or migrate the malformed event rather than skipping it."
+            ),
+            context={"event_id": event.id, "event_type": event.type},
+        )
+    validate_patch_op(str(patch.get("op")), event_id=event.id)
 
 
 # ---------- where evaluator (used by query and matchers) ----------

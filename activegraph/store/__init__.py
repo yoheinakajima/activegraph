@@ -14,6 +14,7 @@ connection URL (sqlite:///... or postgres://...).
 from activegraph.core.graph_store import GraphStore, InMemoryGraphStore
 from activegraph.store.base import EventStore, RunRecord, replay_into
 from activegraph.store.errors import (
+    ConcurrentWriterError,
     CorruptedEventPayloadError,
     DuplicateEventError,
     EventNotFoundError,
@@ -27,6 +28,7 @@ from activegraph.store.url import InvalidStoreURL, StoreURL, open_store, parse_s
 
 __all__ = [
     "CorruptedEventPayloadError",
+    "ConcurrentWriterError",
     "DuplicateEventError",
     "EventNotFoundError",
     "EventStore",

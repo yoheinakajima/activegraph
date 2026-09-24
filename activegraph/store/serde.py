@@ -13,6 +13,7 @@ typed values should keep them as strings in the payload.
 
 from __future__ import annotations
 
+import copy
 import json
 from datetime import date, datetime
 from decimal import Decimal
@@ -201,3 +202,26 @@ def decode_event(row: dict[str, Any]) -> Event:
 def validate_event(event: Event) -> None:
     """Fail-fast: ensure the event can be serialized before we mutate state."""
     encode_payload(event.payload)
+
+
+def canonicalize_event(event: Event) -> Event:
+    """Return the detached canonical value accepted by the event log.
+
+    The round trip is intentional: in-memory execution must observe the same
+    normalized values as durable replay (for example ``Decimal`` becomes a
+    string and a set becomes a stable list).
+    """
+    return decode_event(encode_event(event))
+
+
+def clone_event(event: Event) -> Event:
+    """Return a detached copy of an already-canonical event value."""
+    return Event(
+        id=event.id,
+        type=event.type,
+        payload=copy.deepcopy(event.payload),
+        actor=event.actor,
+        frame_id=event.frame_id,
+        caused_by=event.caused_by,
+        timestamp=event.timestamp,
+    )

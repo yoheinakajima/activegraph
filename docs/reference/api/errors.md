@@ -53,6 +53,8 @@ per-error recovery prose see the
 
 ::: activegraph.CorruptedEventPayloadError
 
+::: activegraph.ConcurrentWriterError
+
 ## Execution
 
 ::: activegraph.LLMBehaviorError
@@ -64,6 +66,8 @@ per-error recovery prose see the
 ::: activegraph.ApprovalNotFoundError
 
 ::: activegraph.ReservedFieldError
+
+::: activegraph.InvalidPatchOperation
 
 ::: activegraph.RuntimeContextRequiredError
 

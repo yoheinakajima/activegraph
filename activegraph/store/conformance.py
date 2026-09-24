@@ -15,11 +15,14 @@ The suite intentionally avoids pytest fixtures and yields plain
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import pytest
 
 from activegraph.core.event import Event
+from activegraph.store.errors import DuplicateEventError
 
 
 class EventStoreConformance(ABC):
@@ -145,8 +148,48 @@ class EventStoreConformance(ABC):
         try:
             store = self.make_store("run_conformance_8")
             store.append(self._ev("evt_dup"))
-            with pytest.raises(Exception):
+            with pytest.raises(DuplicateEventError):
                 store.append(self._ev("evt_dup"))
+        finally:
+            self.cleanup()
+
+    def test_append_owns_input_and_reads_are_detached(self) -> None:
+        try:
+            store = self.make_store("run_conformance_values")
+            payload = {"nested": {"items": [1]}}
+            store.append(self._ev("evt_value", payload=payload))
+            payload["nested"]["items"].append(2)
+
+            first = store.get_event("evt_value")
+            assert first is not None
+            assert first.payload == {"nested": {"items": [1]}}
+            first.payload["nested"]["items"].append(3)
+
+            second = next(store.iter_events())
+            assert second.payload == {"nested": {"items": [1]}}
+        finally:
+            self.cleanup()
+
+    def test_adapter_values_have_one_canonical_representation(self) -> None:
+        try:
+            store = self.make_store("run_conformance_canonical")
+            store.append(
+                self._ev(
+                    "evt_canonical",
+                    payload={
+                        "decimal": Decimal("12.50"),
+                        "date": date(2026, 8, 29),
+                        "set": {"b", "a"},
+                    },
+                )
+            )
+            got = store.get_event("evt_canonical")
+            assert got is not None
+            assert got.payload == {
+                "decimal": "12.50",
+                "date": "2026-08-29",
+                "set": ["a", "b"],
+            }
         finally:
             self.cleanup()
 

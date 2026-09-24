@@ -25,6 +25,7 @@ from activegraph import (
     ApprovalNotFoundError,
     BehaviorNotFoundError,
     ConfigurationError,
+    ConcurrentWriterError,
     CorruptedEventPayloadError,
     DuplicateEventError,
     EventNotFoundError,
@@ -34,6 +35,7 @@ from activegraph import (
     InvalidActivateAfter,
     InvalidArgumentType,
     InvalidPatchLifecycleState,
+    InvalidPatchOperation,
     InvalidRuntimeConfiguration,
     InvalidStoreURL,
     InvalidToolRegistration,
@@ -459,6 +461,7 @@ def test_storage_leaves_inherit_from_storage_error() -> None:
         SchemaVersionMismatch,
         EventNotFoundError,
         DuplicateEventError,
+        ConcurrentWriterError,
     ):
         assert issubclass(cls, StorageError), cls
         assert issubclass(cls, ActiveGraphError), cls
@@ -614,14 +617,46 @@ def test_duplicate_event_is_a_value_error() -> None:
         store.append(e1)
 
 
+def test_concurrent_writer_snapshot() -> None:
+    err = ConcurrentWriterError(
+        run_id="run_shared",
+        expected_head="41",
+        actual_head="42",
+        expected_count=41,
+        actual_count=42,
+        driver="sqlite",
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("concurrent_writer", err)
+
+
 # ---------- PR-D: ExecutionError category ------------------------------
 
 
 def test_exec_leaves_inherit_from_execution_error() -> None:
     """Every PR-D leaf is wired into the v1.0 hierarchy."""
-    for cls in (LLMBehaviorError, ToolError, UnknownToolError, ApprovalNotFoundError):
+    for cls in (
+        LLMBehaviorError,
+        ToolError,
+        UnknownToolError,
+        ApprovalNotFoundError,
+        InvalidPatchOperation,
+    ):
         assert issubclass(cls, ExecutionError), cls
         assert issubclass(cls, ActiveGraphError), cls
+
+
+def test_invalid_patch_operation_snapshot() -> None:
+    from activegraph.core.patch import validate_patch_op
+
+    with pytest.raises(InvalidPatchOperation) as excinfo:
+        validate_patch_op("remove", event_id="evt_042")
+    _assert_format_compliant(excinfo.value)
+    _check_snapshot("invalid_patch_operation", excinfo.value)
+
+
+def test_invalid_patch_operation_is_a_value_error() -> None:
+    assert issubclass(InvalidPatchOperation, ValueError)
 
 
 def test_exec_leaves_preserve_legacy_base_classes() -> None:

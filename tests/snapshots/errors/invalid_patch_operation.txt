@@ -1,0 +1,13 @@
+InvalidPatchOperation: unsupported patch operation: 'remove'
+
+What failed:
+  A patch in event 'evt_042' declared operation 'remove', but the runtime patch vocabulary is exactly: update, replace.
+
+Why:
+  Patches target one existing object and use expected_version as an optimistic concurrency check. Object creation and removal have dedicated event paths; treating them as patches previously recorded false patch.applied success.
+
+How to fix:
+  Use op='update' to merge fields or op='replace' to replace the target data. Use graph.add_object(...) or graph.remove_object(...) for lifecycle changes. If this came from a stored run, inspect the named event; it is not silently reinterpreted.
+
+More:
+  https://docs.activegraph.ai/errors/invalid-patch-operation
