@@ -40,6 +40,7 @@ You can read the graph state at any time:
 ```python
 graph.all_objects()                       # every object
 graph.objects(type="claim")               # filtered by type
+graph.objects(type="claim", where={"confidence": {">": 0.8}})
 graph.relations(source=claim_id)          # outgoing edges
 graph.relations(target=claim_id)          # incoming edges
 graph.relations(type="depends_on")        # by edge type
@@ -52,6 +53,12 @@ no kwargs returns every relation.
 `graph.get_relations(object_id=, type=, direction=)` is an alias
 preserved for backward compatibility; new code should use
 `graph.relations(...)`.
+
+Object reads cross one structured `ObjectQuery` boundary. A GraphStore may
+consume type and parity-proven predicate clauses, but it returns the exact
+residual predicate it did not consume; `Graph` evaluates that residual with
+the canonical Python evaluator. Existence checks use the same plan with a
+one-result mode, so capable backends do not materialize an entire type.
 
 But you can't mutate it except through events. There's no
 `graph.objects["x"] = ...` setter; every mutation goes through a

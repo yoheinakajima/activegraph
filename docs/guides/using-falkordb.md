@@ -259,16 +259,42 @@ A few deliberate choices:
   `GraphStore` implementations compute the
   same results in Python, so query semantics stay identical across every
   backend.
-- **`where` predicates still run in Python.** `graph.objects(where=...)`
-  pushes the *type* filter down but applies the `where` clause in Python
-  over the returned objects, because the structured `data` payload is stored
-  as a JSON string rather than as native, indexable properties. Likewise a
-  pattern's node `{prop: value}` equality and `WHERE` clause are applied in
-  Python over the chains `match_chain` returns. Other whole-graph consumers
+- **Object predicates use a query plan with an exact residual.** By default,
+  `where` remains canonical Python evaluation. Opting top-level scalar fields
+  into `indexed_fields` dual-writes only those values to reserved projection
+  properties. FalkorDB consumes exact scalar equality/inequality and uses
+  conservative indexed prefilters for ordered comparisons; unsupported,
+  nested, container, missing/`None`, and type-mismatched cases remain in the
+  residual returned to `Graph`. A backend never silently drops a clause.
+  Type-only existence uses the same plan and returns at most one scalar row,
+  with no JSON payload decode. Pattern node equality and pattern `WHERE`
+  remain Python evaluation over the chains `match_chain` returns. Other whole-graph consumers
   (diffing, prompt building, fork comparison, CLI
   status) still read the full projection via `all_objects()` /
   `all_relations()`. FalkorDB remains best for small-to-medium live
   projections and Cypher-side inspection.
+
+Configure indexed projection fields when constructing the store:
+
+```python
+store = FalkorDBGraphStore(
+    host="localhost",
+    indexed_fields={
+        "claim": ["confidence", "status"],
+        "task": ["priority"],
+    },
+)
+graph = Graph(graph_store=store)
+```
+
+The canonical JSON `data` property remains complete; the encoded
+`__ag_idx_*` properties are an internal projection detail. Only configured
+fields on the configured type are copied, and only when their current value is
+a supported scalar. `None`, missing values, dicts, and lists are not flattened.
+Changing `indexed_fields` requires `store.clear()` followed by replay from the
+EventStore. Until an existing projection has been rebuilt with the new
+configuration, this implementation disables indexed predicate compilation and
+falls back to type candidates plus the full residual.
 
 Every value crosses the Cypher boundary as a bound `$param`, never via
 string interpolation — object ids, types, and payloads cannot inject
@@ -343,15 +369,16 @@ What the table is telling you:
   with size because FalkorDB's cost scales with matches, not nodes.
   `neighborhood` is already on par at the large size (0.94 ms vs 1.07 ms)
   for the same reason.
-- **The un-pushable paths stay proportional to graph size on both
+- **The residual and whole-projection paths stay proportional to candidate size on both
   backends.** A full `all_objects()` scan, and the Python-side consumers
-  that depend on it (diffing, prompt building, `where` predicates), pull the
+  that depend on it (diffing, prompt building, unindexed predicates), pull the
   whole projection across the wire and JSON-decode it, so FalkorDB is slower
   there — that's the cost of keeping a large graph off the heap.
 
 The rule of thumb: reach for FalkorDB when the graph is **large and
-long-lived** and your hot path is **structural queries** (type filters,
-neighborhoods, pattern-driven behaviors) — exactly the paths that push down.
+long-lived** and your hot path is **structural or explicitly indexed object
+queries** (type filters, selected scalar predicates, neighborhoods,
+pattern-driven behaviors) — exactly the paths that push down.
 Stay in memory when the projection is small, write-heavy, or disposable.
 
 !!! note "This is a latency win, not a token win"

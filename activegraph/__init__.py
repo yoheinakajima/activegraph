@@ -15,6 +15,7 @@ from activegraph.behaviors.decorators import (
 from activegraph.core.clock import Clock, FrozenClock, TickingClock
 from activegraph.core.event import Event
 from activegraph.core.graph import Graph, Object, Relation
+from activegraph.core.graph_store import ObjectQuery, ObjectQueryResult
 from activegraph.core.ids import IDGen
 from activegraph.core.patch import Patch
 from activegraph.core.view import View
@@ -203,6 +204,8 @@ __all__ = [
     "NoOpMetrics",
     "NonSerializableEventError",
     "Object",
+    "ObjectQuery",
+    "ObjectQueryResult",
     "OpenTelemetryMetrics",
     "ObjectType",
     "OverflowPolicy",
@@ -275,4 +278,4 @@ __all__ = [
     "tool",
 ]
 
-__version__ = "1.11.0"
+__version__ = "1.12.0"

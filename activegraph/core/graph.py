@@ -31,7 +31,12 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from activegraph.core.clock import Clock
 from activegraph.core.event import Event
-from activegraph.core.graph_store import ChainMatch, GraphStore, InMemoryGraphStore
+from activegraph.core.graph_store import (
+    ChainMatch,
+    GraphStore,
+    InMemoryGraphStore,
+    ObjectQuery,
+)
 from activegraph.core.ids import IDGen
 from activegraph.core.patch import Patch, validate_patch_op
 
@@ -324,11 +329,18 @@ class Graph:
         and outside behaviors. `Graph.query(object_type=...)` is kept
         as a backward-compatible alias.
         """
-        # Type filter is pushed down to the store via find_objects; the
-        # ``where`` predicate is evaluated in Python over that subset.
+        result = self._state.query_objects(
+            ObjectQuery(type=type, where=where, result_mode="objects")
+        )
+        if result.exists is not None:
+            raise RuntimeError(
+                "GraphStore returned a scalar existence result for an object query"
+            )
         out: list[Object] = []
-        for o in self._state.find_objects(type):
-            if where and not _eval_where_on_object(where, o):
+        for o in result.candidates:
+            if result.residual_where and not _eval_where_on_object(
+                result.residual_where, o
+            ):
                 continue
             out.append(o)
         return out
@@ -346,9 +358,28 @@ class Graph:
         """
         return self.objects(type=object_type, where=where)
 
-    def has_object_of_type(self, type_: str) -> bool:
-        # Pushed down via find_objects (scopes the scan to ``type_``).
-        return bool(self._state.find_objects(type_))
+    def has_object_of_type(self, type_: Optional[str]) -> bool:
+        """Whether at least one object has ``type_`` (``None`` means any)."""
+        result = self._state.query_objects(
+            ObjectQuery(
+                type=type_,
+                where={},
+                limit=1,
+                result_mode="exists",
+            )
+        )
+        if result.exists is not None:
+            if result.residual_where:
+                raise RuntimeError(
+                    "GraphStore returned scalar existence with a residual predicate"
+                )
+            return result.exists
+        for obj in result.candidates:
+            if not result.residual_where or _eval_where_on_object(
+                result.residual_where, obj
+            ):
+                return True
+        return False
 
     # ---------- listener API (runtime hooks here) ----------
 

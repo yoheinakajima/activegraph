@@ -16,24 +16,25 @@ GraphStore is recoverable (replay the log); losing the EventStore is not.
 
 The interface is deliberately small: upsert/get/remove/enumerate for each
 of the three entity kinds, plus ``clear`` and ``close``. On top of that it
-exposes a few **optional query hooks** — :meth:`GraphStore.find_objects`,
+exposes a structured object-plan boundary and a few **optional query hooks** —
+:meth:`GraphStore.query_objects`, :meth:`GraphStore.find_objects`,
 :meth:`GraphStore.find_objects_in_types`, :meth:`GraphStore.find_relations`,
 :meth:`GraphStore.neighborhood`, and :meth:`GraphStore.match_chain` — which
 default to a plain Python scan over ``all_objects`` / ``all_relations`` (so the
 base class itself is the single source of truth for their semantics) but which
-a backend MAY override to push the filter/traversal down to the database. The
-rich ``where`` predicate language is *not* a hook:
-it stays in :class:`~activegraph.core.graph.Graph`, evaluated in Python over
-whatever :meth:`find_objects` returns. That keeps the structural filters
-(which are trivial to mirror exactly) pushable, while the parts that are
-hard to translate faithfully stay in one place.
+a backend MAY override to push the filter/traversal down to the database.
+``ObjectQueryResult.residual_where`` keeps the rich predicate language owned
+by :class:`~activegraph.core.graph.Graph`: a backend consumes only clauses it
+can prove equivalent and returns every other clause for canonical Python
+evaluation.
 """
 
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 if TYPE_CHECKING:
     from activegraph.core.graph import Object, Relation
@@ -53,6 +54,57 @@ class ChainMatch:
 
     objects: list["Object"]
     relations: list["Relation"]
+
+
+@dataclass(frozen=True)
+class ObjectQuery:
+    """Backend-neutral plan for one object read.
+
+    ``where`` always uses Graph's canonical predicate language. A backend may
+    consume only clauses it can mirror exactly and returns every other clause
+    in :class:`ObjectQueryResult.residual_where`. ``result_mode="exists"``
+    permits a scalar answer only when no residual evaluation remains.
+    """
+
+    type: Optional[str] = None
+    where: dict[str, Any] | None = None
+    limit: Optional[int] = None
+    result_mode: Literal["objects", "exists"] = "objects"
+
+    def __post_init__(self) -> None:
+        if self.limit is not None and self.limit < 0:
+            raise ValueError("ObjectQuery.limit must be non-negative")
+        if self.result_mode not in {"objects", "exists"}:
+            raise ValueError("ObjectQuery.result_mode must be 'objects' or 'exists'")
+        object.__setattr__(self, "where", copy.deepcopy(self.where or {}))
+
+
+@dataclass(frozen=True)
+class ObjectQueryResult:
+    """Candidates plus the exact predicate a Graph must still evaluate.
+
+    ``exists`` is ``True``/``False`` only for a fully-consumed existence plan;
+    otherwise it is ``None`` and ``candidates`` carry full Object values for
+    canonical residual evaluation.
+    """
+
+    candidates: list["Object"]
+    residual_where: dict[str, Any]
+    exists: Optional[bool] = None
+
+    def __post_init__(self) -> None:
+        if self.exists is not None and self.candidates:
+            raise ValueError(
+                "ObjectQueryResult scalar existence cannot include candidates"
+            )
+        if self.exists is not None and self.residual_where:
+            raise ValueError(
+                "ObjectQueryResult scalar existence cannot include a residual"
+            )
+        object.__setattr__(self, "candidates", list(self.candidates))
+        object.__setattr__(
+            self, "residual_where", copy.deepcopy(self.residual_where)
+        )
 
 
 class GraphStore(ABC):
@@ -124,6 +176,22 @@ class GraphStore(ABC):
     # GraphStoreConformance suite pins this). They use only Object / Relation
     # attributes — never the ``where`` evaluator — so backends stay decoupled
     # from query-language details and there is no import cycle with core.graph.
+
+    def query_objects(self, plan: ObjectQuery) -> ObjectQueryResult:
+        """Execute the structural portion of an object-query plan.
+
+        The base implementation is the semantic compatibility path for every
+        third-party store: it consumes only ``type`` and returns ``where`` as
+        residual. Backends may narrow further, but may not omit or claim a
+        clause whose behavior is not parity-proven.
+        """
+        candidates = self.find_objects(plan.type)
+        residual = copy.deepcopy(plan.where or {})
+        if plan.result_mode == "exists" and not residual:
+            return ObjectQueryResult([], {}, exists=bool(candidates))
+        if plan.limit is not None and not residual:
+            candidates = candidates[: plan.limit]
+        return ObjectQueryResult(candidates, residual)
 
     def find_objects(self, type: Optional[str] = None) -> list["Object"]:
         """Return objects, optionally filtered to those whose ``type`` equals
