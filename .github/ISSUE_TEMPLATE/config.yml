@@ -1,6 +1,5 @@
 # Disables the "Open a blank issue" link on the New Issue page,
-# forcing every issue through one of the three templates
-# (bug_report, feature_request, question). Fits the project's
+# forcing every issue through a structured template. Fits the project's
 # discipline-first voice: every issue lands with the structure
 # triage needs.
 blank_issues_enabled: false
@@ -12,3 +11,6 @@ contact_links:
   - name: CONTRIBUTING.md
     url: https://github.com/yoheinakajima/activegraph/blob/main/CONTRIBUTING.md
     about: Contribution policy — what kinds of issues and pull requests are accepted today.
+  - name: Triage and decision policy
+    url: https://github.com/yoheinakajima/activegraph/blob/main/TRIAGE.md
+    about: How reports become invariant-level decisions, milestones, and ready-for-PR work.

@@ -453,10 +453,10 @@ the attribution that downstream redistributors must preserve.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the current contribution
-policy. The framework is in its early public phase: issues are open,
-documentation PRs are welcome, code PRs are maintainer-only with an
-issue-first discussion gate (the abstractions are still settling).
-The policy relaxes as the contributor community matures.
+policy and [TRIAGE.md](TRIAGE.md) for the invariant-first path from a report to
+a decision, milestone, and `status: ready-for-pr`. The framework is in its
+early public phase: issues are open, documentation PRs are welcome, and
+non-trivial code changes pass through the issue-first discussion gate.
 
 **Test discipline:** tests must remain deterministic. No live network
 calls in CI. LLM and tool tests use recorded fixtures
