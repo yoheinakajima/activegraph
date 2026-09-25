@@ -7,9 +7,10 @@ assignees: []
 ---
 
 <!--
-Read TRIAGE.md and activegraph-vision before filing. This template is for
-changes whose main question is ownership or architecture. Use Feature request
-when the desired boundary is already clear.
+Read TRIAGE.md before filing. Maintainers check proposals against internal
+design notes; contributors do not need access to those notes. This template
+is for changes whose main question is ownership or architecture. Use Feature
+request when the desired boundary is already clear.
 -->
 
 ## Desired capability
@@ -41,4 +42,3 @@ taxonomies, backend parity, public compatibility, or another named invariant.
 What experiment or measurement should exist before this becomes core? What
 would disprove the proposal?
 -->
-

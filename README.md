@@ -360,18 +360,32 @@ good additional context to hand an AI assistant alongside this repo.
 
 ## Status
 
-**v1.10.0** (2026-07). v1.0 shipped in May 2026 after a three-rc
+**v1.12.0** (2026-09). v1.0 shipped in May 2026 after a three-rc
 external user-test gate per
 [CONTRACT v1.0 #C4](CONTRACT.md#v10-c4-v10-ships-as-v10-rc1-first-time-user-gate-is-owned-externally);
-the v1.1–v1.10 line followed, driven by a downstream self-modification
+the v1.1–v1.12 line followed, driven by a downstream self-modification
 stack — the [activegraph-packs](https://github.com/yoheinakajima/activegraph-packs)
 library and a governed fork→test→promote assistant — and hardened
 against findings from [production deployments](#the-ecosystem) built
 on the runtime. See [CHANGELOG.md](CHANGELOG.md) for the full
-v0 → v1.10 history and per-version migration notes.
+v0 → v1.12 history and per-version migration notes.
 
 Major shipped milestones:
 
+- **v1.12** — projection query planning (CONTRACT v1.12 #1–#4): object
+  reads cross one structured `ObjectQuery` plan
+  (`GraphStore.query_objects`), existence checks avoid full
+  materialization, and optional `FalkorDBGraphStore(indexed_fields=...)`
+  scalar indexes stay explicit projection configuration. Ships together
+  with the staged v1.11 line below; there is no separate 1.11.0 release.
+  Upgrades from 1.10.0 also get that line's integrity changes
+  (`ConcurrentWriterError`, `InvalidPatchOperation`, detached events,
+  single-writer runs).
+- **v1.11** — (staged unreleased; ships with v1.12.0) trust-boundary
+  integrity (CONTRACT v1.11 #1–#5): accepted events are canonical
+  detached values and the authoritative append precedes projection; one
+  writer per run; closed patch operations; name-based pack identifier
+  ownership.
 - **v1.10** — runtime legibility and cooperative hosts: opt-in
   context-read tracing (`Runtime(trace_context_reads=True)` — each
   behavior execution commits one batched `context.read` event
