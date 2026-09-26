@@ -15,6 +15,102 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
+## [1.13.0] — Unreleased
+
+Load and fork now fail closed on run identity and on a non-empty
+projection ([#81](https://github.com/yoheinakajima/activegraph/issues/81),
+[#82](https://github.com/yoheinakajima/activegraph/issues/82)), reported by
+[@TrendpilotAI](https://github.com/TrendpilotAI), who also contributed the
+#82 acceptance tests. **Behavior change:** `Runtime.load` no longer
+creates a run, and replay — both `Runtime.load` and `Runtime.fork` — no
+longer writes into a GraphStore that already holds projection state.
+Decisions are locked in
+[CONTRACT.md § v1.13](https://github.com/yoheinakajima/activegraph/blob/main/CONTRACT.md)
+(#1–#2), amending v0.5 #5/#6 and v1.2 #1.
+
+### Fixed
+
+- `Runtime.load(path, run_id=...)` raises `RunNotFoundError` when that id
+  has no canonical `runs` row. The catalog is not updated and no event is
+  accepted. A missing SQLite file is `reason="missing_file"` and is not
+  created. A log that still has events for the id but no catalog row is
+  `reason="orphan_events"` and is not repaired by load.
+- `Runtime.load(..., graph_store=store)` and
+  `Runtime.fork(..., graph_store=store)` raise `NonEmptyGraphStoreError`
+  before applying any event when `store` already holds objects, relations,
+  patches, or — for FalkorDB — leftover placeholder nodes. The store is
+  not cleared. A refused fork runs the check before `fork_run`, so it
+  leaves no fork row and copies no events.
+  `NonEmptyGraphStoreError.operation` is `"load"` or `"fork"`.
+- `Runtime(..., store=SQLiteEventStore(...))` and the Postgres equivalent
+  register the catalog row at construction, the same as `persist_to=`.
+  A run built that way with no `run_goal` or `save_state` is loadable.
+  `retention.compact()` of an unknown run id fails closed and does not
+  register the id.
+
+### Changed
+
+- `GraphStore.is_empty()` reports whether a projection holds entities.
+  The base implementation probes objects with
+  `query_objects(ObjectQuery(result_mode="exists"))` and still uses
+  `all_relations` / `all_patches`, so a third-party store is covered
+  without an override and a backend that already answers existence does
+  not have to materialize every object. That default allows replay only
+  when those reads are empty and refuses otherwise. A backend with
+  projection state those reads cannot see must override `is_empty` and
+  return `False` while that state would survive replay. In-memory stays
+  an O(1) dict check. FalkorDB uses one `LIMIT 1` existence query for
+  the same `:AGNode` / `:AGPatch` nodes `clear()` deletes, so leftover
+  placeholders are non-empty. Indexes alone do not.
+- Omitting `run_id` still loads the most recently appended-to run when
+  the catalog has one. If the catalog has no runs, load raises
+  `RunNotFoundError` (`reason="empty_catalog"`) and does not insert one.
+  A missing SQLite file is not created on that path either.
+  `SQLiteEventStore.catalog_status` and `most_recent_run_id` open an
+  existing file read-only and do not run schema DDL.
+  `PostgresEventStore.catalog_status` and `most_recent_run_id` read
+  `information_schema` and do not `CREATE TABLE`.
+  `RunNotFoundError` subclasses `FileNotFoundError`, so existing
+  `except FileNotFoundError` handlers — including the CLI's not-found
+  exit — still catch it.
+- Hints that list runs point at `SQLiteEventStore.list_runs(path)` and
+  `PostgresEventStore.list_runs(url)`. `activegraph inspect` does not
+  list runs.
+
+### Migration notes
+
+- Code that used `Runtime.load(path, run_id="some-new-id")` to create an
+  empty run now fails. Create the run explicitly, then load that id:
+
+  ```python
+  rt = Runtime(Graph(), persist_to="path/to/run.db")
+  loaded = Runtime.load("path/to/run.db", run_id=rt.run_id)
+  ```
+
+  `Runtime(graph, store=SQLiteEventStore(path, run_id))` also registers
+  the row. There is no load-or-create flag.
+- A run created before 1.13 with `Runtime(..., store=)` that never called
+  `run_goal` or `save_state` can have events and no catalog row. Load
+  still will not repair it (`reason="orphan_events"`). Opt in with one
+  public call, then load:
+
+  ```python
+  SQLiteEventStore(path, run_id).upsert_run(created_at="<ISO-8601 timestamp>")
+  ```
+
+  Postgres is the same shape:
+  `PostgresEventStore(url, run_id).upsert_run(created_at="<ISO-8601 timestamp>")`.
+  `upsert_run` does not wipe stored lineage when those fields are omitted.
+- Pass an empty GraphStore to both load and fork. A new
+  `InMemoryGraphStore()`, or a `FalkorDBGraphStore` with a `graph_name`
+  that has not been replayed into, is empty. Do not reuse a store that
+  already holds a projection. Neither call will `clear()` the store.
+  Reloading into the same persistent FalkorDB graph requires an explicit
+  `clear()` or a new `graph_name`. Clearing yourself and retrying can
+  leave readers with a partial projection if replay then fails; prefer a
+  fresh store. Rebuilding into an isolated store and swapping it in
+  atomically is not part of this release.
+
 ## [1.12.0] — 2026-09-26
 
 Projection query-planning release (CONTRACT v1.12 #1–#4), shipping together

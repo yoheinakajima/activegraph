@@ -57,6 +57,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import os
 import re
 import random as _random
 import time as _time
@@ -68,7 +69,7 @@ def _monotonic() -> float:
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Iterable, NamedTuple, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterable, NamedTuple, NoReturn, Optional, Union, cast
 
 from activegraph.behaviors.base import Behavior, LLMBehavior, RelationBehavior
 from activegraph.behaviors.decorators import get_registry
@@ -112,7 +113,7 @@ from activegraph.runtime.promote import (
     compute_promote_plan,
     promote_warnings,
 )
-from activegraph.runtime.errors import ReplayDivergenceError
+from activegraph.runtime.errors import NonEmptyGraphStoreError, ReplayDivergenceError
 from activegraph.runtime.queue import EventQueue
 from activegraph.runtime.registry import Registry
 from activegraph.runtime.scheduler import DelayedQueue, ScheduledEntry
@@ -504,6 +505,10 @@ class Runtime:
             )
         if persist_to is not None:
             store = _open_sqlite_store(persist_to, graph.run_id)
+        # persist_to= opens a store; store= is one the caller already opened.
+        # Both register the canonical runs row when the store can. Events
+        # written later are not a loadable run without that row.
+        if store is not None and hasattr(store, "upsert_run"):
             store.upsert_run(
                 created_at=_now_iso(),
                 frame_id=self.frame.id if self.frame else None,
@@ -3295,15 +3300,44 @@ class Runtime:
         an external graph database. The event log remains the source of
         truth — this only changes where the projection is materialized.
 
+        v1.13: load does not create runs. An explicit ``run_id`` that
+        has no canonical ``runs`` row raises
+        :class:`~activegraph.store.errors.RunNotFoundError` and leaves
+        the catalog unchanged, including when the log has orphan events
+        for that id (those are not repaired here) and when the SQLite
+        file itself does not exist (the file is not created). Omitting
+        ``run_id`` still opens the most recently appended-to run; if
+        the catalog is empty, the same error is raised and no run is
+        inserted. Create a run with ``Runtime(..., persist_to=)`` or
+        ``Runtime(..., store=)``; both register a catalog row when the
+        attached store implements ``upsert_run``. A supplied
+        ``graph_store`` must already be empty
+        (:meth:`~activegraph.core.graph_store.GraphStore.is_empty`);
+        a store that holds projection state raises
+        :class:`~activegraph.runtime.errors.NonEmptyGraphStoreError`
+        before any event is applied. Load does not call ``clear()``.
+
         v1.10 #1: ``trace_context_reads=True`` turns on context-read
         tracing for execution that CONTINUES from the loaded log.
         Recorded ``context.read`` events replay like any other event
         either way, and strict replay never diverges on them.
         """
         sink_configs = _normalize_sink_configs(sinks)
-        chosen = run_id or _most_recent_run_id(path)
-        if chosen is None:
-            raise FileNotFoundError(f"no runs found in {path}")
+        if _missing_sqlite_file(path):
+            _raise_missing_run(
+                path, run_id=run_id, event_count=0, reason="missing_file"
+            )
+        if run_id is not None:
+            present, event_count = _catalog_status(path, run_id)
+            if not present:
+                _raise_missing_run(path, run_id=run_id, event_count=event_count)
+            chosen = run_id
+        else:
+            chosen_recent = _most_recent_run_id(path)
+            if chosen_recent is None:
+                _raise_missing_run(path, run_id=None, event_count=0)
+            chosen = chosen_recent
+        _require_empty_graph_store(graph_store, run_id=chosen, operation="load")
 
         store = _open_sqlite_store(path, run_id=chosen)
         graph = Graph(ids=IDGen(), run_id=chosen, graph_store=graph_store)
@@ -3356,10 +3390,6 @@ class Runtime:
             embedding_cache=embedding_cache,
             trace_context_reads=trace_context_reads,
         )
-        # Make sure the run row exists (older files might predate it; in v0.5
-        # they shouldn't, but be defensive).
-        store.upsert_run(created_at=_now_iso())
-
         # Re-queue events whose behaviors never fired (CONTRACT v0.5 diff #8).
         # Events that already have a behavior.started referencing them are
         # left alone — re-firing them would duplicate work. Events that were
@@ -3424,6 +3454,10 @@ class Runtime:
         ``FalkorDBGraphStore``) to rebuild the fork's current-state view in
         an external graph database. The fork's event log remains the source
         of truth — this only changes where the projection is materialized.
+        The store must already be empty. A non-empty store raises
+        :class:`~activegraph.runtime.errors.NonEmptyGraphStoreError`
+        before any fork row or copied events are written. Fork does not
+        call ``clear()``.
         """
         sink_configs = _normalize_sink_configs(sinks)
         from activegraph.store.sqlite import SQLiteEventStore
@@ -3470,6 +3504,13 @@ class Runtime:
         # delta — behaviors reacting to it would see entities that
         # never landed.
         _reject_mid_promote_block_fork(self.graph.events, at_event)
+
+        # Before a new run id is minted and before fork_run copies rows.
+        # Runtime.fork is SQLite-only; the CLI's Postgres fork_run copies
+        # the log and does not replay into a GraphStore.
+        _require_empty_graph_store(
+            graph_store, run_id=self.graph.run_id, operation="fork"
+        )
 
         new_run_id = self.graph.ids.run()
         SQLiteEventStore.fork_run(
@@ -4058,6 +4099,94 @@ def _first_goal(graph: Graph) -> Optional[str]:
         if e.type == "goal.created":
             return e.payload.get("goal")
     return None
+
+
+def _catalog_status(path_or_url: str, run_id: str) -> tuple[bool, int]:
+    """Return ``(has_canonical_row, event_count)`` without inserting a run.
+
+    A missing SQLite file yields ``(False, 0)`` and is not created.
+    """
+    if "://" in path_or_url:
+        from activegraph.store.url import parse_store_url
+
+        parsed = parse_store_url(path_or_url)
+        if parsed.scheme == "postgres":
+            from activegraph.store.postgres import PostgresEventStore
+
+            status = PostgresEventStore.catalog_status(parsed.raw, run_id)
+            return cast(tuple[bool, int], status)
+        path_or_url = parsed.sqlite_path or ""
+    from activegraph.store.sqlite import SQLiteEventStore
+
+    return SQLiteEventStore.catalog_status(path_or_url, run_id)
+
+
+def _missing_sqlite_file(path_or_url: str) -> bool:
+    """True when ``path_or_url`` names a SQLite file that is not on disk.
+
+    Postgres URLs are not files. A missing SQLite file must be reported
+    as ``missing_file`` before any catalog read that could create it.
+    """
+    if "://" in path_or_url:
+        from activegraph.store.url import parse_store_url
+
+        parsed = parse_store_url(path_or_url)
+        if parsed.scheme != "sqlite":
+            return False
+        target = parsed.sqlite_path or ""
+    else:
+        target = path_or_url
+    return not os.path.isfile(target)
+
+
+def _raise_missing_run(
+    path: str,
+    *,
+    run_id: Optional[str],
+    event_count: int,
+    reason: Optional[str] = None,
+) -> NoReturn:
+    from activegraph.store.errors import RunNotFoundError
+
+    if reason is None:
+        if run_id is None:
+            reason = "empty_catalog"
+        elif event_count > 0:
+            reason = "orphan_events"
+        else:
+            reason = "missing"
+    raise RunNotFoundError(
+        path=path,
+        run_id=run_id,
+        reason=reason,
+        event_count=event_count,
+    )
+
+
+def _require_empty_graph_store(
+    graph_store: Optional[GraphStore],
+    *,
+    run_id: str,
+    operation: str,
+) -> None:
+    """Refuse replay into a projection that already holds state.
+
+    Checked before ``Graph`` construction so no event is applied and
+    ``clear()`` is never called. For a fork this is also before
+    ``fork_run``, so a refusal writes no fork row and copies no events.
+    ``None`` selects a fresh in-memory store. ``operation`` is ``"load"``
+    or ``"fork"``.
+    """
+    if graph_store is None or graph_store.is_empty():
+        return
+    raise NonEmptyGraphStoreError(
+        run_id=run_id,
+        store_type=type(graph_store).__name__,
+        objects=len(graph_store.all_objects()),
+        relations=len(graph_store.all_relations()),
+        patches=len(graph_store.all_patches()),
+        operation=operation,
+    )
 
 
 def _most_recent_run_id(path_or_url: str) -> Optional[str]:

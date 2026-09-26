@@ -903,10 +903,10 @@ def cmd_promote(
         click.echo(str(e), err=True)
         raise SystemExit(EXIT_USAGE_ERROR)
 
-    # Validate both run ids against the runs table BEFORE Runtime.load:
-    # load upserts a run row for whatever id it's given, so loading a
-    # mistyped id would insert a phantom empty run and then fail with
-    # a misleading lineage error.
+    # Validate both run ids against the runs table BEFORE Runtime.load.
+    # Load itself now refuses an unknown id without inserting a row;
+    # this pre-check keeps the CLI message short and exits NOT_FOUND
+    # before either runtime is opened.
     known_runs = {r.run_id for r in _list_runs_or_die(url)}
     for label_, rid in (("--run-id", run_id), ("--from-run", from_run)):
         if rid not in known_runs:

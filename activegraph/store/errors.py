@@ -111,6 +111,194 @@ class ConcurrentWriterError(StorageError):
         )
 
 
+class RunNotFoundError(StorageError, FileNotFoundError):
+    """``Runtime.load`` was asked to resume a run that has no canonical row.
+
+    Multi-inherits :class:`FileNotFoundError` so existing
+    ``except FileNotFoundError`` sites, including the CLI's not-found
+    exit, keep working. Load does not insert a ``runs`` row, append an
+    event, or replay. Create a run with ``Runtime(..., persist_to=)``
+    or ``Runtime(..., store=)``; both register a catalog row when the
+    attached store implements ``upsert_run``. There is no load-or-create
+    mode.
+
+    ``reason`` is one of ``"missing"`` (explicit id, no row, no events),
+    ``"missing_file"`` (the SQLite file itself does not exist),
+    ``"orphan_events"`` (events exist but the catalog row does not), or
+    ``"empty_catalog"`` (``run_id`` omitted and an existing store has no
+    runs).
+    """
+
+    _doc_slug = "run-not-found-error"
+
+    def __init__(
+        self,
+        *,
+        path: str,
+        run_id: str | None,
+        reason: str,
+        event_count: int = 0,
+    ) -> None:
+        self.path = path
+        self.run_id = run_id
+        self.reason = reason
+        self.event_count = event_count
+        summary, what_failed, why, how_to_fix = _run_not_found_message(
+            path=path,
+            run_id=run_id,
+            reason=reason,
+            event_count=event_count,
+        )
+        super().__init__(
+            summary,
+            what_failed=what_failed,
+            why=why,
+            how_to_fix=how_to_fix,
+            context={
+                "path": path,
+                "run_id": run_id,
+                "reason": reason,
+                "event_count": event_count,
+            },
+        )
+
+
+def _run_not_found_message(
+    *,
+    path: str,
+    run_id: str | None,
+    reason: str,
+    event_count: int,
+) -> tuple[str, str, str, str]:
+    """Return ``(summary, what_failed, why, how_to_fix)``."""
+    if reason == "empty_catalog":
+        return (
+            f"no runs found in {path}",
+            (
+                f"Runtime.load({path!r}) was called without run_id, and the "
+                "store's runs catalog is empty. No run row was inserted and "
+                "no event was accepted."
+            ),
+            (
+                "With no run_id, load selects the most recently appended-to "
+                "run. An empty catalog has nothing to select. Runtime.load "
+                "does not create a default run — an empty catalog must not "
+                "become a real-looking empty run."
+            ),
+            (
+                "Create a run explicitly, then load the id it returns:\n"
+                "    graph = Graph()\n"
+                "    rt = Runtime(graph, persist_to='path/to/run.db')\n"
+                "    loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)\n"
+                "\n"
+                "Passing a brand-new run_id to Runtime.load also fails. "
+                "There is no load-or-create parameter."
+            ),
+        )
+    if reason == "missing_file":
+        if run_id is None:
+            asked = (
+                f"Runtime.load({path!r}) was called without run_id, but that "
+                "SQLite file does not exist."
+            )
+        else:
+            asked = (
+                f"Runtime.load was asked to open run {run_id!r} in {path}, "
+                "but that SQLite file does not exist."
+            )
+        return (
+            f"database file does not exist: {path}",
+            (
+                f"{asked} The file was not created and no run was registered."
+            ),
+            (
+                "Load resumes a run from an existing database. A path that "
+                "is not a file has no catalog to read. Runtime.load does "
+                "not create the database."
+            ),
+            (
+                "Create a run explicitly, then load the id it returns:\n"
+                "    graph = Graph()\n"
+                "    rt = Runtime(graph, persist_to='path/to/run.db')\n"
+                "    loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)\n"
+                "\n"
+                "Passing a brand-new run_id to Runtime.load also fails. "
+                "There is no load-or-create parameter."
+            ),
+        )
+    if reason == "orphan_events":
+        recovery = _orphan_recovery_line(path, run_id or "")
+        return (
+            f"run {run_id!r} has events but no canonical run row in {path}",
+            (
+                f"Runtime.load was asked for run {run_id!r} in {path}. "
+                f"The event log has {event_count} event(s) for that id, but "
+                "the runs catalog has no row. Nothing was inserted, repaired, "
+                "or replayed."
+            ),
+            (
+                "A loadable run is a canonical runs row. Events without that "
+                "row are catalog corruption, not a resume target. Repairing "
+                "the row inside Runtime.load would hide the damage and "
+                "recreate the silent-create bug. A run built before 1.13 "
+                "with Runtime(..., store=...) that never called run_goal "
+                "or save_state can look like this; construction now "
+                "registers the row."
+            ),
+            (
+                "Do not call Runtime.load to recreate the row. To opt in "
+                "and register this run, call the store's public upsert "
+                "once, then load again:\n"
+                f"    {recovery}\n"
+                "\n"
+                "Discard the events instead if the row should stay absent. "
+                "Load itself will not repair the catalog."
+            ),
+        )
+    if reason == "missing":
+        return (
+            f"run {run_id!r} does not exist in {path}",
+            (
+                f"Runtime.load was asked to open run {run_id!r} in {path}. "
+                "The runs catalog has no row for that id and the event log "
+                "has no events for it. No run was registered and no event "
+                "was accepted."
+            ),
+            (
+                "Load resumes an existing run. Creating a run for an unknown "
+                "id would register an empty run that later looks legitimate "
+                "in list_runs() — usually the result of a typo."
+            ),
+            (
+                "Create a run explicitly, then load the id it returns:\n"
+                "    graph = Graph()\n"
+                "    rt = Runtime(graph, persist_to='path/to/run.db')\n"
+                "    loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)\n"
+                "\n"
+                "To see the runs that already exist:\n"
+                "    SQLiteEventStore.list_runs(path)\n"
+                "    PostgresEventStore.list_runs(url)\n"
+                "\n"
+                "A typo in run_id is the usual cause. There is no "
+                "load-or-create parameter."
+            ),
+        )
+    raise ValueError(f"unknown RunNotFoundError reason: {reason!r}")
+
+
+def _orphan_recovery_line(path: str, run_id: str) -> str:
+    """One public call that registers an orphan run. Load never invokes it."""
+    lowered = path.lower()
+    if lowered.startswith("postgres://") or lowered.startswith("postgresql://"):
+        opener = "PostgresEventStore"
+    else:
+        opener = "SQLiteEventStore"
+    return (
+        f"{opener}({path!r}, {run_id!r}).upsert_run("
+        'created_at="<ISO-8601 timestamp>")'
+    )
+
+
 class CorruptedEventPayloadError(StorageError):
     """A stored event payload couldn't be decoded as JSON.
 
@@ -129,5 +317,6 @@ __all__ = [
     "EventNotFoundError",
     "DuplicateEventError",
     "ConcurrentWriterError",
+    "RunNotFoundError",
     "CorruptedEventPayloadError",
 ]

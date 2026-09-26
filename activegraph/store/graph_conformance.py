@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from activegraph.core.graph import Object, Relation
-from activegraph.core.graph_store import ObjectQuery
+from activegraph.core.graph_store import GraphStore, ObjectQuery
 from activegraph.core.patch import Patch
 
 
@@ -198,6 +198,41 @@ class GraphStoreConformance(ABC):
             assert store.all_objects() == []
             assert store.all_relations() == []
             assert store.all_patches() == []
+        finally:
+            self.cleanup()
+
+    def test_is_empty_matches_enumeration_default(self) -> None:
+        """Emptiness tracks every projected entity kind.
+
+        ``GraphStore.is_empty`` is the third-party default: it allows replay
+        only when objects, relations, and patches are all absent, and refuses
+        otherwise. Backend overrides must agree with that default for state
+        the enumerations can see.
+        """
+        try:
+            store = self.make_store()
+            assert store.is_empty() is True
+            assert GraphStore.is_empty(store) is True
+
+            store.put_object(self._obj("obj_1"))
+            assert store.is_empty() is False
+            assert GraphStore.is_empty(store) is False
+            store.remove_object("obj_1")
+            assert store.is_empty() is True
+            assert GraphStore.is_empty(store) is True
+
+            store.put_relation(self._rel("rel_1", "obj_1", "obj_2"))
+            assert store.is_empty() is False
+            assert GraphStore.is_empty(store) is False
+            store.clear()
+            assert store.is_empty() is True
+
+            store.put_patch(self._patch("patch_1", "obj_1"))
+            assert store.is_empty() is False
+            assert GraphStore.is_empty(store) is False
+            store.clear()
+            assert store.is_empty() is True
+            assert GraphStore.is_empty(store) is True
         finally:
             self.cleanup()
 

@@ -198,11 +198,45 @@ rt = Runtime.load("runs.db", run_id="run-42", graph_store=store)
 # The log has been replayed into FalkorDB; query it with Cypher.
 ```
 
-The event log in `runs.db` stays the source of truth; `graph_store` only
-chooses where the replayed projection is materialized.
+`graph_name="run-42"` must be empty of projection entities. A newly
+opened graph is empty (indexes created at startup do not count). If that
+graph already holds objects, relations, patches, or leftover placeholder
+nodes, `Runtime.load` raises `NonEmptyGraphStoreError` before applying
+any event. It does not clear the graph. Use a fresh `graph_name`, or
+pass a new store, when you rebuild. Calling `clear()` yourself and then
+loading is possible, but a crash during replay would leave readers with
+a partial projection; prefer a graph name nothing else is reading.
 
-`Runtime.fork(..., graph_store=...)` accepts the same parameter, so a fork's
-current-state projection can be built in its own FalkorDB graph too.
+The event log in `runs.db` stays the source of truth; `graph_store` only
+chooses where the replayed projection is materialized. Load also refuses
+a `run_id` that is not already in the runs catalog; it does not create
+one. See [`replay`](../concepts/replay.md).
+
+`Runtime.fork(..., graph_store=...)` accepts the same parameter and the
+same emptiness rule. A non-empty graph raises `NonEmptyGraphStoreError`
+before the fork row is written and before any events are copied. Build
+the fork's projection in its own empty FalkorDB graph.
+
+### On restart
+
+FalkorDB keeps the named graph after the process exits. Loading or
+forking again into that same `graph_name` finds the previous projection
+and refuses it. Clear the graph explicitly, or pick a new name:
+
+```python
+store = FalkorDBGraphStore(host="localhost", graph_name="run-42")
+store.clear()  # only when nothing else is reading this graph
+rt = Runtime.load("runs.db", run_id="run-42", graph_store=store)
+```
+
+```python
+store = FalkorDBGraphStore(host="localhost", graph_name="run-42-rebuild")
+rt = Runtime.load("runs.db", run_id="run-42", graph_store=store)
+```
+
+`clear()` deletes every `:AGNode` and `:AGPatch` in that graph, which is
+the same set `is_empty()` treats as projection state. Prefer a new
+`graph_name` when another process might still be reading the old one.
 
 ---
 

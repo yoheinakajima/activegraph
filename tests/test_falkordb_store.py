@@ -144,6 +144,28 @@ def test_relations_are_native_edges():
         store.close()
 
 
+def test_placeholder_only_node_is_not_empty():
+    """A lone :AGNode is hidden from enumeration and still blocks replay.
+
+    ``remove_relation`` garbage-collects orphan placeholders, so this node
+    is created with raw Cypher. The base ``GraphStore.is_empty`` only sees
+    objects, relations, and patches, and would report empty.
+    """
+    from activegraph.core.graph_store import GraphStore
+
+    store = _make_store("ag_placeholder_only")
+    try:
+        store._g.query("CREATE (:AGNode {id: 'orphan-placeholder'})")
+        assert store.all_objects() == []
+        assert store.all_relations() == []
+        assert store.all_patches() == []
+        assert store.is_empty() is False
+        assert GraphStore.is_empty(store) is True
+    finally:
+        store.clear()
+        store.close()
+
+
 def test_dangling_relation_creates_placeholders():
     from activegraph.core.graph import Relation
 

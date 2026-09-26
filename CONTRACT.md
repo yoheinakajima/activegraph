@@ -8559,3 +8559,65 @@ asserts only residual candidates are materialized.
 - No requirement that third-party GraphStores optimize; the base query plan is
   complete and correct.
 - No additional graph backend and no distributed runtime.
+
+---
+
+## v1.13 #1. Load observes run identity and never creates it
+
+Amends v0.5 #5 (save and load API) and v0.5 #6 (run identity). Adds
+`RunNotFoundError`.
+
+`Runtime.load` resumes a run that already has a canonical `runs` row. It
+does not insert one, append an event, or repair a missing row.
+
+1. An explicit `run_id` with no row and no events raises `RunNotFoundError`
+   (`reason="missing"`). No run is registered.
+2. Omitting `run_id` still selects the most recently appended-to run when
+   the catalog has one (v0.5 #6). An existing store whose catalog is empty
+   raises `RunNotFoundError` (`reason="empty_catalog"`) and inserts nothing.
+3. Events for an id with no catalog row are not a resume target
+   (`reason="orphan_events"`). Load does not repair the row. The error names
+   one public opt-in the operator may call:
+   `SQLiteEventStore(path, run_id).upsert_run(created_at="<ISO-8601 timestamp>")`
+   or `PostgresEventStore(url, run_id).upsert_run(created_at="<ISO-8601 timestamp>")`.
+4. A SQLite path that is not a file is `reason="missing_file"`. The message
+   says the file does not exist. The file is not created.
+5. A run is created by `Runtime(..., persist_to=)` or `Runtime(..., store=)`
+   when the attached store implements `upsert_run`. Both write the catalog
+   row at construction. There is no load-or-create flag.
+
+## v1.13 #2. Replay requires an empty projection
+
+Amends v1.2 #1 (the `GraphStore` interface, including `Runtime.load` and
+`Runtime.fork` `graph_store=`) and adds `NonEmptyGraphStoreError` and
+`GraphStore.is_empty`.
+
+Both `Runtime.load(..., graph_store=)` and `Runtime.fork(..., graph_store=)`
+rebuild a projection by replay. Replay may run only when `is_empty()` is
+true. The check happens before any event is applied. For fork it happens
+before `fork_run` copies rows, so a refusal leaves the run list and the
+event count unchanged. Neither call invokes `clear()`.
+`NonEmptyGraphStoreError.operation` is `"load"` or `"fork"`.
+
+`GraphStore.is_empty()` default semantics: the projection is empty when it
+holds no objects, relations, or patches. Objects are probed with
+`query_objects(ObjectQuery(result_mode="exists"))`, so a backend that
+overrides `query_objects` can answer without materializing every object. A
+scalar `exists` of true, or candidates when the backend did not return a
+scalar, means objects are present. Relations and patches use
+`all_relations()` and `all_patches()` because those reads have no existence
+mode. That default allows replay only when those reads are empty. It is the
+safe default for a third-party store that does not override `is_empty`.
+
+A backend must override `is_empty` when projection state would survive
+replay but is invisible to that object probe and to `all_relations` /
+`all_patches`. FalkorDB does: one `MATCH (n) WHERE n:AGNode OR n:AGPatch
+RETURN 1 LIMIT 1`, the same nodes `clear()` deletes, so a leftover
+placeholder is non-empty. The override must still agree with the default
+for entities those reads can see. Indexes are not projection state.
+
+## v1.13 deliberately does NOT touch
+
+- No automatic `clear()` before load or fork.
+- No load-or-create flag, and load does not repair orphan events.
+- Atomic rebuild-and-swap of a live projection is deferred.

@@ -1,0 +1,16 @@
+RunNotFoundError: run 'run_orphan' has events but no canonical run row in /tmp/runs.sqlite
+
+What failed:
+  Runtime.load was asked for run 'run_orphan' in /tmp/runs.sqlite. The event log has 4 event(s) for that id, but the runs catalog has no row. Nothing was inserted, repaired, or replayed.
+
+Why:
+  A loadable run is a canonical runs row. Events without that row are catalog corruption, not a resume target. Repairing the row inside Runtime.load would hide the damage and recreate the silent-create bug. A run built before 1.13 with Runtime(..., store=...) that never called run_goal or save_state can look like this; construction now registers the row.
+
+How to fix:
+  Do not call Runtime.load to recreate the row. To opt in and register this run, call the store's public upsert once, then load again:
+      SQLiteEventStore('/tmp/runs.sqlite', 'run_orphan').upsert_run(created_at="<ISO-8601 timestamp>")
+
+  Discard the events instead if the row should stay absent. Load itself will not repair the catalog.
+
+More:
+  https://docs.activegraph.ai/errors/run-not-found-error

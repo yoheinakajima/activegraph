@@ -118,6 +118,24 @@ class TestInspect:
         )
         assert result.exit_code == EXIT_NOT_FOUND, result.output
 
+    def test_unknown_run_id_exits_not_found_without_creating_a_run(
+        self, temp_db, runner
+    ):
+        from activegraph.store.sqlite import SQLiteEventStore
+
+        real_run = _seed_run(temp_db)
+        url = f"sqlite:///{temp_db}"
+        before = {record.run_id for record in SQLiteEventStore.list_runs(temp_db)}
+        result = runner.invoke(
+            cli, ["inspect", url, "--run-id", "run_missing"]
+        )
+        rendered = result.output + (result.stderr or "")
+        assert result.exit_code == EXIT_NOT_FOUND, rendered
+        assert "run_missing" in rendered
+        after = {record.run_id for record in SQLiteEventStore.list_runs(temp_db)}
+        assert after == before
+        assert real_run in after
+
     def test_usage_error_for_bare_path(self, temp_db, runner):
         _seed_run(temp_db)
         result = runner.invoke(cli, ["inspect", temp_db])
@@ -147,6 +165,23 @@ class TestReplay:
         assert obj["run_id"] == run_id
         assert obj["events"] > 0
         assert obj["objects"] >= 1
+
+    def test_unknown_run_id_exits_not_found_without_creating_a_run(
+        self, temp_db, runner
+    ):
+        from activegraph.store.sqlite import SQLiteEventStore
+
+        _seed_run(temp_db)
+        url = f"sqlite:///{temp_db}"
+        before = {record.run_id for record in SQLiteEventStore.list_runs(temp_db)}
+        result = runner.invoke(
+            cli, ["replay", url, "--run-id", "run_missing", "--json"]
+        )
+        rendered = result.output + (result.stderr or "")
+        assert result.exit_code == EXIT_NOT_FOUND, rendered
+        assert "run_missing" in rendered
+        after = {record.run_id for record in SQLiteEventStore.list_runs(temp_db)}
+        assert after == before
 
 
 class TestFork:

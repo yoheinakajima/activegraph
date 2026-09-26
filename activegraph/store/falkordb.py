@@ -878,6 +878,22 @@ class FalkorDBGraphStore(GraphStore):
 
     # ---- lifecycle ----
 
+    def is_empty(self) -> bool:
+        """True when this graph holds no projection entities.
+
+        One existence query, matching the nodes :meth:`clear` deletes:
+        ``:AGNode`` (objects and leftover placeholders) or ``:AGPatch``.
+        Relations are edges on ``:AGNode``, so they are covered without a
+        second scan. Indexes created at open are not projection state, so
+        a freshly constructed store is empty. A lone placeholder counts
+        even though :meth:`all_objects` does not list it: replay would
+        not delete it, and it is state the log does not describe.
+        """
+        res = self._g.ro_query(
+            "MATCH (n) WHERE n:AGNode OR n:AGPatch RETURN 1 LIMIT 1"
+        )
+        return not res.result_set
+
     def clear(self) -> None:
         # DETACH DELETE so native AGRelation edges are removed with their
         # endpoints; AGNode covers both materialized objects and placeholders.

@@ -35,6 +35,8 @@ per-error recovery prose see the
 
 ::: activegraph.ReplayDivergenceError
 
+::: activegraph.NonEmptyGraphStoreError
+
 ## Pattern
 
 ::: activegraph.UnsupportedPatternError
@@ -48,6 +50,8 @@ per-error recovery prose see the
 ::: activegraph.SchemaVersionMismatch
 
 ::: activegraph.EventNotFoundError
+
+::: activegraph.RunNotFoundError
 
 ::: activegraph.DuplicateEventError
 

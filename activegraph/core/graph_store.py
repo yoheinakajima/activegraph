@@ -15,8 +15,9 @@ the queryable current-state view rebuilt by replaying that log. Losing a
 GraphStore is recoverable (replay the log); losing the EventStore is not.
 
 The interface is deliberately small: upsert/get/remove/enumerate for each
-of the three entity kinds, plus ``clear`` and ``close``. On top of that it
-exposes a structured object-plan boundary and a few **optional query hooks** —
+of the three entity kinds, plus ``is_empty``, ``clear``, and ``close``. On
+top of that it exposes a structured object-plan boundary and a few
+**optional query hooks** —
 :meth:`GraphStore.query_objects`, :meth:`GraphStore.find_objects`,
 :meth:`GraphStore.find_objects_in_types`, :meth:`GraphStore.find_relations`,
 :meth:`GraphStore.neighborhood`, and :meth:`GraphStore.match_chain` — which
@@ -337,6 +338,38 @@ class GraphStore(ABC):
 
     # ---- lifecycle ----
 
+    def is_empty(self) -> bool:
+        """Return True when this projection holds no objects, relations, or patches.
+
+        Objects are probed with
+        :meth:`query_objects` ``(ObjectQuery(result_mode="exists"))`` so a
+        backend that already answers existence without materializing every
+        object can do so. A scalar ``exists`` of ``True``, or candidates
+        when the backend did not answer with a scalar, means the projection
+        has objects. Relations and patches still use :meth:`all_relations`
+        and :meth:`all_patches`: those reads have no existence mode.
+
+        ``Runtime.load`` and ``Runtime.fork`` use this answer before
+        replay: an empty projection may be rebuilt, and a non-empty one
+        is refused. That is the safe default for an unknown backend.
+        Returning ``True`` unconditionally would replay into leftover
+        state (the bug this check exists to stop). Raising until the
+        backend overrides the method would reject a correct empty store
+        that already implements enumeration.
+
+        A backend whose projection state is not fully visible through
+        that object probe, :meth:`all_relations`, and :meth:`all_patches`
+        must override this method and return ``False`` while that hidden
+        state would survive a replay. The override must still match this
+        default for entities those reads can see.
+        """
+        probed = self.query_objects(ObjectQuery(result_mode="exists"))
+        if probed.exists:
+            return False
+        if probed.exists is None and probed.candidates:
+            return False
+        return not self.all_relations() and not self.all_patches()
+
     def clear(self) -> None:
         """Drop all objects, relations, and patches. Default: per-kind removal."""
         for o in self.all_objects():
@@ -417,6 +450,10 @@ class InMemoryGraphStore(GraphStore):
         self._patches.pop(patch_id, None)
 
     # ---- lifecycle ----
+
+    def is_empty(self) -> bool:
+        """True when no objects, relations, or patches are stored."""
+        return not self._objects and not self._relations and not self._patches
 
     def clear(self) -> None:
         self._objects.clear()
