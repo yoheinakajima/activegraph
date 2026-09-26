@@ -46,7 +46,7 @@ line of code**, and can reasonably catch:
 - Loading a `run_id` that has no canonical run row
   (`RunNotFoundError`) — load does not create the run
 - Replaying into a GraphStore that already holds projection state
-  (`NonEmptyGraphStoreError`) — load does not clear the store
+  (`NonEmptyGraphStoreError`) — load and fork do not clear the store
 
 These all interrupt the call. The caller catches the exception, fixes
 the input, and tries again. There's no audit-trail entry to preserve

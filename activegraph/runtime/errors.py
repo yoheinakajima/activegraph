@@ -33,15 +33,16 @@ from activegraph.errors import ReplayError
 
 
 class NonEmptyGraphStoreError(ReplayError):
-    """``Runtime.load`` refused to replay into a GraphStore that already
-    holds projection state.
+    """Replay refused a GraphStore that already holds projection state.
 
-    Replay upserts and removes only entities the log names. Anything the
-    log never mentions would remain visible, so the rebuilt view could
-    contain facts that never happened. Load checks emptiness and raises
-    before applying any event. It does not call ``clear()``: a crash
-    during replay would publish an empty or partial projection to anyone
-    already reading that store.
+    ``operation`` is ``"load"`` or ``"fork"`` — the call that was about
+    to rebuild the projection. Replay upserts and removes only entities
+    the log names. Anything the log never mentions would remain visible,
+    so the rebuilt view could contain facts that never happened. The
+    check raises before applying any event and, for a fork, before any
+    fork row or copied events are written. It does not call ``clear()``:
+    a crash during replay would publish an empty or partial projection
+    to anyone already reading that store.
     """
 
     _doc_slug = "non-empty-graph-store-error"
@@ -54,12 +55,19 @@ class NonEmptyGraphStoreError(ReplayError):
         objects: int,
         relations: int,
         patches: int,
+        operation: str = "load",
     ) -> None:
+        if operation not in {"load", "fork"}:
+            raise ValueError(
+                "NonEmptyGraphStoreError operation must be 'load' or 'fork'"
+            )
         self.run_id = run_id
         self.store_type = store_type
         self.objects = objects
         self.relations = relations
         self.patches = patches
+        self.operation = operation
+        caller = "Runtime.fork" if operation == "fork" else "Runtime.load"
         if objects == 0 and relations == 0 and patches == 0:
             held = (
                 f"{store_type} reported existing projection state that is "
@@ -71,10 +79,20 @@ class NonEmptyGraphStoreError(ReplayError):
                 f"{store_type} already holds {objects} object(s), "
                 f"{relations} relation(s), and {patches} patch(es)."
             )
+        if operation == "fork":
+            example = (
+                "    store = InMemoryGraphStore()\n"
+                "    fork = runtime.fork(at_event=event_id, graph_store=store)\n"
+            )
+        else:
+            example = (
+                "    store = InMemoryGraphStore()\n"
+                "    rt = Runtime.load(path, run_id=run_id, graph_store=store)\n"
+            )
         super().__init__(
             f"refusing to replay run {run_id!r} into a non-empty {store_type}",
             what_failed=(
-                f"Runtime.load was asked to rebuild run {run_id!r} into "
+                f"{caller} was asked to rebuild run {run_id!r} into "
                 f"{store_type}, which already holds projection state. {held} "
                 "No event was applied and the store was not cleared."
             ),
@@ -90,11 +108,10 @@ class NonEmptyGraphStoreError(ReplayError):
                 "Pass an empty GraphStore. A new InMemoryGraphStore(), or a "
                 "FalkorDBGraphStore whose graph_name has never been replayed "
                 "into, is empty:\n"
-                "    store = InMemoryGraphStore()\n"
-                "    rt = Runtime.load(path, run_id=run_id, graph_store=store)\n"
+                f"{example}"
                 "\n"
                 "Do not reuse a store that already holds this or another "
-                "run's projection. Runtime.load will not clear the store. "
+                f"run's projection. {caller} will not clear the store. "
                 "Calling clear() yourself and retrying is possible, but a "
                 "crash mid-replay would leave a partial projection; prefer "
                 "a fresh store. Building into an isolated store and swapping "
@@ -106,6 +123,7 @@ class NonEmptyGraphStoreError(ReplayError):
                 "objects": objects,
                 "relations": relations,
                 "patches": patches,
+                "operation": operation,
             },
         )
 

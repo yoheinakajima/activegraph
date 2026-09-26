@@ -341,27 +341,34 @@ class GraphStore(ABC):
     def is_empty(self) -> bool:
         """Return True when this projection holds no objects, relations, or patches.
 
-        The base implementation answers from the required enumeration API, so
-        a third-party :class:`GraphStore` is covered without an override.
-        ``Runtime.load`` uses that answer before replay: an empty projection
-        may be rebuilt, and a non-empty one is refused. That is the safe
-        default for an unknown backend. Returning ``True`` unconditionally
-        would replay into leftover state (the bug this check exists to
-        stop). Raising until the backend overrides the method would reject
-        a correct empty store that already implements enumeration.
+        Objects are probed with
+        :meth:`query_objects` ``(ObjectQuery(result_mode="exists"))`` so a
+        backend that already answers existence without materializing every
+        object can do so. A scalar ``exists`` of ``True``, or candidates
+        when the backend did not answer with a scalar, means the projection
+        has objects. Relations and patches still use :meth:`all_relations`
+        and :meth:`all_patches`: those reads have no existence mode.
+
+        ``Runtime.load`` and ``Runtime.fork`` use this answer before
+        replay: an empty projection may be rebuilt, and a non-empty one
+        is refused. That is the safe default for an unknown backend.
+        Returning ``True`` unconditionally would replay into leftover
+        state (the bug this check exists to stop). Raising until the
+        backend overrides the method would reject a correct empty store
+        that already implements enumeration.
 
         A backend whose projection state is not fully visible through
-        :meth:`all_objects`, :meth:`all_relations`, and :meth:`all_patches`
+        that object probe, :meth:`all_relations`, and :meth:`all_patches`
         must override this method and return ``False`` while that hidden
-        state would survive a replay. Built-in backends override with a
-        direct existence check; the result must still match this default
-        for entities the enumerations can see.
+        state would survive a replay. The override must still match this
+        default for entities those reads can see.
         """
-        return (
-            not self.all_objects()
-            and not self.all_relations()
-            and not self.all_patches()
-        )
+        probed = self.query_objects(ObjectQuery(result_mode="exists"))
+        if probed.exists:
+            return False
+        if probed.exists is None and probed.candidates:
+            return False
+        return not self.all_relations() and not self.all_patches()
 
     def clear(self) -> None:
         """Drop all objects, relations, and patches. Default: per-kind removal."""

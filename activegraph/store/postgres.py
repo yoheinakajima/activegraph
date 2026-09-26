@@ -230,6 +230,19 @@ class _TxCtx:
                 self._conn.autocommit = self._prev_autocommit
 
 
+def _existing_catalog_tables(cur: Any) -> set[str]:
+    """``runs`` / ``events`` visible on the search path, without creating them."""
+    cur.execute(
+        """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = ANY (current_schemas(false))
+          AND table_name IN ('runs', 'events')
+        """
+    )
+    return {str(row[0]) for row in cur.fetchall()}
+
+
 def _ensure_schema(source: _ConnectionSource) -> None:
     with source.cursor() as cur:
         for stmt in _SCHEMA_STATEMENTS:
@@ -583,18 +596,24 @@ class PostgresEventStore:
     def catalog_status(cls, target: Any, run_id: str) -> tuple[bool, int]:
         """Return ``(has_canonical_row, event_count)`` without inserting a run.
 
-        Ensures the schema the same way :meth:`list_runs` does, then reads.
+        Does not run schema DDL. Tables are detected through
+        ``information_schema`` and queried only when present, so a
+        database that is not an ActiveGraph store is left unchanged.
         Does not write a ``runs`` row.
         """
         source = _ConnectionSource(target)
         try:
-            _ensure_schema(source)
             with source.cursor() as cur:
+                tables = _existing_catalog_tables(cur)
+                if "runs" not in tables:
+                    return (False, 0)
                 cur.execute(
                     "SELECT 1 FROM runs WHERE run_id = %s",
                     (run_id,),
                 )
                 present = cur.fetchone() is not None
+                if "events" not in tables:
+                    return (present, 0)
                 cur.execute(
                     "SELECT COUNT(*) FROM events WHERE run_id = %s",
                     (run_id,),
@@ -622,8 +641,16 @@ class PostgresEventStore:
     def most_recent_run_id(cls, target: Any) -> Optional[str]:
         source = _ConnectionSource(target)
         try:
-            _ensure_schema(source)
             with source.cursor() as cur:
+                tables = _existing_catalog_tables(cur)
+                if "runs" not in tables:
+                    return None
+                if "events" not in tables:
+                    cur.execute(
+                        "SELECT run_id FROM runs ORDER BY created_at DESC LIMIT 1"
+                    )
+                    row = cur.fetchone()
+                    return row[0] if row else None
                 cur.execute(
                     """
                     SELECT runs.run_id

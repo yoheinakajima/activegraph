@@ -1,0 +1,18 @@
+RunNotFoundError: database file does not exist: /tmp/missing.sqlite
+
+What failed:
+  Runtime.load was asked to open run 'run_missing' in /tmp/missing.sqlite, but that SQLite file does not exist. The file was not created and no run was registered.
+
+Why:
+  Load resumes a run from an existing database. A path that is not a file has no catalog to read. Runtime.load does not create the database.
+
+How to fix:
+  Create a run explicitly, then load the id it returns:
+      graph = Graph()
+      rt = Runtime(graph, persist_to='path/to/run.db')
+      loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)
+
+  Passing a brand-new run_id to Runtime.load also fails. There is no load-or-create parameter.
+
+More:
+  https://docs.activegraph.ai/errors/run-not-found-error

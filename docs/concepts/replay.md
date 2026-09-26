@@ -24,21 +24,26 @@ Three operations trigger replay:
   for that id. Omitting `run_id` still selects the most recently
   appended-to run when one exists. An empty catalog raises the same
   error and inserts nothing; a missing SQLite file is left uncreated.
-  Create a run with `Runtime(..., persist_to=)` or `store=`
-  first. There is no load-or-create mode.
-- **`graph_store=`** — where the projection is materialized. The store
-  must already be empty (`GraphStore.is_empty()`). A store that holds
-  objects, relations, patches, or other leftover projection state raises
+  Create a run with `Runtime(..., persist_to=)` or
+  `Runtime(..., store=)`. Both register a catalog row when the
+  attached store implements `upsert_run`. There is no load-or-create
+  mode.
+- **`graph_store=`** — where the projection is materialized, on both
+  `Runtime.load` and `Runtime.fork`. The store must already be empty
+  (`GraphStore.is_empty()`). A store that holds objects, relations,
+  patches, or other leftover projection state raises
   [`non-empty-graph-store-error`](../reference/errors/non-empty-graph-store-error.md)
-  before any event is applied. Load does not clear the store. Pass a
-  new `InMemoryGraphStore` or a FalkorDB graph name that has not been
-  replayed into. Reusing a store that already holds a projection, or
-  clearing it and hoping replay finishes, can publish facts the log
+  before any event is applied. Fork checks before it copies events, so
+  a refusal adds no run and no events. Neither call clears the store.
+  Pass a new `InMemoryGraphStore` or a FalkorDB graph name that has not
+  been replayed into. Reusing a store that already holds a projection,
+  or clearing it and hoping replay finishes, can publish facts the log
   does not contain or leave a partial projection if replay fails.
 - **`runtime.fork(at_event=...)`** — creates a new run sharing
   the parent's events up to the fork point. Replay reconstructs
   the shared prefix in the fork; new behavior fires after the
-  fork point execute fresh. See [`forking`](forking.md).
+  fork point execute fresh. The fork's `graph_store` must be empty,
+  same as load. See [`forking`](forking.md).
 - **`runtime.replay()`** (explicit) — re-applies the in-memory
   event log. Less common; used by tests and migration scripts
   that need to verify replay determinism without going through

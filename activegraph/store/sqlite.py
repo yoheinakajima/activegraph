@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from activegraph.core.event import Event
@@ -171,6 +172,26 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 "driver": "sqlite",
             },
         )
+
+
+def _open_readonly(path: str) -> sqlite3.Connection:
+    """Open an existing SQLite file without creating it or writing schema.
+
+    ``mode=ro`` refuses DDL and other writes. Callers must check that
+    ``path`` is a file first; a missing path raises from SQLite rather
+    than materializing a database.
+    """
+    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _table_names(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    return {str(row["name"]) for row in rows}
 
 
 def _row_to_event(row: sqlite3.Row) -> Event:
@@ -543,34 +564,40 @@ class SQLiteEventStore:
         """Return ``(has_canonical_row, event_count)`` without inserting a run.
 
         A missing database file yields ``(False, 0)`` and is not created.
-        ``event_count`` includes the hot log and the archive tier, so a
-        compacted run whose ``runs`` row was deleted still counts as
-        orphaned history rather than an unknown id. Opening an existing
-        file ensures the schema (``CREATE TABLE IF NOT EXISTS``) and does
-        not write a ``runs`` row.
+        An existing file is opened read-only (``mode=ro``). Schema setup
+        is not run: a file that is not an ActiveGraph database is left
+        unchanged, including its tables. ``event_count`` includes the hot
+        log and the archive tier when those tables exist, so a compacted
+        run whose ``runs`` row was deleted still counts as orphaned
+        history rather than an unknown id.
         """
         if not os.path.isfile(path):
             return (False, 0)
-        conn = sqlite3.connect(path, isolation_level=None)
-        conn.row_factory = sqlite3.Row
+        conn = _open_readonly(path)
         try:
-            _ensure_schema(conn)
-            present = (
-                conn.execute(
-                    "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
+            tables = _table_names(conn)
+            present = False
+            if "runs" in tables:
+                present = (
+                    conn.execute(
+                        "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
+                    ).fetchone()
+                    is not None
+                )
+            count = 0
+            if "events" in tables:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM events WHERE run_id = ?",
+                    (run_id,),
                 ).fetchone()
-                is not None
-            )
-            count_row = conn.execute(
-                """
-                SELECT
-                    (SELECT COUNT(*) FROM events WHERE run_id = ?) +
-                    (SELECT COUNT(*) FROM events_archive WHERE run_id = ?) AS n
-                """,
-                (run_id, run_id),
-            ).fetchone()
-            assert count_row is not None
-            return (present, int(count_row["n"]))
+                count += int(row["n"]) if row else 0
+            if "events_archive" in tables:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM events_archive WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                count += int(row["n"]) if row else 0
+            return (present, count)
         finally:
             conn.close()
 
@@ -589,12 +616,20 @@ class SQLiteEventStore:
     def most_recent_run_id(cls, path: str) -> Optional[str]:
         # sqlite3.connect creates a file. A missing path is an empty catalog,
         # not an invitation to materialize a database on a typo or a probe.
+        # An existing file is read-only: no schema DDL before we know the
+        # catalog is there.
         if not os.path.isfile(path):
             return None
-        conn = sqlite3.connect(path, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        _ensure_schema(conn)
+        conn = _open_readonly(path)
         try:
+            tables = _table_names(conn)
+            if "runs" not in tables:
+                return None
+            if "events" not in tables:
+                row = conn.execute(
+                    "SELECT run_id FROM runs ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                return row["run_id"] if row else None
             row = conn.execute(
                 """
                 SELECT runs.run_id

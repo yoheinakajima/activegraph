@@ -13,7 +13,8 @@ How to fix:
       loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)
 
   To see the runs that already exist:
-      activegraph inspect <store-url>
+      SQLiteEventStore.list_runs(path)
+      PostgresEventStore.list_runs(url)
 
   A typo in run_id is the usual cause. There is no load-or-create parameter.
 

@@ -211,7 +211,10 @@ def test_missing_database_file_is_not_created_for_explicit_run_id(tmp_path) -> N
     database = tmp_path / "does-not-exist.sqlite"
     with pytest.raises(RunNotFoundError) as excinfo:
         Runtime.load(str(database), run_id="run_missing")
-    assert excinfo.value.reason == "missing"
+    err = excinfo.value
+    assert err.reason == "missing_file"
+    assert "does not exist" in str(err)
+    assert "catalog has no row" not in str(err)
     assert not database.exists()
 
 
@@ -231,7 +234,10 @@ def test_load_without_run_id_does_not_create_a_missing_file(tmp_path) -> None:
     database = tmp_path / "missing.sqlite"
     with pytest.raises(RunNotFoundError) as excinfo:
         Runtime.load(str(database))
-    assert excinfo.value.reason == "empty_catalog"
+    err = excinfo.value
+    assert err.reason == "missing_file"
+    assert "does not exist" in str(err)
+    assert "catalog has no row" not in str(err)
     assert not database.exists()
 
 
@@ -286,6 +292,10 @@ def test_orphan_events_are_not_repaired_into_a_run(tmp_path) -> None:
     assert excinfo.value.reason == "orphan_events"
     assert excinfo.value.event_count == event_count
     assert "canonical" in str(excinfo.value)
+    assert "upsert_run" in str(excinfo.value)
+    assert f"SQLiteEventStore({database!r}, {run_id!r}).upsert_run(" in str(
+        excinfo.value
+    )
     assert SQLiteEventStore.catalog_status(database, run_id) == (False, event_count)
     assert _runs(database) == []
 
@@ -323,6 +333,8 @@ def test_issue_82_stale_object_is_refused_before_replay(tmp_path) -> None:
     assert err.objects == 1
     assert err.relations == 0
     assert err.patches == 0
+    assert err.operation == "load"
+    assert "Runtime.load" in str(err)
     assert "InMemoryGraphStore" in str(err)
     assert "clear()" in str(err)
     assert _projection(projection) == before
@@ -500,6 +512,147 @@ def test_postgres_explicit_empty_run_loads_and_orphan_events_fail_closed() -> No
         for runtime in (created, loaded):
             if runtime is not None and runtime.graph.store is not None:
                 runtime.graph.store.close()
+        with psycopg.connect(PG_URL, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM events WHERE run_id = %s", (run_id,))
+                cur.execute("DELETE FROM runs WHERE run_id = %s", (run_id,))
+
+
+# ---------- review: fork, store=, read-only catalog, compact ----------
+
+
+def _event_total(path: str) -> int:
+    conn = sqlite3.connect(path)
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
+        assert row is not None
+        return int(row[0])
+    finally:
+        conn.close()
+
+
+def test_store_kwarg_registers_the_catalog_row(tmp_path) -> None:
+    """Runtime(..., store=) writes the runs row before any goal or save."""
+    database = str(tmp_path / "runs.sqlite")
+    graph = Graph()
+    store = SQLiteEventStore(database, run_id=graph.run_id)
+    runtime = Runtime(graph, store=store)
+    assert SQLiteEventStore.catalog_status(database, runtime.run_id) == (True, 0)
+
+    graph.add_object("person", {"name": "Ada"})
+    present, event_count = SQLiteEventStore.catalog_status(database, runtime.run_id)
+    assert present is True
+    assert event_count > 0
+
+    loaded = Runtime.load(database, run_id=runtime.run_id)
+    assert loaded.run_id == runtime.run_id
+    assert [obj.type for obj in loaded.graph.all_objects()] == ["person"]
+
+
+def test_fork_into_nonempty_store_leaves_catalog_unchanged(tmp_path) -> None:
+    database, run_id, _person_id = _person_run(tmp_path)
+    parent = Runtime.load(database, run_id=run_id)
+    at_event = parent.graph.events[-1].id
+    projection = InMemoryGraphStore()
+    projection.put_object(_ghost_object())
+    before_runs = _runs(database)
+    before_events = _event_total(database)
+
+    with pytest.raises(NonEmptyGraphStoreError) as excinfo:
+        parent.fork(at_event=at_event, graph_store=projection)
+
+    err = excinfo.value
+    assert err.operation == "fork"
+    assert "Runtime.fork" in str(err)
+    assert _runs(database) == before_runs
+    assert _event_total(database) == before_events
+    assert [obj.id for obj in projection.all_objects()] == ["ghost#1"]
+    assert SQLiteEventStore.catalog_status(database, run_id)[0] is True
+
+
+def test_catalog_status_does_not_modify_an_unrelated_sqlite_file(tmp_path) -> None:
+    path = tmp_path / "unrelated.sqlite"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT)")
+    conn.execute("INSERT INTO notes(body) VALUES ('keep')")
+    conn.commit()
+    conn.close()
+    before = path.read_bytes()
+
+    assert SQLiteEventStore.catalog_status(str(path), "run_missing") == (False, 0)
+    assert SQLiteEventStore.most_recent_run_id(str(path)) is None
+    with pytest.raises(RunNotFoundError) as explicit:
+        Runtime.load(str(path), run_id="run_missing")
+    with pytest.raises(RunNotFoundError) as omitted:
+        Runtime.load(str(path))
+
+    assert explicit.value.reason == "missing"
+    assert omitted.value.reason == "empty_catalog"
+    assert path.read_bytes() == before
+    conn = sqlite3.connect(path)
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        body = conn.execute("SELECT body FROM notes").fetchone()
+    finally:
+        conn.close()
+    assert tables == {"notes"}
+    assert body == ("keep",)
+
+
+def test_compact_mistyped_run_id_fails_closed(tmp_path) -> None:
+    database, run_id, _person_id = _person_run(tmp_path)
+    before_runs = _runs(database)
+    before_events = SQLiteEventStore.catalog_status(database, run_id)
+    before_total = _event_total(database)
+
+    with pytest.raises(RunNotFoundError) as excinfo:
+        compact(database, "run_does_not_exist")
+
+    assert excinfo.value.reason == "missing"
+    assert excinfo.value.run_id == "run_does_not_exist"
+    assert _runs(database) == before_runs
+    assert SQLiteEventStore.catalog_status(database, run_id) == before_events
+    assert SQLiteEventStore.catalog_status(database, "run_does_not_exist") == (
+        False,
+        0,
+    )
+    assert _event_total(database) == before_total
+
+
+@pytest.mark.postgres
+@pytest.mark.skipif(
+    PG_URL is None,
+    reason="set ACTIVEGRAPH_TEST_POSTGRES_URL to run Postgres tests",
+)
+def test_postgres_store_kwarg_registers_the_catalog_row() -> None:
+    from activegraph.store.postgres import PostgresEventStore
+
+    assert PG_URL is not None
+    run_id = f"run_store_{uuid.uuid4().hex[:8]}"
+    graph = Graph(run_id=run_id)
+    store = PostgresEventStore(PG_URL, run_id=run_id)
+    runtime = Runtime(graph, store=store)
+    loaded: Runtime | None = None
+    try:
+        assert PostgresEventStore.catalog_status(PG_URL, runtime.run_id)[0] is True
+        graph.add_object("person", {"name": "Ada"})
+        present, event_count = PostgresEventStore.catalog_status(PG_URL, run_id)
+        assert present is True
+        assert event_count > 0
+        loaded = Runtime.load(PG_URL, run_id=run_id)
+        assert loaded.run_id == run_id
+        assert [obj.type for obj in loaded.graph.all_objects()] == ["person"]
+    finally:
+        for item in (runtime, loaded):
+            if item is not None and item.graph.store is not None:
+                item.graph.store.close()
+        import psycopg
+
         with psycopg.connect(PG_URL, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM events WHERE run_id = %s", (run_id,))

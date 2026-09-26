@@ -1,8 +1,10 @@
 # NonEmptyGraphStoreError
 
-`Runtime.load(..., graph_store=store)` was pointed at a GraphStore
-that already holds projection state. Load raises before applying any
-event and does not call `clear()`.
+`Runtime.load(..., graph_store=store)` or
+`Runtime.fork(..., graph_store=store)` was pointed at a GraphStore
+that already holds projection state. The call raises before applying
+any event and does not call `clear()`. A refused fork also writes no
+fork row and copies no events. `operation` is `"load"` or `"fork"`.
 
 Replay only upserts and removes entities the log names. Records
 already in the store would survive, so the rebuilt view could contain
@@ -52,7 +54,8 @@ not gained events.
 
 ## When does this fire
 
-Any `Runtime.load` whose `graph_store` is not empty, including:
+Any `Runtime.load` or `Runtime.fork` whose `graph_store` is not empty,
+including:
 
 - an in-memory store seeded by an earlier `Graph(graph_store=store)`
 - a FalkorDB graph that already holds another projection
@@ -60,9 +63,10 @@ Any `Runtime.load` whose `graph_store` is not empty, including:
 - a compacted run (snapshot plus suffix) replayed into a dirty store
 
 The check is the same for every built-in GraphStore. Third-party
-stores answer through `GraphStore.is_empty()`, which by default reads
-`all_objects`, `all_relations`, and `all_patches`. A backend with
-state those methods cannot see must override `is_empty` and return
+stores answer through `GraphStore.is_empty()`. Objects are probed
+with `query_objects(ObjectQuery(result_mode="exists"))`; relations
+and patches use `all_relations` and `all_patches`. A backend with
+state those reads cannot see must override `is_empty` and return
 `False` while that state would survive replay.
 
 `graph_store=None` is a fresh in-memory store and does not raise.

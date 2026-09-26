@@ -227,11 +227,29 @@ def test_non_empty_graph_store_snapshot() -> None:
         objects=1,
         relations=0,
         patches=0,
+        operation="load",
     )
     _assert_format_compliant(err)
     _check_snapshot("non_empty_graph_store", err)
     assert err.context["run_id"] == "run_123"
+    assert err.operation == "load"
     assert "InMemoryGraphStore()" in str(err)
+    assert "Runtime.load" in str(err)
+
+
+def test_non_empty_graph_store_fork_snapshot() -> None:
+    err = NonEmptyGraphStoreError(
+        run_id="run_123",
+        store_type="InMemoryGraphStore",
+        objects=1,
+        relations=0,
+        patches=0,
+        operation="fork",
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("non_empty_graph_store__fork", err)
+    assert err.operation == "fork"
+    assert "Runtime.fork" in str(err)
 
 
 def test_replay_divergence_inherits_from_replay_error() -> None:
@@ -528,6 +546,20 @@ def test_run_not_found_orphan_events_snapshot() -> None:
     _assert_format_compliant(err)
     _check_snapshot("run_not_found__orphan_events", err)
     assert err.event_count == 4
+
+
+def test_run_not_found_missing_file_snapshot() -> None:
+    err = RunNotFoundError(
+        path="/tmp/missing.sqlite",
+        run_id="run_missing",
+        reason="missing_file",
+        event_count=0,
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("run_not_found__missing_file", err)
+    assert err.reason == "missing_file"
+    assert "does not exist" in str(err)
+    assert "catalog has no row" not in str(err)
 
 
 def test_run_not_found_empty_catalog_snapshot() -> None:

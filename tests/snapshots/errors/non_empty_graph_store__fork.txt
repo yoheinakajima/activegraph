@@ -1,0 +1,17 @@
+NonEmptyGraphStoreError: refusing to replay run 'run_123' into a non-empty InMemoryGraphStore
+
+What failed:
+  Runtime.fork was asked to rebuild run 'run_123' into InMemoryGraphStore, which already holds projection state. InMemoryGraphStore already holds 1 object(s), 0 relation(s), and 0 patch(es). No event was applied and the store was not cleared.
+
+Why:
+  The GraphStore is a disposable projection of one event log. Replay can only upsert or remove entities the log mentions, so records already in the store would survive and the rebuilt view would contain facts that are not in the log. Clearing first is not safe either: if replay then fails, readers are left with an empty or partial projection.
+
+How to fix:
+  Pass an empty GraphStore. A new InMemoryGraphStore(), or a FalkorDBGraphStore whose graph_name has never been replayed into, is empty:
+      store = InMemoryGraphStore()
+      fork = runtime.fork(at_event=event_id, graph_store=store)
+
+  Do not reuse a store that already holds this or another run's projection. Runtime.fork will not clear the store. Calling clear() yourself and retrying is possible, but a crash mid-replay would leave a partial projection; prefer a fresh store. Building into an isolated store and swapping it in atomically is not part of this release.
+
+More:
+  https://docs.activegraph.ai/errors/non-empty-graph-store-error

@@ -4,7 +4,7 @@ What failed:
   Runtime.load('/tmp/runs.sqlite') was called without run_id, and the store's runs catalog is empty. No run row was inserted and no event was accepted.
 
 Why:
-  With no run_id, load selects the most recently appended-to run. An empty catalog has nothing to select. Runtime.load does not create a default run — a typo or a fresh file must not become a real-looking empty run.
+  With no run_id, load selects the most recently appended-to run. An empty catalog has nothing to select. Runtime.load does not create a default run — an empty catalog must not become a real-looking empty run.
 
 How to fix:
   Create a run explicitly, then load the id it returns:
