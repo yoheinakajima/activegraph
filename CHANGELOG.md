@@ -15,9 +15,13 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-## [1.12.0] — 2026-08-29
+## [1.12.0] — 2026-09-26
 
-Projection query-planning release (CONTRACT v1.12 #1–#4). Object reads now
+Projection query-planning release (CONTRACT v1.12 #1–#4), shipping together
+with the trust-boundary integrity work in the 1.11.0 section below
+(CONTRACT v1.11 #1–#5). That version was staged and never published
+separately; it ships as part of 1.12.0. Anyone upgrading from 1.10.0 gets
+both sets of changes. There is no 1.11.0 package on PyPI. Object reads now
 cross one backend-neutral plan boundary, allowing scalable GraphStores to
 optimize without acquiring their own query semantics.
 
@@ -54,12 +58,22 @@ optimize without acquiring their own query semantics.
 
 ### Migration notes
 
+- Upgrades from 1.10.0 also include the unpublished 1.11.0 section below.
+  Apply those migration notes too. They cover behavior that can break an
+  upgrade: one writer per run (`ConcurrentWriterError`), patch ops limited
+  to `update` or `replace` (`InvalidPatchOperation`), `attach_store` only
+  when the graph and store name the same run at the same event count, and
+  detached events (mutating a returned or submitted payload no longer
+  rewrites history). Pack identifiers are owned by name.
 - Existing GraphStore implementations need no change because
   `query_objects` has a working base implementation.
 - To add or change FalkorDB `indexed_fields`, rebuild the projection from the
   EventStore. No event-log or store-schema migration is required.
 
-## [1.11.0] — 2026-08-29
+## [1.11.0] — staged unreleased; ships with 1.12.0
+
+Not published separately; ships as part of 1.12.0 (see above). Anyone
+upgrading from 1.10.0 to 1.12.0 gets this section with that release.
 
 Trust-boundary release (CONTRACT v1.11 #1–#5). This release treats accepted
 events, durable run ownership, and framework taxonomies as integrity contracts

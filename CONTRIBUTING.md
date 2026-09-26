@@ -17,8 +17,8 @@ contributor surface.
 Active Graph uses an **issues-first** policy:
 
 - **Issues are open.** Bug reports, feature requests, questions,
-  and documentation feedback are all welcome. Use one of the three
-  templates under [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/).
+  and documentation feedback are all welcome. Use the matching
+  template under [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/).
 - **Code pull requests are maintainer-only by default.** The
   abstractions are still settling (twelve milestones of audit
   discipline against a stable surface; the surface is now the

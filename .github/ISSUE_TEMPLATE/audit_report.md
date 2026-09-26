@@ -54,4 +54,3 @@ the order in which a fork happened to change files.
 Optional branch/commit references. The inventory remains the review input;
 implementation is evaluated only after triage selects ownership and scope.
 -->
-

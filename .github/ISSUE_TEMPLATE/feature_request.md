@@ -8,8 +8,10 @@ assignees: []
 
 <!--
 Before filing: check the doc site at https://docs.activegraph.ai,
-TRIAGE.md, activegraph-vision, and CONTRIBUTING.md. The request may
-already be tracked or may belong to a pack, product, or host repository.
+TRIAGE.md, and CONTRIBUTING.md. The request may already be tracked or
+may belong to a pack, product, or host repository. Maintainers check
+proposals against internal design notes; contributors do not need
+access to those notes.
 
 The framework is in its early public phase. Code PRs are
 maintainer-only with an issue-first discussion gate; this issue is

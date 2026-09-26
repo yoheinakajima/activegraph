@@ -1,8 +1,10 @@
 ## Governing issue and decision
 
 <!--
-Link the issue carrying `status: ready-for-pr`. Name the CONTRACT amendment,
-activegraph-vision ADR, or explicit maintainer decision that owns the shape.
+Link the issue carrying `status: ready-for-pr`. Name the CONTRACT amendment
+or explicit maintainer decision that owns the shape. Maintainers check
+proposals against internal design notes; contributors do not need access
+to those notes.
 Documentation-only and mechanically trivial fixes may write "trivial-fix
 carve-out" instead.
 -->
@@ -41,4 +43,3 @@ changes include live/replay and failure-path evidence.
 ## Contributor credit
 
 <!-- Name reporters, designers, and prior implementations whose evidence shaped this PR. -->
-

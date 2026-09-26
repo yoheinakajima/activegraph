@@ -4,10 +4,10 @@ ActiveGraph handles issues as evidence about a small set of project
 invariants—not as an unordered implementation queue. This policy makes the
 route from report to decision visible and repeatable.
 
-The cross-repository architecture record lives in
-[`activegraph-vision`](https://github.com/yoheinakajima/activegraph-vision).
-Runtime contract amendments land in [`CONTRACT.md`](CONTRACT.md). An issue can
-motivate either, but it does not supersede them.
+Maintainers check proposals against internal design notes. Contributors do
+not need access to those notes. Runtime contract amendments land in
+[`CONTRACT.md`](CONTRACT.md). An issue can motivate a contract amendment,
+but it does not supersede the contract.
 
 ## The triage unit
 
@@ -87,4 +87,3 @@ A milestone closes only when:
 - public behavior changes have contract, changelog, and documentation updates;
 - contributor credit is preserved in the PR and release notes; and
 - deferred work names a decision boundary and trigger, not a vague “later.”
-
