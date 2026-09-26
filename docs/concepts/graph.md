@@ -19,7 +19,10 @@ mutation — `add_object`, `patch_object`, `add_relation`, every
 behavior fire — emits an event. The event lands in the store, and
 the graph in memory is updated. `Runtime.load(url, run_id=...)`
 reconstructs the graph by replaying the events; nothing else is
-persisted.
+persisted. Load refuses a `graph_store` that already holds
+projection state instead of merging the log into leftover records.
+The rebuilt view is exactly the log, or the call fails before
+replay.
 
 This is the framework's most foundational invariant. Other concepts
 pages link here for it:

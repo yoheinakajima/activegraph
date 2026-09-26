@@ -580,6 +580,31 @@ class PostgresEventStore:
     # ---------- url-level helpers ----------
 
     @classmethod
+    def catalog_status(cls, target: Any, run_id: str) -> tuple[bool, int]:
+        """Return ``(has_canonical_row, event_count)`` without inserting a run.
+
+        Ensures the schema the same way :meth:`list_runs` does, then reads.
+        Does not write a ``runs`` row.
+        """
+        source = _ConnectionSource(target)
+        try:
+            _ensure_schema(source)
+            with source.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM runs WHERE run_id = %s",
+                    (run_id,),
+                )
+                present = cur.fetchone() is not None
+                cur.execute(
+                    "SELECT COUNT(*) FROM events WHERE run_id = %s",
+                    (run_id,),
+                )
+                count = int(cur.fetchone()[0])
+            return (present, count)
+        finally:
+            source.close()
+
+    @classmethod
     def list_runs(cls, target: Any) -> list[RunRecord]:
         source = _ConnectionSource(target)
         try:

@@ -23,6 +23,7 @@ from activegraph.store.errors import (
     CorruptedEventPayloadError,
     DuplicateEventError,
     EventNotFoundError,
+    RunNotFoundError,
     SchemaVersionMismatch,
 )
 from activegraph.store.falkordb import FalkorDBGraphStore
@@ -45,6 +46,7 @@ __all__ = [
     "NonSerializableEventError",
     "ObjectQuery",
     "ObjectQueryResult",
+    "RunNotFoundError",
     "RunRecord",
     "SQLiteEventStore",
     "SchemaVersionMismatch",

@@ -16,8 +16,25 @@ strict-mode validation, and the audit-trail contract.
 Three operations trigger replay:
 
 - **`Runtime.load(url, run_id=...)`** — loads a persisted run.
-  Replay reads every event from the store and rebuilds the
-  in-memory graph state.
+  Replay reads every event from the store and rebuilds the graph.
+  Load does not create a run. An explicit `run_id` with no canonical
+  `runs` row raises
+  [`run-not-found-error`](../reference/errors/run-not-found-error.md)
+  and leaves the catalog unchanged, including when orphan events exist
+  for that id. Omitting `run_id` still selects the most recently
+  appended-to run when one exists. An empty catalog raises the same
+  error and inserts nothing; a missing SQLite file is left uncreated.
+  Create a run with `Runtime(..., persist_to=)` or `store=`
+  first. There is no load-or-create mode.
+- **`graph_store=`** — where the projection is materialized. The store
+  must already be empty (`GraphStore.is_empty()`). A store that holds
+  objects, relations, patches, or other leftover projection state raises
+  [`non-empty-graph-store-error`](../reference/errors/non-empty-graph-store-error.md)
+  before any event is applied. Load does not clear the store. Pass a
+  new `InMemoryGraphStore` or a FalkorDB graph name that has not been
+  replayed into. Reusing a store that already holds a projection, or
+  clearing it and hoping replay finishes, can publish facts the log
+  does not contain or leave a partial projection if replay fails.
 - **`runtime.fork(at_event=...)`** — creates a new run sharing
   the parent's events up to the fork point. Replay reconstructs
   the shared prefix in the fork; new behavior fires after the

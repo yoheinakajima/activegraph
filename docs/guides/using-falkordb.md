@@ -198,8 +198,19 @@ rt = Runtime.load("runs.db", run_id="run-42", graph_store=store)
 # The log has been replayed into FalkorDB; query it with Cypher.
 ```
 
+`graph_name="run-42"` must be empty of projection entities. A newly
+opened graph is empty (indexes created at startup do not count). If that
+graph already holds objects, relations, patches, or leftover placeholder
+nodes, `Runtime.load` raises `NonEmptyGraphStoreError` before applying
+any event. It does not clear the graph. Use a fresh `graph_name`, or
+pass a new store, when you rebuild. Calling `clear()` yourself and then
+loading is possible, but a crash during replay would leave readers with
+a partial projection; prefer a graph name nothing else is reading.
+
 The event log in `runs.db` stays the source of truth; `graph_store` only
-chooses where the replayed projection is materialized.
+chooses where the replayed projection is materialized. Load also refuses
+a `run_id` that is not already in the runs catalog; it does not create
+one. See [`replay`](../concepts/replay.md).
 
 `Runtime.fork(..., graph_store=...)` accepts the same parameter, so a fork's
 current-state projection can be built in its own FalkorDB graph too.

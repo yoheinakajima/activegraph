@@ -43,6 +43,7 @@ from activegraph import (
     MissingOptionalDependency,
     MissingProviderError,
     MissingToolError,
+    NonEmptyGraphStoreError,
     NonSerializableEventError,
     PackConflictError,
     PackError,
@@ -53,6 +54,7 @@ from activegraph import (
     RegistrationError,
     ReplayDivergenceError,
     ReplayError,
+    RunNotFoundError,
     RuntimeContextRequiredError,
     SchemaVersionMismatch,
     StorageError,
@@ -211,6 +213,25 @@ def test_doc_slug_is_unique_per_category() -> None:
 
 
 # ---------- reference category: ReplayError ------------------------------
+
+
+def test_non_empty_graph_store_inherits_from_replay_error() -> None:
+    assert issubclass(NonEmptyGraphStoreError, ReplayError)
+    assert issubclass(NonEmptyGraphStoreError, ActiveGraphError)
+
+
+def test_non_empty_graph_store_snapshot() -> None:
+    err = NonEmptyGraphStoreError(
+        run_id="run_123",
+        store_type="InMemoryGraphStore",
+        objects=1,
+        relations=0,
+        patches=0,
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("non_empty_graph_store", err)
+    assert err.context["run_id"] == "run_123"
+    assert "InMemoryGraphStore()" in str(err)
 
 
 def test_replay_divergence_inherits_from_replay_error() -> None:
@@ -462,6 +483,7 @@ def test_storage_leaves_inherit_from_storage_error() -> None:
         EventNotFoundError,
         DuplicateEventError,
         ConcurrentWriterError,
+        RunNotFoundError,
     ):
         assert issubclass(cls, StorageError), cls
         assert issubclass(cls, ActiveGraphError), cls
@@ -477,8 +499,46 @@ def test_storage_leaves_preserve_legacy_base_classes() -> None:
     # EventNotFoundError multi-inherits KeyError so `except KeyError`
     # around store lookups keeps working.
     assert issubclass(EventNotFoundError, KeyError)
+    # RunNotFoundError multi-inherits FileNotFoundError so the CLI's
+    # existing not-found handler and `except FileNotFoundError` stay valid.
+    assert issubclass(RunNotFoundError, FileNotFoundError)
     # DuplicateEventError multi-inherits ValueError for the same reason.
     assert issubclass(DuplicateEventError, ValueError)
+
+
+def test_run_not_found_missing_snapshot() -> None:
+    err = RunNotFoundError(
+        path="/tmp/runs.sqlite",
+        run_id="run_missing",
+        reason="missing",
+        event_count=0,
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("run_not_found__missing", err)
+    assert err.context["reason"] == "missing"
+
+
+def test_run_not_found_orphan_events_snapshot() -> None:
+    err = RunNotFoundError(
+        path="/tmp/runs.sqlite",
+        run_id="run_orphan",
+        reason="orphan_events",
+        event_count=4,
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("run_not_found__orphan_events", err)
+    assert err.event_count == 4
+
+
+def test_run_not_found_empty_catalog_snapshot() -> None:
+    err = RunNotFoundError(
+        path="/tmp/runs.sqlite",
+        run_id=None,
+        reason="empty_catalog",
+    )
+    _assert_format_compliant(err)
+    _check_snapshot("run_not_found__empty_catalog", err)
+    assert "no runs found in /tmp/runs.sqlite" in str(err)
 
 
 def test_invalid_store_url_bare_path_snapshot() -> None:

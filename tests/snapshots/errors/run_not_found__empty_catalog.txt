@@ -1,0 +1,18 @@
+RunNotFoundError: no runs found in /tmp/runs.sqlite
+
+What failed:
+  Runtime.load('/tmp/runs.sqlite') was called without run_id, and the store's runs catalog is empty. No run row was inserted and no event was accepted.
+
+Why:
+  With no run_id, load selects the most recently appended-to run. An empty catalog has nothing to select. Runtime.load does not create a default run — a typo or a fresh file must not become a real-looking empty run.
+
+How to fix:
+  Create a run explicitly, then load the id it returns:
+      graph = Graph()
+      rt = Runtime(graph, persist_to='path/to/run.db')
+      loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)
+
+  Passing a brand-new run_id to Runtime.load also fails. There is no load-or-create parameter.
+
+More:
+  https://docs.activegraph.ai/errors/run-not-found-error

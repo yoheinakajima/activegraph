@@ -13,7 +13,70 @@ The doc site mirrors this file at
 [Changelog](https://docs.activegraph.ai/about/changelog/) via the
 mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
-## [Unreleased]
+## [1.12.1] — Unreleased
+
+Integrity fix for `Runtime.load` ([#81](https://github.com/yoheinakajima/activegraph/issues/81),
+[#82](https://github.com/yoheinakajima/activegraph/issues/82)). **Behavior
+change:** load no longer creates a run, and it no longer replays into a
+GraphStore that already holds projection state.
+
+The package version in `pyproject.toml` and `activegraph.__version__` stays
+`1.12.0` until the release publish step. This project bumps those constants
+in the version-bump PR that is tagged, not in the fix PR.
+
+### Fixed
+
+- `Runtime.load(path, run_id=...)` raises `RunNotFoundError` when that id
+  has no canonical `runs` row. The catalog is not updated and no event is
+  accepted. This includes a missing database file (the file is not created)
+  and a log that still has events for the id but no catalog row (orphan
+  events are not repaired by load).
+- `Runtime.load(..., graph_store=store)` raises `NonEmptyGraphStoreError`
+  before applying any event when `store` already holds objects, relations,
+  patches, or — for FalkorDB — leftover placeholder nodes. The store is
+  not cleared.
+
+### Changed
+
+- `GraphStore.is_empty()` reports whether a projection holds entities.
+  The base implementation uses `all_objects` / `all_relations` /
+  `all_patches`, so a third-party store is covered without an override.
+  That default allows replay only when those enumerations are empty and
+  refuses otherwise. A backend with projection state the enumerations
+  cannot see must override `is_empty` and return `False` while that state
+  would survive replay. In-memory and FalkorDB override with a direct
+  existence check; FalkorDB also treats leftover `AGNode` placeholders as
+  non-empty. Indexes alone do not.
+- Omitting `run_id` still loads the most recently appended-to run when
+  the catalog has one. If the catalog has no runs, load raises
+  `RunNotFoundError` (`reason="empty_catalog"`) and does not insert one.
+  A missing SQLite file is not created on that path either
+  (`SQLiteEventStore.most_recent_run_id` no longer opens a new file).
+  `RunNotFoundError` subclasses `FileNotFoundError`, so existing
+  `except FileNotFoundError` handlers — including the CLI's not-found
+  exit — still catch it.
+
+### Migration notes
+
+- Code that used `Runtime.load(path, run_id="some-new-id")` to create an
+  empty run now fails. Create the run explicitly, then load that id:
+
+  ```python
+  rt = Runtime(Graph(), persist_to="path/to/run.db")
+  loaded = Runtime.load("path/to/run.db", run_id=rt.run_id)
+  ```
+
+  There is no load-or-create flag.
+- Pass an empty GraphStore. A new `InMemoryGraphStore()`, or a
+  `FalkorDBGraphStore` with a `graph_name` that has not been replayed
+  into, is empty. Do not reuse a store that already holds a projection.
+  Load will not call `clear()`. Clearing yourself and retrying can leave
+  readers with a partial projection if replay then fails; prefer a fresh
+  store. Rebuilding into an isolated store and swapping it in atomically
+  is a follow-up, not part of this release.
+- `Runtime.fork(..., graph_store=)` is unchanged and can still replay
+  into a non-empty store. Treat that as the same family of bug until a
+  follow-up extends the emptiness check.
 
 ## [1.12.0] — 2026-09-26
 

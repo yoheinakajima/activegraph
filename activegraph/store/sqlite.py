@@ -43,6 +43,7 @@ are file-level helpers.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from typing import Any, Iterator, Optional
 
@@ -440,11 +441,14 @@ class SQLiteEventStore:
         frame_id: Optional[str] = None,
     ) -> None:
         """Insert or update this run's row. ``None`` never clears a
-        stored value (v1.3 fix): ``Runtime.load`` upserts with only
-        ``created_at``, and before the COALESCEs below that erased a
-        fork's ``parent_run_id`` / ``forked_at_event_id`` / ``label``
-        on every reload — silently destroying the lineage records
-        ``promote()`` verifies against.
+        stored value (v1.3 fix).
+
+        Before the COALESCEs below, ``Runtime.load`` upserted with only
+        ``created_at`` and erased a fork's ``parent_run_id`` /
+        ``forked_at_event_id`` / ``label`` on every reload. Load no
+        longer writes the catalog — resume requires a row that already
+        exists — but construction and ``save_state`` still pass partial
+        fields, and those must not wipe lineage ``promote()`` verifies.
         """
         self._conn.execute(
             """
@@ -535,6 +539,42 @@ class SQLiteEventStore:
     # ---------- file-level helpers ----------
 
     @classmethod
+    def catalog_status(cls, path: str, run_id: str) -> tuple[bool, int]:
+        """Return ``(has_canonical_row, event_count)`` without inserting a run.
+
+        A missing database file yields ``(False, 0)`` and is not created.
+        ``event_count`` includes the hot log and the archive tier, so a
+        compacted run whose ``runs`` row was deleted still counts as
+        orphaned history rather than an unknown id. Opening an existing
+        file ensures the schema (``CREATE TABLE IF NOT EXISTS``) and does
+        not write a ``runs`` row.
+        """
+        if not os.path.isfile(path):
+            return (False, 0)
+        conn = sqlite3.connect(path, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        try:
+            _ensure_schema(conn)
+            present = (
+                conn.execute(
+                    "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
+                ).fetchone()
+                is not None
+            )
+            count_row = conn.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM events WHERE run_id = ?) +
+                    (SELECT COUNT(*) FROM events_archive WHERE run_id = ?) AS n
+                """,
+                (run_id, run_id),
+            ).fetchone()
+            assert count_row is not None
+            return (present, int(count_row["n"]))
+        finally:
+            conn.close()
+
+    @classmethod
     def list_runs(cls, path: str) -> list[RunRecord]:
         conn = sqlite3.connect(path, isolation_level=None)
         conn.row_factory = sqlite3.Row
@@ -547,6 +587,10 @@ class SQLiteEventStore:
 
     @classmethod
     def most_recent_run_id(cls, path: str) -> Optional[str]:
+        # sqlite3.connect creates a file. A missing path is an empty catalog,
+        # not an invitation to materialize a database on a typo or a probe.
+        if not os.path.isfile(path):
+            return None
         conn = sqlite3.connect(path, isolation_level=None)
         conn.row_factory = sqlite3.Row
         _ensure_schema(conn)

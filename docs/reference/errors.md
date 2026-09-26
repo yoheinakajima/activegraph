@@ -24,6 +24,7 @@ The seven category bases match the
 ### ReplayError
 
 - [ReplayDivergenceError](errors/replay-divergence-error.md)
+- [NonEmptyGraphStoreError](errors/non-empty-graph-store-error.md)
 
 ### PatternError
 
@@ -36,6 +37,7 @@ The seven category bases match the
 - [ConcurrentWriterError](errors/concurrent-writer-error.md)
 - [DuplicateEventError](errors/duplicate-event-error.md)
 - [EventNotFoundError](errors/event-not-found-error.md)
+- [RunNotFoundError](errors/run-not-found-error.md)
 - [InvalidStoreURL](errors/invalid-store-url-error.md)
 - [NonSerializableEventError](errors/non-serializable-event-error.md)
 - [SchemaVersionMismatch](errors/schema-version-mismatch.md)

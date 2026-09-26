@@ -261,11 +261,13 @@ nav:
       - Errors:
           - Catalog overview: reference/errors.md
           - ReplayDivergenceError: reference/errors/replay-divergence-error.md
+          - NonEmptyGraphStoreError: reference/errors/non-empty-graph-store-error.md
           - UnsupportedPatternError: reference/errors/unsupported-pattern-error.md
           - CorruptedEventPayloadError: reference/errors/corrupted-event-payload-error.md
           - ConcurrentWriterError: reference/errors/concurrent-writer-error.md
           - DuplicateEventError: reference/errors/duplicate-event-error.md
           - EventNotFoundError: reference/errors/event-not-found-error.md
+          - RunNotFoundError: reference/errors/run-not-found-error.md
           - InvalidStoreURL: reference/errors/invalid-store-url-error.md
           - NonSerializableEventError: reference/errors/non-serializable-event-error.md
           - SchemaVersionMismatch: reference/errors/schema-version-mismatch.md

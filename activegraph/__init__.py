@@ -55,7 +55,7 @@ from activegraph.runtime.config_errors import (
     InvalidArgumentType,
     InvalidRuntimeConfiguration,
 )
-from activegraph.runtime.errors import ReplayDivergenceError
+from activegraph.runtime.errors import NonEmptyGraphStoreError, ReplayDivergenceError
 from activegraph.runtime.exec_errors import (
     ApprovalNotFoundError,
     InternalEvaluatorError,
@@ -92,6 +92,7 @@ from activegraph.store import (
     InMemoryGraphStore,
     InvalidStoreURL,
     NonSerializableEventError,
+    RunNotFoundError,
     RunRecord,
     SQLiteEventStore,
     SchemaVersionMismatch,
@@ -202,6 +203,7 @@ __all__ = [
     "MissingProviderError",
     "MissingToolError",
     "NoOpMetrics",
+    "NonEmptyGraphStoreError",
     "NonSerializableEventError",
     "Object",
     "ObjectQuery",
@@ -239,6 +241,7 @@ __all__ = [
     "ReplayDivergenceError",
     "ReplayError",
     "ReservedFieldError",
+    "RunNotFoundError",
     "RunRecord",
     "Runtime",
     "RunQuantumResult",

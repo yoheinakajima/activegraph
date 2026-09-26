@@ -1,0 +1,21 @@
+RunNotFoundError: run 'run_missing' does not exist in /tmp/runs.sqlite
+
+What failed:
+  Runtime.load was asked to open run 'run_missing' in /tmp/runs.sqlite. The runs catalog has no row for that id and the event log has no events for it. No run was registered and no event was accepted.
+
+Why:
+  Load resumes an existing run. Creating a run for an unknown id would register an empty run that later looks legitimate in list_runs() — usually the result of a typo.
+
+How to fix:
+  Create a run explicitly, then load the id it returns:
+      graph = Graph()
+      rt = Runtime(graph, persist_to='path/to/run.db')
+      loaded = Runtime.load('path/to/run.db', run_id=rt.run_id)
+
+  To see the runs that already exist:
+      activegraph inspect <store-url>
+
+  A typo in run_id is the usual cause. There is no load-or-create parameter.
+
+More:
+  https://docs.activegraph.ai/errors/run-not-found-error
