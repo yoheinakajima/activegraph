@@ -15,7 +15,7 @@ mkdocs snippet plugin — edit `CHANGELOG.md` at the repo root.
 
 ## [Unreleased]
 
-## [1.13.0] — Unreleased
+## [1.13.0] — 2026-10-27
 
 Load and fork now fail closed on run identity and on a non-empty
 projection ([#81](https://github.com/yoheinakajima/activegraph/issues/81),
