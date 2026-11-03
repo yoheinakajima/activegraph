@@ -130,8 +130,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 7008,
-      "sha256": "c2ce9e9f15b09f210398281a1fe865e7160cacf8611396e33c9277a8aec6344d"
+      "bytes": 7624,
+      "sha256": "4d8f9e79f3299f3c1d8d944ab8290672159c29fc3654d89737bdbc8b6d0d6674"
     },
     {
       "path": "archive/arxiv-v1/00README.json",
@@ -190,13 +190,18 @@
     },
     {
       "path": "corrections.md",
-      "bytes": 4732,
-      "sha256": "d1d7f8c5bff0f5da5de645526b961a8b627691f3da5c9e2485a9823ff49a3d4f"
+      "bytes": 5394,
+      "sha256": "3fe955df4f8bfdf4c4ac1e8dcfb56a9385322d90081cf22b99a14b82ec1d9781"
     },
     {
       "path": "cover-letter.md",
       "bytes": 3106,
       "sha256": "8386e0fecc2903739432efdafaa4fc0d1d199a4ab29f3d465b7e9273a32e9007"
+    },
+    {
+      "path": "evidence/ci-diagnosis.json",
+      "bytes": 3814,
+      "sha256": "1388b20da858a59f65fe934b12b11abf60a940f8291de651d103d0a161dbcf34"
     },
     {
       "path": "evidence/fixture-events-normalized.jsonl",
@@ -265,8 +270,8 @@
     },
     {
       "path": "readiness.md",
-      "bytes": 9588,
-      "sha256": "dc98013e39556f69590b6b04ca89e5a627da9cc60eb380c7ef5e5060d414df65"
+      "bytes": 10938,
+      "sha256": "daf472580cd4353fb23b804821d5bb83f1652d83f05de6a261529d6bf5ae2558"
     },
     {
       "path": "references.md",
