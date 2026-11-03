@@ -3,6 +3,10 @@
   "observed_date": "2026-11-02",
   "timezone": "America/Los_Angeles",
   "runtime_baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "evidence_archive_commit": "ba41ac771e6d58b4856acaa8dc8f5d9f624e287a",
+  "post_review_effect_probe_receipt": "evidence/strict-effects/strict-effects.json",
+  "retained_output_audit": "evidence/review-clarifications.json",
+  "review_dispositions": "review-dispositions.md",
   "source_branch": "codex/ieee-software-prep-20261102",
   "manuscript": "article.tex",
   "pdf": "article.pdf",
@@ -24,12 +28,12 @@
   "earlier_retained_verification_receipt": "evidence/verification.json",
   "actual_submission_history": "unknown; no journal submission by preparation worker",
   "format": {
-    "abstract_words": 141,
-    "all_visible_words_including_references_header_visuals": 2539,
+    "abstract_words": 128,
+    "all_visible_words_including_references_header_visuals": 2802,
     "figures": 1,
     "tables": 1,
     "author_photos": 1,
-    "conservative_total_with_250_per_visual": 3289,
+    "conservative_total_with_250_per_visual": 3552,
     "references": 7,
     "actionable_insights": 3,
     "method": "Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table and author photo; intentionally overcounts exclusions"
@@ -142,8 +146,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 8287,
-      "sha256": "e4ca9136121ab73e9bfedc0b3abb69e0fb930fcb1822422c6284fc2a5dd8fe6f"
+      "bytes": 10058,
+      "sha256": "3ba1636c21a9ed54969447fbbfa93c2762216fd225aadb4c56a5472ca05667e3"
     },
     {
       "path": "archive/arxiv-v1/00README.json",
@@ -182,13 +186,13 @@
     },
     {
       "path": "article.pdf",
-      "bytes": 1852219,
-      "sha256": "e1fd4183ea589bb03b27734e440537fb3119f11ba867d7123ec5c88343e7c502"
+      "bytes": 1855025,
+      "sha256": "2abc1ad7918794f4cb8d1bd959d563085ef1092b94ebad774753a0b6c4519eba"
     },
     {
       "path": "article.tex",
-      "bytes": 22274,
-      "sha256": "74c7200e1f37b66a2c4cae6cdf0ce7209a417b7c3818eb129d300a0ec37a8ef1"
+      "bytes": 24340,
+      "sha256": "3043086aea3dd3f33236d810bf5d14369bfd86af746d147a4ef7bce830972a38"
     },
     {
       "path": "author-photo.jpg",
@@ -202,18 +206,18 @@
     },
     {
       "path": "claim-audit.md",
-      "bytes": 5189,
-      "sha256": "1fc7b752fe95374111942918e3129dc4ac0b0db972d288cba53e959b6e879d2b"
+      "bytes": 6246,
+      "sha256": "c994d831f2274f1525022cd426b42ff160db869598ec17e6f8347adff6f6658c"
     },
     {
       "path": "corrections.md",
-      "bytes": 7486,
-      "sha256": "30a94b6b0f044b71ee7d6d933fc07d6d2257592a795db0fb42b44452815e55c1"
+      "bytes": 9325,
+      "sha256": "81b4c82596a0f04678ea667c241af529da546eb053e69b16a9c64887a4ae43b4"
     },
     {
       "path": "cover-letter.md",
-      "bytes": 4090,
-      "sha256": "4571b5628e78d5067cbcc529c1cd7777e873947bd83c0ee7bc889b0121bbdee2"
+      "bytes": 4270,
+      "sha256": "c4576ac98df045effe99f2f46acb232df98268071775a2c0cbe850c999fcd0ea"
     },
     {
       "path": "evidence/ci-diagnosis.json",
@@ -292,18 +296,23 @@
     },
     {
       "path": "publisher-checklist.md",
-      "bytes": 4404,
-      "sha256": "b7fa51e0922827b0efdaaa5d96fcf43237ccececaaf1355510efd08704795a65"
+      "bytes": 4996,
+      "sha256": "4215d10617ea37ee6c19bab2d42b410a5c382d9d3c5732378795d96d00fa1dd2"
     },
     {
       "path": "readiness.md",
-      "bytes": 12269,
-      "sha256": "68a5d4680231964157bd305a4d6c0ad06f30b395c84e1c357d8d15715cd15dca"
+      "bytes": 14827,
+      "sha256": "23e506ea389b409e8415eb9224d65e3ff66bde9064ee8204130cd912a8d8ed03"
     },
     {
       "path": "references.md",
-      "bytes": 3447,
-      "sha256": "ecf0c50520359eb4c978e341074134bb2978e312986f7ea65e3b8864562e2eb2"
+      "bytes": 4666,
+      "sha256": "867763ba6c590e49fe091e8f4ed4b3df4579164c75e0cc627789c64e20c4d281"
+    },
+    {
+      "path": "review-dispositions.md",
+      "bytes": 8391,
+      "sha256": "e0b65db901c79ccfe2f1b9cac993977e15c4af76d5dfb577b1b3f2633a6ae215"
     },
     {
       "path": "rights-and-availability.md",
@@ -312,18 +321,18 @@
     },
     {
       "path": "supplement.pdf",
-      "bytes": 44679,
-      "sha256": "629f762c88411898c2bfe1d9fd69bc60197bb39889c032dee591a6161defa31c"
+      "bytes": 49092,
+      "sha256": "d402d16fa251d9519724bb2ecc2564a073f3f57d6320fdd040f39ca1ad903d9a"
     },
     {
       "path": "supplement.tex",
-      "bytes": 10389,
-      "sha256": "ae11816862ac68186699fa654b9a7c7255595286637fd179210990c6e6ca7a0e"
+      "bytes": 13990,
+      "sha256": "4084aa0d5ce8faecd8bf9940b50e50c50e632f6eba6807d88398afbacf6b1128"
     },
     {
       "path": "tool-use-audit.md",
-      "bytes": 5103,
-      "sha256": "ae6016ce5b56562bcb853331c2e48c84a534217e65a71dbd5e628a85939dff7e"
+      "bytes": 6635,
+      "sha256": "41bb8e53e8efa7c214160888a024aee5bdd27cd8868090ef2d775e03391740cb"
     },
     {
       "path": "verification/audit_retained.py",
@@ -332,8 +341,8 @@
     },
     {
       "path": "verification/check_package.py",
-      "bytes": 8174,
-      "sha256": "6f7e314f1e44b77121175e84d979de1816ef6841aa4af0f2393f7a8532d3aeee"
+      "bytes": 9206,
+      "sha256": "af4aaa69137c35e96f4bd16cf1f6a77e53b5afa4da1aa8523b77bdcbd2a88412"
     },
     {
       "path": "verification/check_strict_effects.py",

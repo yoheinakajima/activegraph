@@ -6,12 +6,15 @@ Source-owned draft prepared November 2, 2026 for **The Log Is the Agent: Enginee
 
 ## Review files
 
-- `article.tex` / `article.pdf`: practitioner draft, seven references, short abstract and three actionable insights. The editable figure is embedded in the LaTeX source; table compares Temporal first, then LangGraph and ActiveGraph.
+- `article.tex` / `article.pdf`: practitioner draft, seven references, 128-word abstract and three actionable insights. The editable figure is embedded in the LaTeX source; table compares Temporal first, then LangGraph and ActiveGraph.
 - `supplement.tex` / `supplement.pdf`: exact offline method, results, negative finding, reproduction and limitations.
 - `evidence/identity-checked/verification.json`: observed fixture counts, raw/normalized hashes, complete differing-field inventory, projection/reload/fork checks and strict-verifier boundary.
 - `evidence/fixture-events.jsonl`, `fixture-events-second.jsonl`, `fixture-events-normalized.jsonl`, `fixture-projection.json`: retained exact synthetic outputs, not external research or personal data.
 - `verification/verify.py`: bounded credential-free in-process execution with network guard; writes only to a supplied output directory.
 - `verification/check_package.py`: static format/hash/inventory check, no runtime campaign.
+- `review-dispositions.md`: source-verified dispositions for all Claude C-LOG-1–10 and Gemini G-LOG-1–5 findings, including retractions and deferred expansions.
+- `verification/check_strict_effects.py` / `evidence/strict-effects/strict-effects.json`: bounded effect-free mock confirms tool/ordinary behavior reexecution during strict load despite model cache; no real external effects.
+- `verification/audit_retained.py` / `evidence/review-clarifications.json`: derives pair47/48,budget units and concrete synthetic trace from sealed saved outputs,tests optimized-Python refusal without runtime import.
 - `claim-audit.md`, `references.md`, `corrections.md`: claim-to-source mapping, primary-source bibliography audit and correction chronology.
 - `author-worksheet.md`, `rights-and-availability.md`, `publisher-checklist.md`: approved-public-fact worksheets and exact later submission gates. Never commit private filled answers; `.private/` is ignored local storage if needed.
 - `cover-letter.md`: an **unsent** concrete letter requiring final author approval and route preflight.
@@ -25,7 +28,7 @@ Source-owned draft prepared November 2, 2026 for **The Log Is the Agent: Enginee
 
 The fixed synthetic fixture produces 671 events, 93 objects, 76 relations, 103 fixture-served model requests and 48 tool requests, with zero attempted network operations. Its projected objects/relations match between executions and after saved-log reconstruction. **Raw event bytes do not match**: 48 events in the identity-checked pair differ only in measured tool-response latency. Removing only `tool.responded.payload.latency_seconds` yields a separately defined normalized equality. Both raw hashes and the full difference inventory are retained. The normalization was added after inspecting the mismatch; it is not a pre-registered result or a generic verifier improvement.
 
-Strict replay accepts an object-payload-only change preserving event types and rejects an extra event. A completed-cutoff fork preserves its copied prefix and leaves the parent unchanged after one child annotation. These are narrow checks, not arbitrary payload/byte guarantees, an execution-recovery study, task-accuracy evidence, independent replication or demonstrated self-improvement.
+Strict replay accepts an object-payload-only change preserving event types and rejects an extra event. A later effect-free mock also confirms that strict verification reruns tool bodies/ordinary behavior code while caching model responses;use effect-free/dry-run adapters before live-effect verification. This is not a new diligence campaign. A final-event fork copies the whole run and leaves the parent's in-memory event list unchanged after one child annotation;the persisted parent is not reloaded. These are narrow checks, not arbitrary payload/byte guarantees, an execution-recovery study, task-accuracy evidence, independent replication or demonstrated self-improvement.
 
 ## Reproduction
 
@@ -47,7 +50,7 @@ tectonic --only-cached --keep-logs --untrusted papers/ieee-software-2026/supplem
 python papers/ieee-software-2026/verification/check_package.py
 ```
 
-No native editor/compiler app tool was exposed in this worker session; the existing local Tectonic tool was used instead. Each page was rendered with Poppler and visually inspected. The metadata/photo revision is seven article pages and four supplement pages; the final article page contains biography/photo and all seven references, not an orphan reference. Main article count is conservatively checked by converting all visible text (including references/header/visual text) to plain text and adding 250 per figure/table and the biography photo; this deliberately overcounts rather than relying on exclusions. The main manuscript can be revised further without approaching the current 4,200-word limit.
+No native editor/compiler app tool was exposed in this worker session; the existing local Tectonic tool was used instead. Each page was rendered with Poppler and visually inspected. The revised review-stage PDFs are rendered and checked;current page counts and format total are recorded in readiness/manifest. Main article count is conservatively checked by converting all visible text (including references/header/visual text) to plain text and adding 250 per figure/table and the biography photo; this deliberately overcounts rather than relying on exclusions. The main manuscript can be revised further without approaching the current 4,200-word limit.
 
 ## Route and action boundaries
 
@@ -58,3 +61,7 @@ The current call directs authors to `https://ieee.atyponrex.com/journal/sw-cs`. 
 ## Required CI status
 
 The initial exact-head full CI test matrix fails on one existing error-format snapshot: Pydantic2.14.2 emits `errors.pydantic.dev/2.14/v/missing`, while the unchanged snapshot expects2.13. The focused test reproduces identically from the exported baseline and paper head; unchanged native Git object IDs and the exact one-string difference are recorded in `evidence/ci-diagnosis.json`. This is not a paper-induced test or collection failure. **Required CI is red, so the PR is not merge-ready.** No native snapshot, dependency, workflow or runtime was changed in this paper-only preparation.
+
+## Immutable evidence/code snapshot after two-model review
+
+Runtime source is7070112. Evidence/code ancestor is [ba41ac771e6d58b4856acaa8dc8f5d9f624e287a](https://github.com/yoheinakajima/activegraph/tree/ba41ac771e6d58b4856acaa8dc8f5d9f624e287a/papers/ieee-software-2026). It contains original sealed pairs,primary receipt,pins,new effect-free mock/static audit and optimized-Python refusal,preceding the final editorial revision. The printed PDFs link the immutable ancestor rather than pretending baseline7070112 contains papers/. This does not create a DOI,release,merge or journal deposit. The old receipt's literal zero-live-call field is an inference from fixed fixture provider/guard observations,not independently instrumented telemetry. Guarded APIs are connect/connect_ex/bind/create_connection/getaddrinfo,not every socket API. Existing assertions are required;python-O is refused before output/runtime work.

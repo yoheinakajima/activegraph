@@ -9,6 +9,7 @@ import re
 import subprocess
 
 BASELINE = '7070112c63b7cffc4b3aef8b7e907c8f2f9a9165'
+EVIDENCE_ANCESTOR = 'ba41ac771e6d58b4856acaa8dc8f5d9f624e287a'
 PACKET = Path(__file__).resolve().parents[1]
 REPO = PACKET.parents[1]
 SKIP = {'.scratch', '.private', '__pycache__'}
@@ -59,6 +60,12 @@ def main():
     assert refs <= 15 and insights == 3
     assert figures == 1 and tables == 1
     assert digest(PACKET / 'author-photo.jpg') == '6c275510694f5e2493bfbb47b33b25d98ac9a4051aa2d95e7e391e6098d1fa6b'
+    assert f'https://github.com/yoheinakajima/activegraph/blob/{EVIDENCE_ANCESTOR}/papers/ieee-software-2026/evidence/identity-checked/verification.json' in text
+    assert f'https://github.com/yoheinakajima/activegraph/tree/{BASELINE}' in text
+    effects = json.loads((PACKET / 'evidence/strict-effects/strict-effects.json').read_text())
+    assert effects['before_strict_load'] == {'tool': 1, 'ordinary_behavior': 1, 'fake_provider_complete': 2}
+    assert effects['after_strict_load'] == {'tool': 2, 'ordinary_behavior': 2, 'fake_provider_complete': 2}
+    assert effects['tool_context_keys_distinct'] and effects['intercepted_network_attempts'] == 0
     receipt = json.loads((PACKET / 'evidence/identity-checked/verification.json').read_text())
     assert receipt['imported_runtime_identity_verified']
     assert digest(PACKET / 'verification/runtime-inputs.json') == receipt['runtime_pin_sha256']
@@ -96,6 +103,10 @@ def main():
         installed = {d.metadata['Name']: d.version for d in metadata.distributions() if d.metadata['Name']}
         result = {'schema_version': 1, 'observed_date': '2026-11-02', 'timezone': 'America/Los_Angeles',
                   'runtime_baseline_commit': BASELINE,
+                  'evidence_archive_commit': EVIDENCE_ANCESTOR,
+                  'post_review_effect_probe_receipt': 'evidence/strict-effects/strict-effects.json',
+                  'retained_output_audit': 'evidence/review-clarifications.json',
+                  'review_dispositions': 'review-dispositions.md',
                   'source_branch': 'codex/ieee-software-prep-20261102',
                   'manuscript': 'article.tex', 'pdf': 'article.pdf',
                   'supplement': 'supplement.tex', 'supplement_pdf': 'supplement.pdf',
