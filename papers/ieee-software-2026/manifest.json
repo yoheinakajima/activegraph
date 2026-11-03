@@ -25,11 +25,11 @@
   "actual_submission_history": "unknown; no journal submission by preparation worker",
   "format": {
     "abstract_words": 141,
-    "all_visible_words_including_references_header_visuals": 2558,
+    "all_visible_words_including_references_header_visuals": 2539,
     "figures": 1,
     "tables": 1,
     "author_photos": 1,
-    "conservative_total_with_250_per_visual": 3308,
+    "conservative_total_with_250_per_visual": 3289,
     "references": 7,
     "actionable_insights": 3,
     "method": "Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table and author photo; intentionally overcounts exclusions"
@@ -182,13 +182,13 @@
     },
     {
       "path": "article.pdf",
-      "bytes": 1852900,
-      "sha256": "3696829ec57cca853a1b97a47d6f04578e6cd7967255b43e0d5498be89feeab4"
+      "bytes": 1852219,
+      "sha256": "e1fd4183ea589bb03b27734e440537fb3119f11ba867d7123ec5c88343e7c502"
     },
     {
       "path": "article.tex",
-      "bytes": 22480,
-      "sha256": "43bad7c9c0d83abc45fd75ac20ea0cf715b8c9d89198fd4e9ab0377f1ba99b74"
+      "bytes": 22274,
+      "sha256": "74c7200e1f37b66a2c4cae6cdf0ce7209a417b7c3818eb129d300a0ec37a8ef1"
     },
     {
       "path": "author-photo.jpg",
@@ -207,8 +207,8 @@
     },
     {
       "path": "corrections.md",
-      "bytes": 6683,
-      "sha256": "984982b7e880a69a3fd276404c7ffe56486abfbf0113bb97e1b6ff52c9aa2811"
+      "bytes": 7486,
+      "sha256": "30a94b6b0f044b71ee7d6d933fc07d6d2257592a795db0fb42b44452815e55c1"
     },
     {
       "path": "cover-letter.md",
@@ -282,13 +282,13 @@
     },
     {
       "path": "publisher-checklist.md",
-      "bytes": 4357,
-      "sha256": "38495be7815624dfa94cfcecf68aa311684a38c82027d6e836b0f6be404658a6"
+      "bytes": 4404,
+      "sha256": "b7fa51e0922827b0efdaaa5d96fcf43237ccececaaf1355510efd08704795a65"
     },
     {
       "path": "readiness.md",
-      "bytes": 12229,
-      "sha256": "7cb0bea8b28e214bd74a60b335a7306ab09e869c47ff24d391b3523f77713dfd"
+      "bytes": 12269,
+      "sha256": "68a5d4680231964157bd305a4d6c0ad06f30b395c84e1c357d8d15715cd15dca"
     },
     {
       "path": "references.md",
@@ -302,13 +302,13 @@
     },
     {
       "path": "supplement.pdf",
-      "bytes": 45475,
-      "sha256": "2c7907cfcdb3c2d07d6e99fe46ab03e28285b442c15d9959105bd267f3409d64"
+      "bytes": 44679,
+      "sha256": "629f762c88411898c2bfe1d9fd69bc60197bb39889c032dee591a6161defa31c"
     },
     {
       "path": "supplement.tex",
-      "bytes": 10741,
-      "sha256": "3953d09b50ed3171faa67121b743de005c1c3b2ad323c0e1955e08a12e6e9291"
+      "bytes": 10389,
+      "sha256": "ae11816862ac68186699fa654b9a7c7255595286637fd179210990c6e6ca7a0e"
     },
     {
       "path": "tool-use-audit.md",
