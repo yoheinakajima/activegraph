@@ -1,0 +1,332 @@
+{
+  "mode": "static retained-output audit, not a new fixture execution",
+  "pairs": [
+    {
+      "receipt": "evidence/verification.json",
+      "receipt_sha256": "845e5791eb8488864cc471e6fff90a54dd02afe7dbb78ccb05a98865d74febcb",
+      "differing_events": 47,
+      "full_event_jsonl_sha256": "213d2d72bf4f6aeace384ac676364f9e34f067382ca3f275aff195e3872006e3",
+      "second_full_event_jsonl_sha256": "b729e8bff8633d253d45f5502932a1be27c8c69abbfcf3cf77fe5485eaee5fcd",
+      "normalized_event_jsonl_sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4",
+      "projection_sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+    },
+    {
+      "receipt": "evidence/identity-checked/verification.json",
+      "receipt_sha256": "c6edb8d715bad5115000d6c54a6354cd4c1e430517441e40714d04b3de48b417",
+      "differing_events": 48,
+      "full_event_jsonl_sha256": "2b96866f3601adc93a53aed3aeffec80448f73943e9393c377f3bc9403d9bc31",
+      "second_full_event_jsonl_sha256": "cad6a410fb28ecdd692e9cdc62271b60c3c8106a1e1e2a5513064d80cf102c2d",
+      "normalized_event_jsonl_sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4",
+      "projection_sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+    }
+  ],
+  "normalization_chronology": "defined after raw timing mismatch was observed; not preregistered",
+  "budget_snapshots": [
+    {
+      "event_id": "evt_230",
+      "snapshot": {
+        "cost_limit_usd": "5.00",
+        "cost_used_usd": "0.0886",
+        "limits": {
+          "max_behavior_calls": null,
+          "max_cost_usd": 5.0,
+          "max_depth": null,
+          "max_events": null,
+          "max_llm_calls": 80.0,
+          "max_patches": null,
+          "max_seconds": null,
+          "max_tool_calls": 100.0
+        },
+        "used": {
+          "max_behavior_calls": 29.0,
+          "max_cost_usd": 0.0886,
+          "max_depth": 0.0,
+          "max_events": 69.0,
+          "max_llm_calls": 19.0,
+          "max_patches": 0.0,
+          "max_seconds": 0.0,
+          "max_tool_calls": 16.0
+        }
+      }
+    },
+    {
+      "event_id": "evt_453",
+      "snapshot": {
+        "cost_limit_usd": "5.00",
+        "cost_used_usd": "0.1762",
+        "limits": {
+          "max_behavior_calls": null,
+          "max_cost_usd": 5.0,
+          "max_depth": null,
+          "max_events": null,
+          "max_llm_calls": 80.0,
+          "max_patches": null,
+          "max_seconds": null,
+          "max_tool_calls": 100.0
+        },
+        "used": {
+          "max_behavior_calls": 57.0,
+          "max_cost_usd": 0.1762,
+          "max_depth": 0.0,
+          "max_events": 134.0,
+          "max_llm_calls": 37.0,
+          "max_patches": 0.0,
+          "max_seconds": 0.0,
+          "max_tool_calls": 32.0
+        }
+      }
+    },
+    {
+      "event_id": "evt_671",
+      "snapshot": {
+        "cost_limit_usd": "5.00",
+        "cost_used_usd": "0.2638",
+        "limits": {
+          "max_behavior_calls": null,
+          "max_cost_usd": 5.0,
+          "max_depth": null,
+          "max_events": null,
+          "max_llm_calls": 80.0,
+          "max_patches": null,
+          "max_seconds": null,
+          "max_tool_calls": 100.0
+        },
+        "used": {
+          "max_behavior_calls": 84.0,
+          "max_cost_usd": 0.2638,
+          "max_depth": 0.0,
+          "max_events": 197.0,
+          "max_llm_calls": 55.0,
+          "max_patches": 0.0,
+          "max_seconds": 0.0,
+          "max_tool_calls": 48.0
+        }
+      }
+    }
+  ],
+  "llm_request_events_by_behavior": {
+    "diligence.question_generator": 3,
+    "diligence.document_researcher": 72,
+    "diligence.risk_identifier": 25,
+    "diligence.memo_synthesizer": 3
+  },
+  "llm_behavior_invocations": 55,
+  "tool_calls": 48,
+  "budget_scope": "one runtime cumulative across three goals; max_llm_calls counts LLM behavior invocations, not request turns",
+  "trace": {
+    "claim": {
+      "data": {
+        "company_id": "company#1",
+        "confidence": 0.92,
+        "source_document_id": "document#10",
+        "status": "open",
+        "text": "Northwind Q3 revenue grew 28% YoY to $42M."
+      },
+      "id": "claim#11",
+      "provenance": {
+        "caused_by_event": "evt_009",
+        "created_by": "diligence.document_researcher",
+        "evidence": [],
+        "frame_id": null,
+        "llm_request_event_id": "evt_027",
+        "run_id": "ieee_fixture_run",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "tool_request_event_ids": [
+          "evt_021",
+          "evt_025"
+        ]
+      },
+      "type": "claim",
+      "version": 1
+    },
+    "document": {
+      "data": {
+        "company_id": "company#1",
+        "published_at": null,
+        "summary": "Q3 revenue +28% YoY at $42M.",
+        "title": "Q3 Update",
+        "url": "https://fixtures.activegraph.local/northwind/q3-update"
+      },
+      "id": "document#10",
+      "provenance": {
+        "caused_by_event": "evt_009",
+        "created_by": "diligence.document_researcher",
+        "evidence": [],
+        "frame_id": null,
+        "llm_request_event_id": "evt_027",
+        "run_id": "ieee_fixture_run",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "tool_request_event_ids": [
+          "evt_021",
+          "evt_025"
+        ]
+      },
+      "type": "document",
+      "version": 1
+    },
+    "question": {
+      "data": {
+        "company_id": "company#1",
+        "company_name": "Northwind Robotics",
+        "status": "answered",
+        "text": "What is the company's Q3 revenue trajectory?"
+      },
+      "id": "question#2",
+      "provenance": {
+        "caused_by_event": "evt_004",
+        "created_by": "diligence.question_generator",
+        "evidence": [],
+        "frame_id": null,
+        "llm_request_event_id": "evt_007",
+        "run_id": "ieee_fixture_run",
+        "timestamp": "2026-01-01T00:00:00Z"
+      },
+      "type": "question",
+      "version": 2
+    },
+    "events": [
+      {
+        "actor": "diligence.question_generator",
+        "caused_by": "evt_004",
+        "frame_id": null,
+        "id": "evt_009",
+        "payload": {
+          "id": "question#2",
+          "object": {
+            "data": {
+              "company_id": "company#1",
+              "company_name": "Northwind Robotics",
+              "status": "open",
+              "text": "What is the company's Q3 revenue trajectory?"
+            },
+            "id": "question#2",
+            "provenance": {
+              "caused_by_event": "evt_004",
+              "created_by": "diligence.question_generator",
+              "evidence": [],
+              "frame_id": null,
+              "llm_request_event_id": "evt_007",
+              "run_id": "ieee_fixture_run",
+              "timestamp": "2026-01-01T00:00:00Z"
+            },
+            "type": "question",
+            "version": 1
+          }
+        },
+        "timestamp": "2026-01-01T00:00:00Z",
+        "type": "object.created"
+      },
+      {
+        "actor": "diligence.document_researcher",
+        "caused_by": "evt_019",
+        "frame_id": null,
+        "id": "evt_021",
+        "payload": {
+          "args": {
+            "company_name": "Northwind Robotics",
+            "max_results": 3
+          },
+          "args_hash": "6559c47a1e744310870ae97830b36167b076510d63e088fb680c741c67bcb3db",
+          "behavior": "diligence.document_researcher",
+          "cache_hit": false,
+          "call_id": "call_fetch",
+          "deterministic": false,
+          "tool": "diligence.fetch_company_docs"
+        },
+        "timestamp": "2026-01-01T00:00:00Z",
+        "type": "tool.requested"
+      },
+      {
+        "actor": "diligence.document_researcher",
+        "caused_by": "evt_023",
+        "frame_id": null,
+        "id": "evt_025",
+        "payload": {
+          "args": {
+            "max_words": 80,
+            "url": "https://fixtures.activegraph.local/northwind/q3-update"
+          },
+          "args_hash": "47cb9b5cfc8ece34a08c595bd3461c76a0914346985d5e6f115c1bad2713010f",
+          "behavior": "diligence.document_researcher",
+          "cache_hit": false,
+          "call_id": "call_summarize",
+          "deterministic": false,
+          "tool": "diligence.summarize_document"
+        },
+        "timestamp": "2026-01-01T00:00:00Z",
+        "type": "tool.requested"
+      },
+      {
+        "actor": "diligence.document_researcher",
+        "caused_by": "evt_023",
+        "frame_id": null,
+        "id": "evt_027",
+        "payload": {
+          "behavior": "diligence.document_researcher",
+          "budget_remaining_usd": "4.9903",
+          "cache_hit": false,
+          "deterministic": true,
+          "estimated_cost_usd": "0.001",
+          "estimated_input_tokens": 1714,
+          "model": "claude-sonnet-4-5",
+          "prompt_hash": "859bf00ca347db7a197f6e667f537915ad3720767821b0c1a20d6829d752a838",
+          "prompt_normalized": true,
+          "structured_output_mode": "prompt",
+          "turn_index": 2
+        },
+        "timestamp": "2026-01-01T00:00:00Z",
+        "type": "llm.requested"
+      },
+      {
+        "actor": "diligence.document_researcher",
+        "caused_by": "evt_027",
+        "frame_id": null,
+        "id": "evt_028",
+        "payload": {
+          "behavior": "diligence.document_researcher",
+          "cache_hit": false,
+          "cost_usd": "0.0010",
+          "finish_reason": "end_turn",
+          "input_tokens": 110,
+          "latency_seconds": 0.4,
+          "model": "claude-sonnet-4-5",
+          "output_tokens": 22,
+          "parsed": {
+            "claims": [
+              {
+                "confidence": 0.92,
+                "contradicts_claim_text": null,
+                "evidence_quote": "Q3 revenue: $42M, +28% YoY",
+                "source_document_url": "https://fixtures.activegraph.local/northwind/q3-update",
+                "text": "Northwind Q3 revenue grew 28% YoY to $42M."
+              }
+            ],
+            "document_url": "https://fixtures.activegraph.local/northwind/q3-update",
+            "summary": "Q3 revenue +28% YoY at $42M."
+          },
+          "prompt_hash": "859bf00ca347db7a197f6e667f537915ad3720767821b0c1a20d6829d752a838",
+          "provider_meta": {},
+          "raw_text": "{\"claims\": [{\"confidence\": 0.92, \"evidence_quote\": \"Q3 revenue: $42M, +28% YoY\", \"source_document_url\": \"https://fixtures.activegraph.local/northwind/q3-update\", \"text\": \"Northwind Q3 revenue grew 28% YoY to $42M.\"}], \"document_url\": \"https://fixtures.activegraph.local/northwind/q3-update\", \"summary\": \"Q3 revenue +28% YoY at $42M.\"}",
+          "seed": null,
+          "tool_calls": null,
+          "turn_index": 2
+        },
+        "timestamp": "2026-01-01T00:00:00Z",
+        "type": "llm.responded"
+      }
+    ]
+  },
+  "optimized_verifier_refusal": {
+    "exit_code": 1,
+    "stderr": "verification requires active assertions; optimized Python is refused before any output or runtime work",
+    "no_output_created": true
+  },
+  "legacy_receipt_interpretation": {
+    "new_live_provider_calls": "literal zero in legacy receipt; inferred from RecordedDiligenceProvider and intercepted-attempt count, not independent call telemetry",
+    "fork_annotation_parent_unchanged": "in-memory parent event list only; full-run final cutoff; no persisted parent reload after child edit"
+  },
+  "source_sha256": {
+    "fixture-events.jsonl": "2b96866f3601adc93a53aed3aeffec80448f73943e9393c377f3bc9403d9bc31",
+    "fixture-projection.json": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+  }
+}
