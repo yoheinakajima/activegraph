@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-11-02",
+  "timezone": "America/Los_Angeles",
+  "runtime_baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "evidence_archive_commit": "ba41ac771e6d58b4856acaa8dc8f5d9f624e287a",
+  "post_review_effect_probe_receipt": "evidence/strict-effects/strict-effects.json",
+  "retained_output_audit": "evidence/review-clarifications.json",
+  "review_dispositions": "review-dispositions.md",
+  "source_branch": "codex/ieee-software-prep-20261102",
+  "manuscript": "article.tex",
+  "pdf": "article.pdf",
+  "supplement": "supplement.tex",
+  "supplement_pdf": "supplement.pdf",
+  "readiness": "manager/author review; public metadata/funding/photo supplied; final rights/responsibility/portal/action gates pending",
+  "author": {
+    "name": "Yohei Nakajima",
+    "affiliation": "Untapped Capital",
+    "location": "Bellevue, Washington, USA",
+    "public_contact": "yohei@untapped.vc",
+    "orcid": "0009-0009-1293-6053",
+    "orcid_verification": "author supplied; checksum checked; registry authentication not asserted",
+    "photo": "author-photo.jpg",
+    "photo_reuse_approval": "supplied for IEEE preparation/republication; unchanged bytes"
+  },
+  "assistance_record": "tool-use-audit.md",
+  "primary_verification_receipt": "evidence/identity-checked/verification.json",
+  "earlier_retained_verification_receipt": "evidence/verification.json",
+  "actual_submission_history": "unknown; no journal submission by preparation worker",
+  "format": {
+    "abstract_words": 128,
+    "all_visible_words_including_references_header_visuals": 2802,
+    "figures": 1,
+    "tables": 1,
+    "author_photos": 1,
+    "conservative_total_with_250_per_visual": 3552,
+    "references": 7,
+    "actionable_insights": 3,
+    "method": "Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table and author photo; intentionally overcounts exclusions"
+  },
+  "runtime_inputs": [
+    {
+      "path": "pyproject.toml",
+      "sha256": "bb092ba3d5e28946209f2da32993a683e6887349505ce912dff0172a225c0296"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "fbb7ac8857b6ce4b826937908e73d96bdc20cbdbbcbad1836f20c6543266b36f"
+    },
+    {
+      "path": "NOTICE",
+      "sha256": "3e20737949d1dac08ad55d7eac0e2b31c4efb774122ec606c9b6648dcc538e05"
+    },
+    {
+      "path": "activegraph/runtime/runtime.py",
+      "sha256": "5aac41d16793adb10e648a2a572441b3ff4e4ce8254dfe3a5d879a561e5aebbf"
+    },
+    {
+      "path": "activegraph/core/graph.py",
+      "sha256": "4ba6108e91f9006b4f8ca8f50daa05d1b74becf25c6eea39148aca7a5a6cd415"
+    },
+    {
+      "path": "activegraph/core/event.py",
+      "sha256": "16d58e5681d70389b8416ac890bd7f6f984e0d81f038cde2134ed709f66ebe77"
+    },
+    {
+      "path": "activegraph/packs/diligence/fixtures/__init__.py",
+      "sha256": "c16eb8cfb3a22a67f0d3fc9ed07834389b699b749e229664a23a816f218b8fe5"
+    },
+    {
+      "path": "activegraph/packs/diligence/fixtures/companies.py",
+      "sha256": "a33922e606de1cbaf1fd1dedf7d7110ae2886cef58d508f21cc2f647f3e0ce0e"
+    }
+  ],
+  "environment_versions": {
+    "Jinja2": "3.1.6",
+    "Markdown": "3.11.2",
+    "MarkupSafe": "3.0.4",
+    "PyYAML": "6.0.3",
+    "Pygments": "2.21.0",
+    "activegraph": "1.13.0",
+    "annotated-types": "0.8.0",
+    "ast_serialize": "0.13.1",
+    "babel": "2.18.0",
+    "backrefs": "8.1",
+    "beautifulsoup4": "4.15.0",
+    "build": "1.6.1",
+    "certifi": "2026.10.23",
+    "charset-normalizer": "3.5.2",
+    "click": "8.5.0",
+    "colorama": "0.4.6",
+    "ghp-import": "2.1.0",
+    "griffelib": "2.4.1",
+    "idna": "3.20",
+    "iniconfig": "2.3.1",
+    "librt": "0.16.0",
+    "markdown-it-py": "3.0.0",
+    "markdownify": "1.2.3",
+    "mdformat": "0.7.22",
+    "mdformat_tables": "1.0.0",
+    "mdurl": "0.1.2",
+    "mergedeep": "1.3.4",
+    "mkdocs": "1.6.1",
+    "mkdocs-autorefs": "1.4.5",
+    "mkdocs-get-deps": "0.2.2",
+    "mkdocs-llmstxt": "0.5.1",
+    "mkdocs-material": "9.8.0",
+    "mkdocs-material-extensions": "1.3.1",
+    "mkdocstrings": "1.0.8",
+    "mkdocstrings-python": "2.0.10",
+    "mypy": "2.4.1",
+    "mypy_extensions": "1.1.0",
+    "opentelemetry-api": "1.45.2",
+    "opentelemetry-sdk": "1.45.2",
+    "opentelemetry-semantic-conventions": "0.66b2",
+    "packaging": "26.3",
+    "paginate": "0.5.7",
+    "pathspec": "1.1.1",
+    "platformdirs": "4.14.3",
+    "pluggy": "1.7.0",
+    "prometheus_client": "0.26.0",
+    "psycopg": "3.3.7",
+    "psycopg-binary": "3.3.7",
+    "pydantic": "2.14.2",
+    "pydantic_core": "2.50.2",
+    "pymdown-extensions": "12.3",
+    "pyproject_hooks": "1.3.3",
+    "pytest": "9.2.0",
+    "python-dateutil": "4.0.0",
+    "pyyaml_env_tag": "1.1",
+    "requests": "2.34.2",
+    "six": "1.17.0",
+    "soupsieve": "3.0.4",
+    "typing-inspection": "0.4.4",
+    "typing_extensions": "4.16.0",
+    "tzdata": "2026.6",
+    "urllib3": "2.8.0",
+    "watchdog": "7.0.0",
+    "wcwidth": "0.9.4"
+  },
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 51,
+      "sha256": "5d9bf12b2f34902bed53572155fcc5723dcdac3081e1d7c01ebaa0e4aad5416d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 10058,
+      "sha256": "3ba1636c21a9ed54969447fbbfa93c2762216fd225aadb4c56a5472ca05667e3"
+    },
+    {
+      "path": "archive/arxiv-v1/00README.json",
+      "bytes": 220,
+      "sha256": "e7779d6bbd8ae168dc666cab983f44625b17748e3baae6687fc20700fc1d088d"
+    },
+    {
+      "path": "archive/arxiv-v1/2605.21997v1-source.tar",
+      "bytes": 55936,
+      "sha256": "5ad4093143829d2c2fee9ad86904f93363303432f86508beb8fb82aaf533f1c5"
+    },
+    {
+      "path": "archive/arxiv-v1/2605.21997v1.pdf",
+      "bytes": 736700,
+      "sha256": "8e8ba7df94f27f0ab9fa105f038dc9cd4ceaa6679657fc456d81dbbb689a0266"
+    },
+    {
+      "path": "archive/arxiv-v1/activegraph.tex",
+      "bytes": 34145,
+      "sha256": "b8fb447bad03b55ca326083df8948cf5dd31b4ff5e33762ebedbaeb47055e610"
+    },
+    {
+      "path": "archive/arxiv-v1/events_excerpt.txt",
+      "bytes": 1301,
+      "sha256": "e084395606340898b3a15b5b46521b1498c90e27d6916cab8d2e7146052a8ce6"
+    },
+    {
+      "path": "archive/arxiv-v1/figure_architecture.pdf",
+      "bytes": 44434,
+      "sha256": "363b16a999adc55329c02ee956ee1a6058a7f5e7c6a81b91ea4aad4b540db1cc"
+    },
+    {
+      "path": "archive/arxiv-v1/llm_excerpt.txt",
+      "bytes": 444,
+      "sha256": "2ed1565383edbcb98c35aebd498d179d30340156f0029a87c2c7ade567d8c33a"
+    },
+    {
+      "path": "article.pdf",
+      "bytes": 1855025,
+      "sha256": "2abc1ad7918794f4cb8d1bd959d563085ef1092b94ebad774753a0b6c4519eba"
+    },
+    {
+      "path": "article.tex",
+      "bytes": 24340,
+      "sha256": "3043086aea3dd3f33236d810bf5d14369bfd86af746d147a4ef7bce830972a38"
+    },
+    {
+      "path": "author-photo.jpg",
+      "bytes": 1792245,
+      "sha256": "6c275510694f5e2493bfbb47b33b25d98ac9a4051aa2d95e7e391e6098d1fa6b"
+    },
+    {
+      "path": "author-worksheet.md",
+      "bytes": 4141,
+      "sha256": "7dad1f6e694c60735a25e4b15d7cb1ddd520336a005688b8d89ab30ef3105555"
+    },
+    {
+      "path": "claim-audit.md",
+      "bytes": 6246,
+      "sha256": "c994d831f2274f1525022cd426b42ff160db869598ec17e6f8347adff6f6658c"
+    },
+    {
+      "path": "corrections.md",
+      "bytes": 9325,
+      "sha256": "81b4c82596a0f04678ea667c241af529da546eb053e69b16a9c64887a4ae43b4"
+    },
+    {
+      "path": "cover-letter.md",
+      "bytes": 4270,
+      "sha256": "c4576ac98df045effe99f2f46acb232df98268071775a2c0cbe850c999fcd0ea"
+    },
+    {
+      "path": "evidence/ci-diagnosis.json",
+      "bytes": 3814,
+      "sha256": "1388b20da858a59f65fe934b12b11abf60a940f8291de651d103d0a161dbcf34"
+    },
+    {
+      "path": "evidence/fixture-events-normalized.jsonl",
+      "bytes": 1530641,
+      "sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4"
+    },
+    {
+      "path": "evidence/fixture-events-second.jsonl",
+      "bytes": 1532566,
+      "sha256": "b729e8bff8633d253d45f5502932a1be27c8c69abbfcf3cf77fe5485eaee5fcd"
+    },
+    {
+      "path": "evidence/fixture-events.jsonl",
+      "bytes": 1532558,
+      "sha256": "213d2d72bf4f6aeace384ac676364f9e34f067382ca3f275aff195e3872006e3"
+    },
+    {
+      "path": "evidence/fixture-projection.json",
+      "bytes": 72459,
+      "sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-events-normalized.jsonl",
+      "bytes": 1530641,
+      "sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-events-second.jsonl",
+      "bytes": 1532574,
+      "sha256": "cad6a410fb28ecdd692e9cdc62271b60c3c8106a1e1e2a5513064d80cf102c2d"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-events.jsonl",
+      "bytes": 1532575,
+      "sha256": "2b96866f3601adc93a53aed3aeffec80448f73943e9393c377f3bc9403d9bc31"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-projection.json",
+      "bytes": 72459,
+      "sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+    },
+    {
+      "path": "evidence/identity-checked/verification.json",
+      "bytes": 9016,
+      "sha256": "c6edb8d715bad5115000d6c54a6354cd4c1e430517441e40714d04b3de48b417"
+    },
+    {
+      "path": "evidence/identity-guard-negative.json",
+      "bytes": 411,
+      "sha256": "1ebbde635fb7b27a8cf254bef2e0afc36fd841a0359b7aeff8d1cc305b788ef4"
+    },
+    {
+      "path": "evidence/native-checks.json",
+      "bytes": 2073,
+      "sha256": "51a93861138d693063463277d7e5b908441c503fe2f8301e3c621acd3e354104"
+    },
+    {
+      "path": "evidence/review-clarifications.json",
+      "bytes": 11571,
+      "sha256": "8e8bfa25eb05b35dd55b4b0eda19fbec26a6576b6f71ca5c5aa9e100b4738a90"
+    },
+    {
+      "path": "evidence/strict-effects/strict-effects.json",
+      "bytes": 1348,
+      "sha256": "656f498320f9cdc44e2b6cc8ec4c9cc42bdd64b2fc2679649e9b4c3213523ad0"
+    },
+    {
+      "path": "evidence/verification.json",
+      "bytes": 8577,
+      "sha256": "845e5791eb8488864cc471e6fff90a54dd02afe7dbb78ccb05a98865d74febcb"
+    },
+    {
+      "path": "publisher-checklist.md",
+      "bytes": 4996,
+      "sha256": "4215d10617ea37ee6c19bab2d42b410a5c382d9d3c5732378795d96d00fa1dd2"
+    },
+    {
+      "path": "readiness.md",
+      "bytes": 14827,
+      "sha256": "23e506ea389b409e8415eb9224d65e3ff66bde9064ee8204130cd912a8d8ed03"
+    },
+    {
+      "path": "references.md",
+      "bytes": 4666,
+      "sha256": "867763ba6c590e49fe091e8f4ed4b3df4579164c75e0cc627789c64e20c4d281"
+    },
+    {
+      "path": "review-dispositions.md",
+      "bytes": 8391,
+      "sha256": "e0b65db901c79ccfe2f1b9cac993977e15c4af76d5dfb577b1b3f2633a6ae215"
+    },
+    {
+      "path": "rights-and-availability.md",
+      "bytes": 4066,
+      "sha256": "8e6ff50a791cbd4fa1da9bd4e69aadc6059667b57be315e09359575160c9923c"
+    },
+    {
+      "path": "supplement.pdf",
+      "bytes": 49092,
+      "sha256": "d402d16fa251d9519724bb2ecc2564a073f3f57d6320fdd040f39ca1ad903d9a"
+    },
+    {
+      "path": "supplement.tex",
+      "bytes": 13990,
+      "sha256": "4084aa0d5ce8faecd8bf9940b50e50c50e632f6eba6807d88398afbacf6b1128"
+    },
+    {
+      "path": "tool-use-audit.md",
+      "bytes": 6635,
+      "sha256": "41bb8e53e8efa7c214160888a024aee5bdd27cd8868090ef2d775e03391740cb"
+    },
+    {
+      "path": "verification/audit_retained.py",
+      "bytes": 5436,
+      "sha256": "4eb4e238ffcc61a15ecc5dc3b59b88caadc1e4f0c1406775bd3d1f4efac0eeac"
+    },
+    {
+      "path": "verification/check_package.py",
+      "bytes": 9206,
+      "sha256": "af4aaa69137c35e96f4bd16cf1f6a77e53b5afa4da1aa8523b77bdcbd2a88412"
+    },
+    {
+      "path": "verification/check_strict_effects.py",
+      "bytes": 6570,
+      "sha256": "02264271b8d5a72f989143532409cc8a99a7126ad0f0cd6f63a884482afd6099"
+    },
+    {
+      "path": "verification/runtime-inputs.json",
+      "bytes": 14774,
+      "sha256": "d1a807c9e2238b68c4ff5fbe815da9e5a732b23ca28b7ae6762837eb0d967922"
+    },
+    {
+      "path": "verification/verify.py",
+      "bytes": 11320,
+      "sha256": "d4b02a032e85408220623f16e659331c465f8684e81d9325c71d47b0d4b5dc83"
+    }
+  ],
+  "inventory_exclusions": [
+    "manifest.json itself",
+    ".scratch/",
+    ".private/",
+    "__pycache__/",
+    "aux/log/out/pyc build files"
+  ],
+  "verification_scope": "retained artifact hashes/static format; no new runtime,model,or service call"
+}

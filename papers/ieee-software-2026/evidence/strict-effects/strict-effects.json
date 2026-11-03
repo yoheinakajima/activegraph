@@ -1,0 +1,34 @@
+{
+  "baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "python": "3.11.15",
+  "runtime_files_verified": 110,
+  "runtime_pin_sha256": "d1a807c9e2238b68c4ff5fbe815da9e5a732b23ca28b7ae6762837eb0d967922",
+  "before_strict_load": {
+    "tool": 1,
+    "ordinary_behavior": 1,
+    "fake_provider_complete": 2
+  },
+  "after_strict_load": {
+    "tool": 2,
+    "ordinary_behavior": 2,
+    "fake_provider_complete": 2
+  },
+  "strict_load_returned_without_divergence": true,
+  "tool_context_keys_distinct": true,
+  "intercepted_network_attempts": 0,
+  "network_interception": [
+    "socket.connect",
+    "socket.connect_ex",
+    "socket.bind",
+    "socket.create_connection",
+    "socket.getaddrinfo"
+  ],
+  "live_provider_calls": "inferred zero: only fixed Fake.complete implementation used; no provider SDK",
+  "external_effect_scope": "mock bodies only mutate in-memory counters; no external tool/network action; transient local SQLite only",
+  "limitations": [
+    "One two-turn mock path, not the diligence fixture or arbitrary custom invokers.",
+    "Ordinary behavior reexecution shows direct I/O could repeat, not a performed external I/O test.",
+    "Distinct per-invocation UUID keys cannot by themselves deduplicate repeated external effects.",
+    "Socket interception is not a sandbox and does not intercept every socket API."
+  ]
+}

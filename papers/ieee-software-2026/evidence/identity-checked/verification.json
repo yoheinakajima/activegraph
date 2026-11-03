@@ -1,0 +1,402 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "imported_runtime_identity_verified": true,
+  "runtime_files_verified": 110,
+  "runtime_pin_sha256": "d1a807c9e2238b68c4ff5fbe815da9e5a732b23ca28b7ae6762837eb0d967922",
+  "runtime_resolution": "activegraph.__file__.resolve().parent, all expected package/fixture bytes and exact file inventory checked",
+  "python": "3.11.15",
+  "scope": "fixed synthetic fixture; not a live diligence study",
+  "fixture_provider": "RecordedDiligenceProvider",
+  "companies": 3,
+  "events": 671,
+  "objects": 93,
+  "relations": 76,
+  "object_types": {
+    "claim": 25,
+    "company": 3,
+    "contradiction": 1,
+    "document": 9,
+    "evidence": 25,
+    "memo": 3,
+    "question": 24,
+    "risk": 3
+  },
+  "event_types": {
+    "behavior.completed": 84,
+    "behavior.started": 84,
+    "goal.created": 3,
+    "llm.requested": 103,
+    "llm.responded": 103,
+    "object.created": 93,
+    "pack.loaded": 1,
+    "patch.applied": 24,
+    "pattern.matched": 1,
+    "relation.created": 76,
+    "runtime.idle": 3,
+    "tool.requested": 48,
+    "tool.responded": 48
+  },
+  "llm_request_events": 103,
+  "tool_request_events": 48,
+  "network_attempts": 0,
+  "new_live_provider_calls": 0,
+  "full_event_jsonl_sha256": "2b96866f3601adc93a53aed3aeffec80448f73943e9393c377f3bc9403d9bc31",
+  "projection_sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba",
+  "second_full_event_jsonl_sha256": "cad6a410fb28ecdd692e9cdc62271b60c3c8106a1e1e2a5513064d80cf102c2d",
+  "two_fixture_event_jsonl_equal": false,
+  "normalization": "omit only payload.latency_seconds on tool.responded events",
+  "normalized_event_jsonl_sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4",
+  "two_normalized_fixture_event_jsonl_equal": true,
+  "differing_event_fields": [
+    {
+      "event_id": "evt_022",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_026",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_041",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_045",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_065",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_069",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_083",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_087",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_102",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_106",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_120",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_124",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_138",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_142",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_156",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_160",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_251",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_255",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_270",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_274",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_288",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_292",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_306",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_310",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_326",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_330",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_344",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_348",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_363",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_367",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_381",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_385",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_474",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_478",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_493",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_497",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_512",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_516",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_531",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_535",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_549",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_553",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_567",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_571",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_585",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_589",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_603",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    },
+    {
+      "event_id": "evt_607",
+      "type": "tool.responded",
+      "fields": [
+        "payload.latency_seconds"
+      ]
+    }
+  ],
+  "two_fixture_projections_equal": true,
+  "reload_projection_equal": true,
+  "fork_copied_inclusive_completed_prefix": true,
+  "fork_annotation_parent_unchanged": true,
+  "strict_payload_only_drift_accepted": true,
+  "strict_extra_event_drift_rejected": true,
+  "limitations": [
+    "Raw event bytes differ in measured tool latency; projection and explicitly normalized event equality only.",
+    "Not proof of arbitrary behavior determinism or truth of generated claims.",
+    "Fork check uses a completed valid cutoff and no changed model call.",
+    "No latency, cost, scale, failure-recovery, or competitor superiority measurement.",
+    "Recorded fixture cost/latency fields are fixture values, not this run's bill."
+  ]
+}

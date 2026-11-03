@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "observed_date_local": "2026-11-02",
+  "timezone": "America/Los_Angeles",
+  "ci_observed_utc": "2026-11-03",
+  "pr": "https://github.com/yoheinakajima/activegraph/pull/89",
+  "ci_run": "https://github.com/yoheinakajima/activegraph/actions/runs/41585888136",
+  "ci_exact_head": "cb9ae511fcbf6d88f4d4a3a2c55d647e80818ca1",
+  "baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "conclusion": "preexisting dependency-version-sensitive error snapshot; not induced by paper collection or source changes",
+  "failing_test": "tests/test_errors_format.py::test_pack_schema_violation_for_object_snapshot",
+  "failure_locations": [
+    "tests/test_errors_format.py:1470",
+    "tests/test_errors_format.py:91",
+    "tests/snapshots/errors/pack_schema_violation__object.txt:10",
+    "activegraph/packs/__init__.py:218",
+    "pyproject.toml:28"
+  ],
+  "expected_url": "https://errors.pydantic.dev/2.13/v/missing",
+  "actual_url": "https://errors.pydantic.dev/2.14/v/missing",
+  "expected_vs_actual_equal_after_only_url_replacement": true,
+  "ci_dependency": "pydantic==2.14.2 on both jobs",
+  "declared_dependency": "pydantic>=2",
+  "ci_python_3_11": {
+    "job_url": "https://github.com/yoheinakajima/activegraph/actions/runs/41585888136/job/125751140543",
+    "python": "3.11.17",
+    "failed": 1,
+    "passed": 1066,
+    "skipped": 43,
+    "deselected": 13
+  },
+  "ci_python_3_12": {
+    "job_url": "https://github.com/yoheinakajima/activegraph/actions/runs/41585888136/job/125751140374",
+    "python": "3.12.15",
+    "failed": 1,
+    "passed": 1109,
+    "deselected": 13
+  },
+  "git_identity_proof": {
+    "activegraph": {
+      "baseline_git_object": "9aa90d75b04756eaa2c349e76a641aab0715c693",
+      "pr_git_object": "9aa90d75b04756eaa2c349e76a641aab0715c693",
+      "identical": true
+    },
+    "tests": {
+      "baseline_git_object": "c65c4b5d0b9d27be1ba697fd9a68ae456aad4726",
+      "pr_git_object": "c65c4b5d0b9d27be1ba697fd9a68ae456aad4726",
+      "identical": true
+    },
+    "pyproject.toml": {
+      "baseline_git_object": "ae5e5a76e51c9feee9dc97fffe825572ce031013",
+      "pr_git_object": "ae5e5a76e51c9feee9dc97fffe825572ce031013",
+      "identical": true
+    },
+    ".github/workflows": {
+      "baseline_git_object": "07353f9280d0f7bcfcb88b9a55273d4c6f03909f",
+      "pr_git_object": "07353f9280d0f7bcfcb88b9a55273d4c6f03909f",
+      "identical": true
+    }
+  },
+  "local_environment": {
+    "python": "3.11.15",
+    "pydantic": "2.14.2"
+  },
+  "focused_reproduction": [
+    {
+      "source": "PR work tree",
+      "command": "env -i PATH=/opt/homebrew/bin:/usr/bin:/bin .venv/bin/python -m pytest -q tests/test_errors_format.py::test_pack_schema_violation_for_object_snapshot --basetemp=papers/ieee-software-2026/.scratch/pr-ci-check",
+      "result": "1 failed in 0.09s; exact same 2.13-to-2.14 URL diff",
+      "exit_code": 1
+    },
+    {
+      "source": "git archive of baseline7070112 in disposable source-owned scratch; imported runtime bytes identical to baseline by object/hash checks",
+      "command": "from exported baseline: env -i PATH=/opt/homebrew/bin:/usr/bin:/bin /absolute/work-clone/.venv/bin/python -I -m pytest -q tests/test_errors_format.py::test_pack_schema_violation_for_object_snapshot --basetemp=/absolute/work-clone/papers/ieee-software-2026/.scratch/base-ci-check",
+      "result": "1 failed in 0.11s; exact same 2.13-to-2.14 URL diff",
+      "exit_code": 1
+    }
+  ],
+  "actions": "No packet-induced defect found. No snapshot refresh, dependency pin, runtime change, workflow relaxation, test exclusion or blanket CI retry applied. A native dependency/snapshot maintenance fix is a separate maintainer scope.",
+  "merge_readiness": "CI remains failing; not merge-ready. Article/evidence scoped passes do not override failing required CI."
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "intentional invalid local input pin; fixture execution must not begin",
+  "test": "copy verifier and pin to disposable scratch; replace first expected SHA256 with zeros",
+  "exit_code": 1,
+  "result": "PASS: imported runtime mismatch rejected before fixture execution",
+  "expected_error": "imported runtime/fixture does not match pinned baseline",
+  "no_runtime_or_fixture_source_changed": true
+}

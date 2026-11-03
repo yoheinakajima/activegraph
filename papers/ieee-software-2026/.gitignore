@@ -1,0 +1,6 @@
+.scratch/
+.private/
+*.aux
+*.log
+*.out
+*.synctex.gz
