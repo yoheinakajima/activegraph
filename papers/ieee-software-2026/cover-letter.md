@@ -1,4 +1,4 @@
-# UNSENT cover letter — author and route confirmation required
+# UNSENT cover letter — final author approval and route preflight required
 
 Proposed destination: IEEE Software, “Special Issue: Building Trustworthy Software in the Time of AI,” if still available and the final package is complete; otherwise the general feature-article route. Do not send this file or select both routes. Reconfirm exact destination/issue at final preflight.
 
@@ -12,12 +12,17 @@ The supporting check is offline and requires no provider credentials. It reprodu
 
 The architecture was previously described in **arXiv:2605.21997v1**, which is included as supporting material. This practitioner adaptation uses a dated current source baseline, substantially reorganizes the account, credits closest durable-execution alternatives, narrows overbroad replay/provenance claims and adds the bounded evidence/limitations described above. The earlier public version remains unchanged. No downstream Regimes result or cross-project replay total is claimed here.
 
-**Author confirmation needed before sending:** current affiliation and correspondence details; authorship/responsibility and permission for all materials; funding/conflicts and complete AI-use disclosure; ethics applicability; related manuscripts and exclusive current submission status. These statements must be completed truthfully after author response, not replaced by boilerplate assurances. The concrete new-draft AI assistance is identified in the manuscript review note pending author validation.
+The research, including computational resources and model/API usage, was supported by Untapped Capital. The sole human author is the firm's founder and general partner and the creator and maintainer of ActiveGraph. The author has a financial interest through his role at Untapped Capital. The article discloses these relevant interests and its AI assistance. OpenAI Codex (GPT-6.1 Sol preparation worker) generated/revised this adaptation and companion code; Claude-attributed preparation critiques and historical Claude/Cursor runtime assistance are distinguished from unknown original manuscript-writing tools and fixture-model labels. Checks and their limits are recorded; no independent human replication or personal repetition of every check is asserted.
 
-The packet contains editable article and PDF, a separate evidence supplement, retained synthetic outputs and verification code, provenance/availability information and the prior preprint. Author bio/photo/ORCID/contact and final declarations are pending. We appreciate your consideration once those final author checks are complete.
+The packet contains editable article and PDF, a separate evidence supplement, retained synthetic outputs and verification code, provenance/availability information, the unchanged prior preprint, and approved author metadata, biography and photograph. The reported work is a synthetic software demonstration and source inspection rather than a human-participant or animal study.
+
+**Complete immediately before sending:** author approval/responsibility for the exact final materials and disclosures; all applicable material rights/distribution permissions and publisher terms; fresh related-manuscript/exclusivity declaration; confirmed special-issue or general route and current portal requirements. Private submission history belongs in the manager's private packet. Do not insert an absolute exclusivity assurance here from an incomplete search or treat preparation authorization as submission permission. Final journal availability/deposition links must match the actually approved artifact release. We appreciate your consideration once this preflight is complete.
 
 Sincerely,
 
 Yohei Nakajima
 
-[Approved current affiliation and correspondence details pending; keep private answers out of this Git-tracked template.]
+Untapped Capital
+Bellevue, Washington, USA
+Correspondence: yohei@untapped.vc
+ORCID: 0009-0009-1293-6053

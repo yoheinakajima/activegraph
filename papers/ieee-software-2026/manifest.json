@@ -8,19 +8,31 @@
   "pdf": "article.pdf",
   "supplement": "supplement.tex",
   "supplement_pdf": "supplement.pdf",
-  "readiness": "manager/author review; author facts and final action gates pending",
+  "readiness": "manager/author review; public metadata/funding/photo supplied; final rights/responsibility/portal/action gates pending",
+  "author": {
+    "name": "Yohei Nakajima",
+    "affiliation": "Untapped Capital",
+    "location": "Bellevue, Washington, USA",
+    "public_contact": "yohei@untapped.vc",
+    "orcid": "0009-0009-1293-6053",
+    "orcid_verification": "author supplied; checksum checked; registry authentication not asserted",
+    "photo": "author-photo.jpg",
+    "photo_reuse_approval": "supplied for IEEE preparation/republication; unchanged bytes"
+  },
+  "assistance_record": "tool-use-audit.md",
   "primary_verification_receipt": "evidence/identity-checked/verification.json",
   "earlier_retained_verification_receipt": "evidence/verification.json",
   "actual_submission_history": "unknown; no journal submission by preparation worker",
   "format": {
     "abstract_words": 141,
-    "all_visible_words_including_references_header_visuals": 2366,
+    "all_visible_words_including_references_header_visuals": 2558,
     "figures": 1,
     "tables": 1,
-    "conservative_total_with_250_per_visual": 2866,
+    "author_photos": 1,
+    "conservative_total_with_250_per_visual": 3308,
     "references": 7,
     "actionable_insights": 3,
-    "method": "Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table; intentionally overcounts exclusions"
+    "method": "Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table and author photo; intentionally overcounts exclusions"
   },
   "runtime_inputs": [
     {
@@ -130,8 +142,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 7624,
-      "sha256": "4d8f9e79f3299f3c1d8d944ab8290672159c29fc3654d89737bdbc8b6d0d6674"
+      "bytes": 8287,
+      "sha256": "e4ca9136121ab73e9bfedc0b3abb69e0fb930fcb1822422c6284fc2a5dd8fe6f"
     },
     {
       "path": "archive/arxiv-v1/00README.json",
@@ -170,18 +182,23 @@
     },
     {
       "path": "article.pdf",
-      "bytes": 57582,
-      "sha256": "d4c818c690681d38d851256d1e44761bc4a966692f463fa43dc87c22e359651b"
+      "bytes": 1852900,
+      "sha256": "3696829ec57cca853a1b97a47d6f04578e6cd7967255b43e0d5498be89feeab4"
     },
     {
       "path": "article.tex",
-      "bytes": 20617,
-      "sha256": "a711fafdcd3401f608d7b7198cf8b91b1369f95f3021e164e3b4addd501f5410"
+      "bytes": 22480,
+      "sha256": "43bad7c9c0d83abc45fd75ac20ea0cf715b8c9d89198fd4e9ab0377f1ba99b74"
+    },
+    {
+      "path": "author-photo.jpg",
+      "bytes": 1792245,
+      "sha256": "6c275510694f5e2493bfbb47b33b25d98ac9a4051aa2d95e7e391e6098d1fa6b"
     },
     {
       "path": "author-worksheet.md",
-      "bytes": 4065,
-      "sha256": "bb8daa4cdd7b894a447c2fe83d091c899eb37b3914773af656679703ac4b5b65"
+      "bytes": 4141,
+      "sha256": "7dad1f6e694c60735a25e4b15d7cb1ddd520336a005688b8d89ab30ef3105555"
     },
     {
       "path": "claim-audit.md",
@@ -190,13 +207,13 @@
     },
     {
       "path": "corrections.md",
-      "bytes": 5394,
-      "sha256": "3fe955df4f8bfdf4c4ac1e8dcfb56a9385322d90081cf22b99a14b82ec1d9781"
+      "bytes": 6683,
+      "sha256": "984982b7e880a69a3fd276404c7ffe56486abfbf0113bb97e1b6ff52c9aa2811"
     },
     {
       "path": "cover-letter.md",
-      "bytes": 3106,
-      "sha256": "8386e0fecc2903739432efdafaa4fc0d1d199a4ab29f3d465b7e9273a32e9007"
+      "bytes": 4090,
+      "sha256": "4571b5628e78d5067cbcc529c1cd7777e873947bd83c0ee7bc889b0121bbdee2"
     },
     {
       "path": "evidence/ci-diagnosis.json",
@@ -265,13 +282,13 @@
     },
     {
       "path": "publisher-checklist.md",
-      "bytes": 3870,
-      "sha256": "46fee65ba01e2677bdf33cd0a431e1704998387d42f6ca936966e2e3349c580c"
+      "bytes": 4357,
+      "sha256": "38495be7815624dfa94cfcecf68aa311684a38c82027d6e836b0f6be404658a6"
     },
     {
       "path": "readiness.md",
-      "bytes": 10938,
-      "sha256": "daf472580cd4353fb23b804821d5bb83f1652d83f05de6a261529d6bf5ae2558"
+      "bytes": 12229,
+      "sha256": "7cb0bea8b28e214bd74a60b335a7306ab09e869c47ff24d391b3523f77713dfd"
     },
     {
       "path": "references.md",
@@ -280,23 +297,28 @@
     },
     {
       "path": "rights-and-availability.md",
-      "bytes": 3599,
-      "sha256": "0d593b1f51559a5fc04addfaee8e39d502b098b2e316a788bf8f14e9c099fe89"
+      "bytes": 4066,
+      "sha256": "8e6ff50a791cbd4fa1da9bd4e69aadc6059667b57be315e09359575160c9923c"
     },
     {
       "path": "supplement.pdf",
-      "bytes": 43812,
-      "sha256": "4af379e089cc612248def0d584a2176d108635bcda6eb428a825259b9ccda211"
+      "bytes": 45475,
+      "sha256": "2c7907cfcdb3c2d07d6e99fe46ab03e28285b442c15d9959105bd267f3409d64"
     },
     {
       "path": "supplement.tex",
-      "bytes": 9764,
-      "sha256": "df3b74a62a4a828bb89b8f9bd6223c4b890da2208936576d71529ca8e44fa7fb"
+      "bytes": 10741,
+      "sha256": "3953d09b50ed3171faa67121b743de005c1c3b2ad323c0e1955e08a12e6e9291"
+    },
+    {
+      "path": "tool-use-audit.md",
+      "bytes": 5103,
+      "sha256": "ae6016ce5b56562bcb853331c2e48c84a534217e65a71dbd5e628a85939dff7e"
     },
     {
       "path": "verification/check_package.py",
-      "bytes": 7284,
-      "sha256": "4a502bdda93550616fd0d48917e8a326d6adf4f69322117f28413dd5eef7f5ec"
+      "bytes": 8174,
+      "sha256": "6f7e314f1e44b77121175e84d979de1816ef6841aa4af0f2393f7a8532d3aeee"
     },
     {
       "path": "verification/runtime-inputs.json",

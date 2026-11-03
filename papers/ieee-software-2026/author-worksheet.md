@@ -1,34 +1,30 @@
-# Author and declarations worksheet — unfilled template
+# Public author metadata and final declarations worksheet
 
-This Git-tracked file contains only public source facts and unresolved fields. **Do not enter private answers here.** Return author answers through the manager; if a private filled working copy is needed, keep it outside Git or in ignored `.private/` and never add it to a commit/PR. No negative declaration is presumed from missing information or a search with no result.
+Only approved public facts and unresolved action/attestation fields belong in this tracked file. Keep private answers, correspondence and submission history outside Git. Supplied facts below are cleared for manuscript preparation; they do not authorize submission or a publishing agreement.
 
-## Known public facts
+## Public metadata supplied for this packet
 
-| Field | Public source | Draft treatment |
-| --- | --- | --- |
-| Author | Yohei Nakajima, arXiv 2605.21997v1 | Named author; final authorship/contributor consent still required |
-| Prior affiliation | Untapped Capital on arXiv v1 | Historical fact only; current affiliation not asserted |
-| Prior project site | activegraph.ai on arXiv v1 | Public project pointer, not a verified current personal contact |
-| Prior preprint | arXiv 2605.21997v1, submitted May 21, 2026 | Disclosed and archived; no replacement uploaded |
-| This draft's AI assistance | OpenAI Codex, GPT-6.1 Sol worker, generated/revised article text, editable figure, package/verification code | Concrete review-note disclosure included; author verifies and completes earlier history |
+| Field | Prepared value / provenance |
+| --- | --- |
+| Sole author and corresponding author | Yohei Nakajima; author-approved November 2, 2026 |
+| Affiliation/location | Untapped Capital; Bellevue, Washington, USA; author-approved |
+| Public contact | yohei@untapped.vc; author-approved |
+| ORCID | 0009-0009-1293-6053; author-supplied; checksum checked by manager. Public resolver retrieval failed; no registry authentication or account binding asserted. |
+| Biography | Founder and general partner of Untapped Capital; creator and maintainer of ActiveGraph. The public [Untapped site](https://untapped.vc/) corroborates the firm role; repository ownership, contribution history and authorship corroborate the software role. No degree, academic appointment or professional membership invented. |
+| Photo | `author-photo.jpg`; supplied genuine photograph approved for IEEE preparation/republication. Original bytes preserved; SHA-256 `6c275510694f5e2493bfbb47b33b25d98ac9a4051aa2d95e7e391e6098d1fa6b`; 3538×3538 pixels. No generated likeness or image edits. |
+| Funding | “This research, including computational resources and model/API usage, was supported by Untapped Capital.” No outside sponsor/grant/provider-credit relationship asserted. |
+| Relevant interests | Author's founder/GP role and financial interest through that role at supporting firm, plus creator/maintainer role in evaluated software, disclosed. No private ownership details or unsupported paid/advisory roles included. |
+| Prior public work | arXiv2605.21997v1; disclosed, archived unchanged. No replacement uploaded. |
+| Tool assistance | Reconstructed in `tool-use-audit.md` from pinned source/history, preparation records and actual checks. Unknown historical writing-tool/model versions remain explicitly unknown; do not ask the author to reconstruct unavailable tooling. |
+| Reported study scope | Synthetic software fixture and source inspection, not a human-participant or animal study. This scope statement does not claim an institutional exemption for any undisclosed research. |
 
-## Author response fields — all unresolved
+## Exact residual fields/gates
 
-- Current public author name/order, contribution responsibility and corresponding author: **author confirmation pending**.
-- Current approved affiliation, city/country and postal details if required: **unknown**.
-- ORCID and account identity/readiness: **unknown**; no account creation or credential lookup.
-- Approved email/contact for journal and public bio: **unknown**; no email inferred or copied.
-- Peer-reviewed article bio in IEEE's format (role, institution/location, interests, highest degree/institution where appropriate, accurate professional membership, public contact): **unknown**. Do not invent degree or membership. No academic coauthor is assumed necessary.
-- Author photo with consent and reuse rights: **not supplied**. Do not generate a substitute likeness or scrape a headshot.
-- Complete AI assistance in original preprint and new draft, tools/models/sections/assets/code and level of use: **author attestation pending**. Grammar-only editing differs from generated content. Author checks citations and code and takes responsibility.
-- Funding and sponsor role: **unknown**; do not fill “none.”
-- Conflicts/commercial interest/ownership in ActiveGraph or related entities: **author attestation pending**; do not fill “no conflicts.”
-- Current or previous refereed submissions, publication/withdrawal history and related manuscripts under consideration: **unknown**; no simultaneous-submission assurance inferred. Public arXiv alone is not prohibited prior publication under IEEE's inspected policy.
-- Rights to original text, new text/figures/code/fixtures, photograph and any third-party reuse: **author confirmation pending**.
-- Human/animal subjects applicability, institutional oversight/consent or truthful explanation when required: **author confirmation pending**. This packet adds only a synthetic software fixture, not a participant study; that fact is not an ethics exemption for undisclosed earlier work.
-- Desired review: proposed identified/single-anonymous route, pending author choice; any double-anonymous request requires rationale and file/metadata preparation and cannot guarantee anonymity against public v1.
-- Proposed publishing route: traditional/no optional OA election unless the author chooses otherwise. Funder obligation, title-specific charges, waivers/coverage and payment cap: **unknown**.
+- Final sole-author approval and responsibility for the corrected article, supplement, disclosures and unknown-history wording. AI-assisted source/reference/PDF/test checks are documented; no claim of independent human replication or that the author personally repeated all checks.
+- Final material-by-material rights/reuse and distribution approval for manuscript, fixture/output supplement and archived prior text; the photo's supplied reuse approval is already recorded. Publisher license choice/terms remain a later action gate.
+- Fresh related-manuscript/exclusivity declaration at the moment of submission. Do not publish private history or infer an absolute assurance from incomplete searches; the manager holds any private response.
+- Any additional *actually required* authenticated portal fields, institutional identifiers/postal address or declaration wording. ORCID authentication/account linkage not attempted. Do not invent degree or membership to fill optional biography fields.
+- Final route and publishing choice: proposed identified feature article for the trustworthy-software special issue if available and approved in time; general rolling route otherwise. Traditional publishing proposed; no optional OA election, fee cap or legal terms approved here.
+- Final exact-file/destination approval after manager review, current portal/fees/terms verification and rebuild/hash preflight. No account action/upload/contact/terms/payment/merge is authorized by these supplied facts.
 
-## Review-ready decision
-
-After the manager reviews the files, ask the author to confirm the above facts and provide the photo/ORCID/bio/contact via a private channel. Resolve factual statements first. Submit only after the exact final file hashes, journal route, declarations and cost/terms boundaries receive explicit approval. No account, contact, funding, conflict, ethics, exclusivity, rights or approval claim has been made on the author's behalf.
+Private author answers remain with the manager. No new request for already supplied identity, funding, photo or tool-model reconstruction is needed.

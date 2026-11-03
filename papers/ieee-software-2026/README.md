@@ -2,7 +2,7 @@
 
 Source-owned draft prepared November 2, 2026 for **The Log Is the Agent: Engineering Inspectable Agent Runs**. This is a distinct practitioner article based on current runtime source `7070112c63b7cffc4b3aef8b7e907c8f2f9a9165`, with unchanged arXiv v1 archived for provenance. No runtime behavior, accepted contract or public preprint is changed.
 
-**State: ready for manager/author review; not submission-ready.** Current private journal history is unknown. Author metadata, photo, complete disclosures, rights and exclusivity attestation remain pending. The packet has not been submitted, uploaded to a journal, publicly deposited or accepted. A source draft PR is a preparation artifact.
+**State: ready for manager/author review; not submission-ready.** Approved public author metadata, funding/interests and genuine photograph are included. Assistance is reconstructed with explicit unknown historical versions; final author responsibility/rights, fresh exclusivity/related-manuscript declaration and portal/action approval remain pending. Private journal history is not recorded here. The packet has not been submitted, uploaded to a journal, publicly deposited or accepted. A source draft PR is a preparation artifact.
 
 ## Review files
 
@@ -13,8 +13,10 @@ Source-owned draft prepared November 2, 2026 for **The Log Is the Agent: Enginee
 - `verification/verify.py`: bounded credential-free in-process execution with network guard; writes only to a supplied output directory.
 - `verification/check_package.py`: static format/hash/inventory check, no runtime campaign.
 - `claim-audit.md`, `references.md`, `corrections.md`: claim-to-source mapping, primary-source bibliography audit and correction chronology.
-- `author-worksheet.md`, `rights-and-availability.md`, `publisher-checklist.md`: unfilled/public-fact-only templates and later submission gates. Never commit private filled answers; `.private/` is ignored local storage if needed.
-- `cover-letter.md`: an **unsent** concrete letter requiring final author facts/route choice.
+- `author-worksheet.md`, `rights-and-availability.md`, `publisher-checklist.md`: approved-public-fact worksheets and exact later submission gates. Never commit private filled answers; `.private/` is ignored local storage if needed.
+- `cover-letter.md`: an **unsent** concrete letter requiring final author approval and route preflight.
+- `tool-use-audit.md`: stage-specific AI/tool assistance, pinned Git evidence, unknown original writing history and actual verification limits.
+- `author-photo.jpg`: approved genuine 3538×3538 photo, original bytes unchanged; included in article biography.
 - `readiness.md`: LOG-001–028 dispositions, checks and exact remaining owner inputs.
 - `manifest.json`: SHA-256 inventory, software inputs/environment and verification record. It excludes itself and disposable build/cache/log files to avoid self-reference.
 - `archive/arxiv-v1/`: original v1 bytes and sources. Do not edit, redate or rebuild these as the new article.
@@ -45,7 +47,7 @@ tectonic --only-cached --keep-logs --untrusted papers/ieee-software-2026/supplem
 python papers/ieee-software-2026/verification/check_package.py
 ```
 
-No native editor/compiler app tool was exposed in this worker session; the existing local Tectonic tool was used instead. Each page was rendered with Poppler and visually inspected. Main article count is conservatively checked by converting all visible text (including references/header/visual text) to plain text and adding 250 per figure/table; this deliberately overcounts rather than relying on exclusions. The main manuscript can be revised further without approaching the current 4,200-word limit.
+No native editor/compiler app tool was exposed in this worker session; the existing local Tectonic tool was used instead. Each page was rendered with Poppler and visually inspected. The metadata/photo revision is seven article pages and four supplement pages; the final article page contains biography/photo and all seven references, not an orphan reference. Main article count is conservatively checked by converting all visible text (including references/header/visual text) to plain text and adding 250 per figure/table and the biography photo; this deliberately overcounts rather than relying on exclusions. The main manuscript can be revised further without approaching the current 4,200-word limit.
 
 ## Route and action boundaries
 

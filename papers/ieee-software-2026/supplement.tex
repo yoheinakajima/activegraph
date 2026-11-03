@@ -7,11 +7,11 @@
 \setlength{\parskip}{5pt}
 \setlength{\emergencystretch}{2em}
 \title{Evidence Supplement: The Log Is the Agent}
-\author{Yohei Nakajima}
+\author{Yohei Nakajima\\\small Untapped Capital, Bellevue, Washington, USA\\\small \href{mailto:yohei@untapped.vc}{yohei@untapped.vc}\\\small ORCID: \href{https://orcid.org/0009-0009-1293-6053}{0009-0009-1293-6053}}
 \date{Preparation draft, November 2, 2026}
 \begin{document}
 \maketitle
-This supplement accompanies \emph{The Log Is the Agent: Engineering Inspectable Agent Runs}. It records a bounded, offline preparation check, not a new benchmark study or independent replication. The draft and its author declarations remain under review. The complete machine-readable inventory is in \texttt{manifest.json}; the observed outputs are in \texttt{evidence/identity-checked/verification.json} and the accompanying JSONL/projection files.
+This supplement accompanies \emph{The Log Is the Agent: Engineering Inspectable Agent Runs}. It records a bounded, offline preparation check, not a new benchmark study or independent replication. Public author metadata and funding/interests are included in the accompanying article; final author review and submission approval remain pending. The complete machine-readable inventory is in \texttt{manifest.json}; the observed outputs are in \texttt{evidence/identity-checked/verification.json} and the accompanying JSONL/projection files.
 
 \section*{Pinned implementation and public-v1 separation}
 The runtime baseline is commit \texttt{7070112} (full commit recorded in the manifest) of \url{https://github.com/yoheinakajima/activegraph}. Source package metadata is 1.13.0; the inspected changelog still calls it unreleased, and a remote release tag is a different identity. This experiment does not install an unqualified latest release and does not establish PyPI publication status. The exact local source is installed in an isolated Python 3.11 environment. Before executing fixtures, the script resolves the imported package location and checks the SHA-256 values and exact inventory of all 110 pinned runtime/fixture files. Any mismatch fails closed. The baseline label alone is not treated as evidence of identity.
@@ -74,4 +74,6 @@ Builds use the already-installed Tectonic engine with cached resources; no TeX r
 The runtime source carries Apache-2.0 and NOTICE requirements. Code, article text, fixture records, public-v1 material and any third-party assets have distinct rights/provenance entries in the rights worksheet; it does not assume the runtime license grants permissions for all future supplements or an author photograph. The fixture documents are bundled synthetic demonstration inputs. Links ending in \texttt{fixtures.activegraph.local} are identifiers, not external data-retrieval endpoints.
 
 Neither deterministic projection nor a response cache attests that records were authentic at provider receipt, immutable before the retained snapshot, free of omitted data or scientifically valid. The check cannot evaluate evidence truth, real investment decisions, human oversight quality, privacy compliance, general task accuracy, scale, latency or self-improvement. No additional cross-project replay totals are used. These limits belong in the main article as well as this supplement.
+\section*{Support and assistance}
+This research, including computational resources and model/API usage, was supported by Untapped Capital. The author is its founder and general partner and ActiveGraph's creator and maintainer. OpenAI Codex (GPT-6.1 Sol for the preparation worker) generated and revised this supplement and its verification code. The article and \texttt{tool-use-audit.md} distinguish earlier runtime assistance, unknown original writing tools, fixture-model labels and observed checks. No independent human replication or personal repetition of every check is asserted. No new runtime execution was performed when adding author metadata and the approved photograph to the packet.
 \end{document}

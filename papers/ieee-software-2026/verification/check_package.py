@@ -50,13 +50,15 @@ def main():
     all_visible_words = len(plain(text).split())
     figures = text.count(r'\begin{figure}')
     tables = text.count(r'\begin{table}')
-    adjusted_conservative = all_visible_words + 250 * (figures + tables)
+    author_photos = text.count(r'\includegraphics')  # Current content diagram is code-native.
+    adjusted_conservative = all_visible_words + 250 * (figures + tables + author_photos)
     refs = text.count(r'\bibitem')
     insights = text.split(r'\section*{Three actionable insights}', 1)[1].split(r'\end{itemize}', 1)[0].count(r'\item')
     assert abstract_words <= 150, abstract_words
     assert adjusted_conservative <= 4200, adjusted_conservative
     assert refs <= 15 and insights == 3
     assert figures == 1 and tables == 1
+    assert digest(PACKET / 'author-photo.jpg') == '6c275510694f5e2493bfbb47b33b25d98ac9a4051aa2d95e7e391e6098d1fa6b'
     receipt = json.loads((PACKET / 'evidence/identity-checked/verification.json').read_text())
     assert receipt['imported_runtime_identity_verified']
     assert digest(PACKET / 'verification/runtime-inputs.json') == receipt['runtime_pin_sha256']
@@ -80,10 +82,10 @@ def main():
     assert digest(original / 'activegraph.tex') == 'b8fb447bad03b55ca326083df8948cf5dd31b4ff5e33762ebedbaeb47055e610'
     format_receipt = dict(abstract_words=abstract_words,
                           all_visible_words_including_references_header_visuals=all_visible_words,
-                          figures=figures, tables=tables,
+                          figures=figures, tables=tables, author_photos=author_photos,
                           conservative_total_with_250_per_visual=adjusted_conservative,
                           references=refs, actionable_insights=insights,
-                          method='Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table; intentionally overcounts exclusions')
+                          method='Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table and author photo; intentionally overcounts exclusions')
     if args.write_manifest:
         inventory = [{'path': str(p.relative_to(PACKET)), 'bytes': p.stat().st_size,
                       'sha256': digest(p)} for p in files()]
@@ -97,7 +99,12 @@ def main():
                   'source_branch': 'codex/ieee-software-prep-20261102',
                   'manuscript': 'article.tex', 'pdf': 'article.pdf',
                   'supplement': 'supplement.tex', 'supplement_pdf': 'supplement.pdf',
-                  'readiness': 'manager/author review; author facts and final action gates pending',
+                  'readiness': 'manager/author review; public metadata/funding/photo supplied; final rights/responsibility/portal/action gates pending',
+                  'author': {'name': 'Yohei Nakajima', 'affiliation': 'Untapped Capital',
+                             'location': 'Bellevue, Washington, USA', 'public_contact': 'yohei@untapped.vc',
+                             'orcid': '0009-0009-1293-6053', 'orcid_verification': 'author supplied; checksum checked; registry authentication not asserted',
+                             'photo': 'author-photo.jpg', 'photo_reuse_approval': 'supplied for IEEE preparation/republication; unchanged bytes'},
+                  'assistance_record': 'tool-use-audit.md',
                   'primary_verification_receipt': 'evidence/identity-checked/verification.json',
                   'earlier_retained_verification_receipt': 'evidence/verification.json',
                   'actual_submission_history': 'unknown; no journal submission by preparation worker',
