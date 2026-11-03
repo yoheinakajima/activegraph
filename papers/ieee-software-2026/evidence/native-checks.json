@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-11-02",
+  "kind": "summary of observed local command results, not a fabricated raw execution log",
+  "baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "commands": [
+    {"command": "env -i PATH=/opt/homebrew/bin:/usr/bin:/bin .venv/bin/python -m pytest -m 'not slow' -q tests/test_replay.py tests/test_fork.py tests/test_llm_replay.py tests/test_tool_replay.py tests/test_diligence_pack.py --basetemp=papers/ieee-software-2026/.scratch/native-pytest", "exit_code": 0, "result": "36 passed in 14.34s", "scope": "five relevant native modules; no full-suite or optional-service claim"},
+    {"command": "env -i PATH=/opt/homebrew/bin:/usr/bin:/bin .venv/bin/python -m mypy", "exit_code": 0, "result": "Success: no issues found in 54 source files"},
+    {"command": "env -i PATH=/opt/homebrew/bin:/usr/bin:/bin .venv/bin/python scripts/gate_docstrings.py", "exit_code": 0, "result": "Ring0 131/131 documented, zero exemptions; Ring1 167/184 (90.8%), floor80%; OK"},
+    {"command": "env -i PATH=/opt/homebrew/bin:/usr/bin:/bin .venv/bin/python -m mkdocs build --site-dir papers/ieee-software-2026/.scratch/site", "exit_code": 0, "result": "Documentation built in 5.21 seconds", "notes": "Existing nav omissions and relative-link advisories; no deploy. Packet lives outside docs/ and is not added to website navigation."}
+  ],
+  "initial_harness_issue": "First scoped pytest invocation had 15 setup errors because parent scratch directory was absent, with 21 passing cases. mkdir of source-owned scratch parent resolved it; no native tests or runtime changed.",
+  "not_run": ["full native suite with fixed global /tmp quickstart/example paths", "slow wheel-completeness/llms/deployment checks", "optional Postgres/FalkorDB service tests", "live provider or optimizer campaigns"],
+  "runtime_changed": false,
+  "credentials": "No values read; native tests executed with a minimal explicit environment, article fixture script in isolated Python mode and blocked network path. No live provider SDK extras needed."
+}

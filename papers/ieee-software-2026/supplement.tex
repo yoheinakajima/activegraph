@@ -1,0 +1,77 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs,array}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\title{Evidence Supplement: The Log Is the Agent}
+\author{Yohei Nakajima}
+\date{Preparation draft, November 2, 2026}
+\begin{document}
+\maketitle
+This supplement accompanies \emph{The Log Is the Agent: Engineering Inspectable Agent Runs}. It records a bounded, offline preparation check, not a new benchmark study or independent replication. The draft and its author declarations remain under review. The complete machine-readable inventory is in \texttt{manifest.json}; the observed outputs are in \texttt{evidence/identity-checked/verification.json} and the accompanying JSONL/projection files.
+
+\section*{Pinned implementation and public-v1 separation}
+The runtime baseline is commit \texttt{7070112} (full commit recorded in the manifest) of \url{https://github.com/yoheinakajima/activegraph}. Source package metadata is 1.13.0; the inspected changelog still calls it unreleased, and a remote release tag is a different identity. This experiment does not install an unqualified latest release and does not establish PyPI publication status. The exact local source is installed in an isolated Python 3.11 environment. Before executing fixtures, the script resolves the imported package location and checks the SHA-256 values and exact inventory of all 110 pinned runtime/fixture files. Any mismatch fails closed. The baseline label alone is not treated as evidence of identity.
+
+The May 2026 arXiv v1, its source archive and extracted editable source are retained unchanged under \texttt{archive/arxiv-v1/}. The original PDF hash begins \texttt{8e8ba7df94f27f0a}; the original TeX hash begins \texttt{b8fb447bad03b55c}. Full SHA-256 values are in the manifest. The public submission timestamp is May 21, 2026; the PDF displays May 22 because the source used a dynamic date. This packet creates a distinct current-baseline article, not an arXiv replacement or a retroactive change to the original experiment.
+
+\section*{Exactly what was executed}
+The script \texttt{verification/verify.py} runs two sequential instances of the bundled diligence fixture in a disposable directory. It uses three synthetic companies, \texttt{RecordedDiligenceProvider}, a fixed run identifier and a frozen event clock. Settings match the inspected fixture-mode quickstart: model-label \texttt{claude-sonnet-4-5}, at most five documents per company, at most ten claims per document, review threshold 0.7, and eight to twelve questions. The label identifies fixture requests; no provider SDK or credential is needed.
+
+The runtime budget is 80 model requests, 100 tool requests and a fixture-accounting ceiling of USD 5.00 for each goal invocation. Those bookkeeping values are not actual provider spend. A socket guard rejects connection, DNS and bind operations; no socket operation was attempted. The check does not start services or touch the normal quickstart's fixed temporary database. State is created only in the requested disposable output area; no production database is loaded.
+
+The native fixture execution yields the following counts, agreeing with the earlier reported mechanism scale. This agreement does not establish the identity of the May run.
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+Recorded quantity & Count\\
+\midrule
+Synthetic companies & 3\\
+Events & 671\\
+Projected objects & 93\\
+Projected relations & 76\\
+Model-request events served by fixtures & 103\\
+Tool-request events & 48\\
+Attempted network operations & 0\\
+New live provider calls & 0\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The 93 objects comprise three companies, 24 questions, nine documents, 25 claims, 25 evidence items, one contradiction, three risks and three memos. These are fixture outputs, not validated findings about actual companies. The evidence JSON also gives complete event-type and object-type inventories.
+
+\section*{Equality fields and a negative result}
+Every event is serialized as UTF-8 JSON with keys sorted, compact separators and a trailing newline, in recorded order. The serialization includes id, type, payload, actor, frame id, causing-event id and timestamp. Object projections include id, type, data, version and provenance; relation projections include their complete serialized fields. Ordered arrays are preserved, not sorted to hide ordering differences.
+
+\textbf{Raw event byte equality fails.} In the final captured pair, 48 events differ, exclusively in \texttt{payload.latency\_seconds} on \texttt{tool.responded} events. These are measured local tool timings despite the frozen event clock. The receipt retains both raw SHA-256 hashes and every differing event id/type/field. The verification code rejects any additional differing field or event-count difference.
+
+A separate normalized event comparison removes only that timing field from tool-response events. The remaining serialized event bytes match. The full projected object/relation bytes match without this event normalization. Loading the first saved run projects exactly the same object/relation bytes. These observations support equality for these fixed inputs and this pinned implementation. They are not universal byte-determinism guarantees.
+
+The normalized event hash begins \texttt{d164a7d9ffb824a2}; the projection hash begins\linebreak\texttt{f444cb69a4b2513a}. Re-executing measured timings can change raw hashes, so reproducing the receipt means checking the stated invariants and fields, not expecting the newly measured raw event file to have an old timing hash. The manifest verifies the exact retained receipt files.
+
+\section*{Branch check and execution-verifier boundary}
+The first run is forked at its last, completed event using the SQLite runtime fork with model and tool caches enabled. The script compares the copied inclusive prefix with the parent's event records, adds one \texttt{article\_note} object to the child and verifies the parent's serialized events are unchanged. The child has exactly one additional object. This exercises a completed valid cutoff. It does not test arbitrary in-flight branches, promotion-block cuts, fork-and-rerun interventions or external effects. Cache reuse for changed model calls is not measured.
+
+A separate small behavior check illustrates strict verification's boundary. A behavior creates a note whose text comes from mutable test-local state. Changing only the text while preserving event types is accepted by \texttt{Runtime.load(..., replay\_strict=True)}. Changing the behavior to emit an additional object event is rejected with a replay-divergence error. The check intentionally reports payload-only drift as accepted. No generic verifier is replaced or strengthened by this script.
+
+The inspected implementation projects a fork's copied prefix; it does not invoke the strict behavior verifier as part of the runtime fork. Model/tool caches can be populated from the parent's full recorded history. Therefore a branch-comparison design must explicitly state whether post-cut parent responses are available. Raw event/projected equality, command/type validation and fresh suffix execution remain different contracts.
+
+\section*{Reproduction and dependencies}
+Use the exact repository commit and the environment versions recorded in the manifest. Install the pinned source in a disposable environment, then from the repository root run:
+\begin{quote}\ttfamily\small
+python -I papers/ieee-software-2026/verification/verify.py\linebreak
+\hspace*{1em}--output /absolute/disposable/output
+\end{quote}
+The command requires an installed local ActiveGraph package, Click and Pydantic. It neither downloads data nor falls back to an online provider. The execution guard is a fail-closed check on this in-process path, not a general operating-system sandbox. Readers should use a clean process without provider credentials; installation of dependencies is a distinct prior step. The local native-check receipt documents selected replay/fork/model/tool/diligence tests, static typing, docstring coverage and documentation build. Optional database/service tests are not evidence from this packet.
+
+Builds use the already-installed Tectonic engine with cached resources; no TeX runtime was installed. Editable article, supplement and figure source are included. Full SHA-256 values for article PDFs, source, archived public v1, inputs and retained verification outputs are in the packet manifest. Public release/deposition of this working packet has not been performed; a draft source PR is not journal submission or artifact certification.
+
+\section*{Capture, rights and interpretation limits}
+The runtime source carries Apache-2.0 and NOTICE requirements. Code, article text, fixture records, public-v1 material and any third-party assets have distinct rights/provenance entries in the rights worksheet; it does not assume the runtime license grants permissions for all future supplements or an author photograph. The fixture documents are bundled synthetic demonstration inputs. Links ending in \texttt{fixtures.activegraph.local} are identifiers, not external data-retrieval endpoints.
+
+Neither deterministic projection nor a response cache attests that records were authentic at provider receipt, immutable before the retained snapshot, free of omitted data or scientifically valid. The check cannot evaluate evidence truth, real investment decisions, human oversight quality, privacy compliance, general task accuracy, scale, latency or self-improvement. No additional cross-project replay totals are used. These limits belong in the main article as well as this supplement.
+\end{document}

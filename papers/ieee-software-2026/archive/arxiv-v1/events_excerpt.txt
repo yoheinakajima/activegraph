@@ -1,0 +1,70 @@
+{
+  "id": "evt_001",
+  "type": "pack.loaded",
+  "actor": "runtime",
+  "caused_by": null,
+  "payload": {
+    "name": "diligence",
+    "version": "0.1.0",
+    "object_types": [
+      "company",
+      "document",
+      "question",
+      "claim",
+      "..."
+    ],
+    "behaviors": [
+      "diligence.company_planner",
+      "diligence.question_generator",
+      "..."
+    ]
+  }
+}
+{
+  "id": "evt_002",
+  "type": "goal.created",
+  "actor": "user",
+  "caused_by": null,
+  "payload": {
+    "goal": "Diligence: Northwind Robotics"
+  }
+}
+{
+  "id": "evt_003",
+  "type": "behavior.started",
+  "actor": "runtime",
+  "caused_by": "evt_002",
+  "payload": {
+    "behavior": "diligence.company_planner",
+    "event_id": "evt_002"
+  }
+}
+{
+  "id": "evt_004",
+  "type": "object.created",
+  "actor": "diligence.company_planner",
+  "caused_by": "evt_002",
+  "payload": {
+    "object": {
+      "id": "company#1",
+      "type": "company",
+      "data": {
+        "name": "Northwind Robotics"
+      },
+      "provenance": {
+        "created_by": "diligence.company_planner",
+        "caused_by_event": "evt_002"
+      }
+    }
+  }
+}
+{
+  "id": "evt_005",
+  "type": "behavior.completed",
+  "actor": "runtime",
+  "caused_by": "evt_002",
+  "payload": {
+    "behavior": "diligence.company_planner",
+    "event_id": "evt_002"
+  }
+}

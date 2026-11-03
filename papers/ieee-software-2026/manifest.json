@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-11-02",
+  "timezone": "America/Los_Angeles",
+  "runtime_baseline_commit": "7070112c63b7cffc4b3aef8b7e907c8f2f9a9165",
+  "source_branch": "codex/ieee-software-prep-20261102",
+  "manuscript": "article.tex",
+  "pdf": "article.pdf",
+  "supplement": "supplement.tex",
+  "supplement_pdf": "supplement.pdf",
+  "readiness": "manager/author review; author facts and final action gates pending",
+  "primary_verification_receipt": "evidence/identity-checked/verification.json",
+  "earlier_retained_verification_receipt": "evidence/verification.json",
+  "actual_submission_history": "unknown; no journal submission by preparation worker",
+  "format": {
+    "abstract_words": 141,
+    "all_visible_words_including_references_header_visuals": 2366,
+    "figures": 1,
+    "tables": 1,
+    "conservative_total_with_250_per_visual": 2866,
+    "references": 7,
+    "actionable_insights": 3,
+    "method": "Pandoc LaTeX-to-plain whitespace tokens, all visible text included, plus 250 per figure/table; intentionally overcounts exclusions"
+  },
+  "runtime_inputs": [
+    {
+      "path": "pyproject.toml",
+      "sha256": "bb092ba3d5e28946209f2da32993a683e6887349505ce912dff0172a225c0296"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "fbb7ac8857b6ce4b826937908e73d96bdc20cbdbbcbad1836f20c6543266b36f"
+    },
+    {
+      "path": "NOTICE",
+      "sha256": "3e20737949d1dac08ad55d7eac0e2b31c4efb774122ec606c9b6648dcc538e05"
+    },
+    {
+      "path": "activegraph/runtime/runtime.py",
+      "sha256": "5aac41d16793adb10e648a2a572441b3ff4e4ce8254dfe3a5d879a561e5aebbf"
+    },
+    {
+      "path": "activegraph/core/graph.py",
+      "sha256": "4ba6108e91f9006b4f8ca8f50daa05d1b74becf25c6eea39148aca7a5a6cd415"
+    },
+    {
+      "path": "activegraph/core/event.py",
+      "sha256": "16d58e5681d70389b8416ac890bd7f6f984e0d81f038cde2134ed709f66ebe77"
+    },
+    {
+      "path": "activegraph/packs/diligence/fixtures/__init__.py",
+      "sha256": "c16eb8cfb3a22a67f0d3fc9ed07834389b699b749e229664a23a816f218b8fe5"
+    },
+    {
+      "path": "activegraph/packs/diligence/fixtures/companies.py",
+      "sha256": "a33922e606de1cbaf1fd1dedf7d7110ae2886cef58d508f21cc2f647f3e0ce0e"
+    }
+  ],
+  "environment_versions": {
+    "Jinja2": "3.1.6",
+    "Markdown": "3.11.2",
+    "MarkupSafe": "3.0.4",
+    "PyYAML": "6.0.3",
+    "Pygments": "2.21.0",
+    "activegraph": "1.13.0",
+    "annotated-types": "0.8.0",
+    "ast_serialize": "0.13.1",
+    "babel": "2.18.0",
+    "backrefs": "8.1",
+    "beautifulsoup4": "4.15.0",
+    "build": "1.6.1",
+    "certifi": "2026.10.23",
+    "charset-normalizer": "3.5.2",
+    "click": "8.5.0",
+    "colorama": "0.4.6",
+    "ghp-import": "2.1.0",
+    "griffelib": "2.4.1",
+    "idna": "3.20",
+    "iniconfig": "2.3.1",
+    "librt": "0.16.0",
+    "markdown-it-py": "3.0.0",
+    "markdownify": "1.2.3",
+    "mdformat": "0.7.22",
+    "mdformat_tables": "1.0.0",
+    "mdurl": "0.1.2",
+    "mergedeep": "1.3.4",
+    "mkdocs": "1.6.1",
+    "mkdocs-autorefs": "1.4.5",
+    "mkdocs-get-deps": "0.2.2",
+    "mkdocs-llmstxt": "0.5.1",
+    "mkdocs-material": "9.8.0",
+    "mkdocs-material-extensions": "1.3.1",
+    "mkdocstrings": "1.0.8",
+    "mkdocstrings-python": "2.0.10",
+    "mypy": "2.4.1",
+    "mypy_extensions": "1.1.0",
+    "opentelemetry-api": "1.45.2",
+    "opentelemetry-sdk": "1.45.2",
+    "opentelemetry-semantic-conventions": "0.66b2",
+    "packaging": "26.3",
+    "paginate": "0.5.7",
+    "pathspec": "1.1.1",
+    "platformdirs": "4.14.3",
+    "pluggy": "1.7.0",
+    "prometheus_client": "0.26.0",
+    "psycopg": "3.3.7",
+    "psycopg-binary": "3.3.7",
+    "pydantic": "2.14.2",
+    "pydantic_core": "2.50.2",
+    "pymdown-extensions": "12.3",
+    "pyproject_hooks": "1.3.3",
+    "pytest": "9.2.0",
+    "python-dateutil": "4.0.0",
+    "pyyaml_env_tag": "1.1",
+    "requests": "2.34.2",
+    "six": "1.17.0",
+    "soupsieve": "3.0.4",
+    "typing-inspection": "0.4.4",
+    "typing_extensions": "4.16.0",
+    "tzdata": "2026.6",
+    "urllib3": "2.8.0",
+    "watchdog": "7.0.0",
+    "wcwidth": "0.9.4"
+  },
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 51,
+      "sha256": "5d9bf12b2f34902bed53572155fcc5723dcdac3081e1d7c01ebaa0e4aad5416d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 7008,
+      "sha256": "c2ce9e9f15b09f210398281a1fe865e7160cacf8611396e33c9277a8aec6344d"
+    },
+    {
+      "path": "archive/arxiv-v1/00README.json",
+      "bytes": 220,
+      "sha256": "e7779d6bbd8ae168dc666cab983f44625b17748e3baae6687fc20700fc1d088d"
+    },
+    {
+      "path": "archive/arxiv-v1/2605.21997v1-source.tar",
+      "bytes": 55936,
+      "sha256": "5ad4093143829d2c2fee9ad86904f93363303432f86508beb8fb82aaf533f1c5"
+    },
+    {
+      "path": "archive/arxiv-v1/2605.21997v1.pdf",
+      "bytes": 736700,
+      "sha256": "8e8ba7df94f27f0ab9fa105f038dc9cd4ceaa6679657fc456d81dbbb689a0266"
+    },
+    {
+      "path": "archive/arxiv-v1/activegraph.tex",
+      "bytes": 34145,
+      "sha256": "b8fb447bad03b55ca326083df8948cf5dd31b4ff5e33762ebedbaeb47055e610"
+    },
+    {
+      "path": "archive/arxiv-v1/events_excerpt.txt",
+      "bytes": 1301,
+      "sha256": "e084395606340898b3a15b5b46521b1498c90e27d6916cab8d2e7146052a8ce6"
+    },
+    {
+      "path": "archive/arxiv-v1/figure_architecture.pdf",
+      "bytes": 44434,
+      "sha256": "363b16a999adc55329c02ee956ee1a6058a7f5e7c6a81b91ea4aad4b540db1cc"
+    },
+    {
+      "path": "archive/arxiv-v1/llm_excerpt.txt",
+      "bytes": 444,
+      "sha256": "2ed1565383edbcb98c35aebd498d179d30340156f0029a87c2c7ade567d8c33a"
+    },
+    {
+      "path": "article.pdf",
+      "bytes": 57582,
+      "sha256": "d4c818c690681d38d851256d1e44761bc4a966692f463fa43dc87c22e359651b"
+    },
+    {
+      "path": "article.tex",
+      "bytes": 20617,
+      "sha256": "a711fafdcd3401f608d7b7198cf8b91b1369f95f3021e164e3b4addd501f5410"
+    },
+    {
+      "path": "author-worksheet.md",
+      "bytes": 4065,
+      "sha256": "bb8daa4cdd7b894a447c2fe83d091c899eb37b3914773af656679703ac4b5b65"
+    },
+    {
+      "path": "claim-audit.md",
+      "bytes": 5189,
+      "sha256": "1fc7b752fe95374111942918e3129dc4ac0b0db972d288cba53e959b6e879d2b"
+    },
+    {
+      "path": "corrections.md",
+      "bytes": 4732,
+      "sha256": "d1d7f8c5bff0f5da5de645526b961a8b627691f3da5c9e2485a9823ff49a3d4f"
+    },
+    {
+      "path": "cover-letter.md",
+      "bytes": 3106,
+      "sha256": "8386e0fecc2903739432efdafaa4fc0d1d199a4ab29f3d465b7e9273a32e9007"
+    },
+    {
+      "path": "evidence/fixture-events-normalized.jsonl",
+      "bytes": 1530641,
+      "sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4"
+    },
+    {
+      "path": "evidence/fixture-events-second.jsonl",
+      "bytes": 1532566,
+      "sha256": "b729e8bff8633d253d45f5502932a1be27c8c69abbfcf3cf77fe5485eaee5fcd"
+    },
+    {
+      "path": "evidence/fixture-events.jsonl",
+      "bytes": 1532558,
+      "sha256": "213d2d72bf4f6aeace384ac676364f9e34f067382ca3f275aff195e3872006e3"
+    },
+    {
+      "path": "evidence/fixture-projection.json",
+      "bytes": 72459,
+      "sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-events-normalized.jsonl",
+      "bytes": 1530641,
+      "sha256": "d164a7d9ffb824a2e667013bed9befb0bc3f7bed28465910643a540c7529a7a4"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-events-second.jsonl",
+      "bytes": 1532574,
+      "sha256": "cad6a410fb28ecdd692e9cdc62271b60c3c8106a1e1e2a5513064d80cf102c2d"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-events.jsonl",
+      "bytes": 1532575,
+      "sha256": "2b96866f3601adc93a53aed3aeffec80448f73943e9393c377f3bc9403d9bc31"
+    },
+    {
+      "path": "evidence/identity-checked/fixture-projection.json",
+      "bytes": 72459,
+      "sha256": "f444cb69a4b2513a9710c5dd9bf832f11f28ed7b99e8728b411cdbb1de7e0cba"
+    },
+    {
+      "path": "evidence/identity-checked/verification.json",
+      "bytes": 9016,
+      "sha256": "c6edb8d715bad5115000d6c54a6354cd4c1e430517441e40714d04b3de48b417"
+    },
+    {
+      "path": "evidence/identity-guard-negative.json",
+      "bytes": 411,
+      "sha256": "1ebbde635fb7b27a8cf254bef2e0afc36fd841a0359b7aeff8d1cc305b788ef4"
+    },
+    {
+      "path": "evidence/native-checks.json",
+      "bytes": 2073,
+      "sha256": "51a93861138d693063463277d7e5b908441c503fe2f8301e3c621acd3e354104"
+    },
+    {
+      "path": "evidence/verification.json",
+      "bytes": 8577,
+      "sha256": "845e5791eb8488864cc471e6fff90a54dd02afe7dbb78ccb05a98865d74febcb"
+    },
+    {
+      "path": "publisher-checklist.md",
+      "bytes": 3870,
+      "sha256": "46fee65ba01e2677bdf33cd0a431e1704998387d42f6ca936966e2e3349c580c"
+    },
+    {
+      "path": "readiness.md",
+      "bytes": 9588,
+      "sha256": "dc98013e39556f69590b6b04ca89e5a627da9cc60eb380c7ef5e5060d414df65"
+    },
+    {
+      "path": "references.md",
+      "bytes": 3447,
+      "sha256": "ecf0c50520359eb4c978e341074134bb2978e312986f7ea65e3b8864562e2eb2"
+    },
+    {
+      "path": "rights-and-availability.md",
+      "bytes": 3599,
+      "sha256": "0d593b1f51559a5fc04addfaee8e39d502b098b2e316a788bf8f14e9c099fe89"
+    },
+    {
+      "path": "supplement.pdf",
+      "bytes": 43812,
+      "sha256": "4af379e089cc612248def0d584a2176d108635bcda6eb428a825259b9ccda211"
+    },
+    {
+      "path": "supplement.tex",
+      "bytes": 9764,
+      "sha256": "df3b74a62a4a828bb89b8f9bd6223c4b890da2208936576d71529ca8e44fa7fb"
+    },
+    {
+      "path": "verification/check_package.py",
+      "bytes": 7284,
+      "sha256": "4a502bdda93550616fd0d48917e8a326d6adf4f69322117f28413dd5eef7f5ec"
+    },
+    {
+      "path": "verification/runtime-inputs.json",
+      "bytes": 14774,
+      "sha256": "d1a807c9e2238b68c4ff5fbe815da9e5a732b23ca28b7ae6762837eb0d967922"
+    },
+    {
+      "path": "verification/verify.py",
+      "bytes": 11167,
+      "sha256": "5bf5b08e153ee176c9f4c68756715c0425c886693750cff0e5c87c4413f27539"
+    }
+  ],
+  "inventory_exclusions": [
+    "manifest.json itself",
+    ".scratch/",
+    ".private/",
+    "__pycache__/",
+    "aux/log/out/pyc build files"
+  ],
+  "verification_scope": "retained artifact hashes/static format; no new runtime,model,or service call"
+}

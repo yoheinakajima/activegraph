@@ -1,0 +1,19 @@
+{
+  "id": "evt_007",
+  "type": "llm.requested",
+  "caused_by": "evt_004",
+  "payload": {
+    "behavior": "diligence.question_generator",
+    "model": "claude-sonnet-4-5",
+    "prompt_hash": "c05af4931bdd7bc4...",
+    "deterministic": true,
+    "cache_hit": false,
+    "prompt": {
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "deterministic": true,
+      "output_schema_name": "QuestionList"
+    },
+    "estimated_cost_usd": "0.001"
+  }
+}
